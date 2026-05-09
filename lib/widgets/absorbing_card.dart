@@ -27,7 +27,21 @@ class AbsorbingCard extends StatefulWidget {
   State<AbsorbingCard> createState() => AbsorbingCardState();
 }
 
-class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveClientMixin {
+class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
+  late final AnimationController _flipController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 600),
+  );
+  bool get _showingBack => _flipController.value > 0.5;
+  void _toggleFlip() {
+    if (_flipController.isAnimating) return;
+    if (_showingBack) {
+      _flipController.reverse();
+    } else {
+      _flipController.forward();
+    }
+  }
+
   ColorScheme? _coverScheme;
   Brightness? _coverBrightness; // brightness used to generate _coverScheme
   ImageProvider? _coverProvider; // cached for re-deriving on theme change
@@ -61,6 +75,16 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   }
   String get _author => _metadata['authorName'] as String? ?? '';
   double get _duration => (_media['duration'] as num?)?.toDouble() ?? 0;
+  String? get _ebookExt {
+    final ebookFile = _media['ebookFile'] as Map<String, dynamic>?;
+    if (ebookFile == null) return null;
+    final fn = (ebookFile['metadata'] as Map<String, dynamic>?)?['filename'] as String?
+        ?? ebookFile['name'] as String?;
+    if (fn == null || !fn.contains('.')) return null;
+    return fn.substring(fn.lastIndexOf('.') + 1).toLowerCase();
+  }
+  String get _ebookLabel => _ebookExt == 'pdf' ? 'PDF' : 'EBook';
+  IconData get _ebookIcon => _ebookExt == 'pdf' ? Icons.picture_as_pdf_rounded : Icons.menu_book_rounded;
   List<dynamic> get _chapters {
     // Prefer fetched chapters (from full item or episode), fall back to inline data
     if (_fetchedChapters != null && _fetchedChapters!.isNotEmpty) return _fetchedChapters!;
@@ -313,6 +337,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     _chapterTrackSub?.cancel();
     _blurredCover?.dispose();
     _edgeBarExpanded.dispose();
+    _flipController.dispose();
     super.dispose();
   }
 
@@ -391,14 +416,12 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   @override
   Widget build(BuildContext context) {
     super.build(context); // required for AutomaticKeepAliveClientMixin
-    final tt = Theme.of(context).textTheme;
     final cs = _coverScheme ?? Theme.of(context).colorScheme;
     final accent = cs.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final l = AppLocalizations.of(context)!;
 
     final lib = context.watch<LibraryProvider>();
-    final mediaHeaders = lib.mediaHeaders;
     // For podcast episodes, look up progress by compound key (itemId-episodeId)
     final progress = (_episodeId != null)
         ? lib.getEpisodeProgress(_itemId, _episodeId!)
@@ -442,6 +465,49 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     }
 
     final showBookBar = (!_isPodcastEpisode || _chapters.isNotEmpty) && (!lib.isPodcastLibrary || _chapters.isNotEmpty);
+    return AnimatedBuilder(
+      animation: _flipController,
+      builder: (context, _) {
+        final t = _flipController.value;
+        final angle = t * 3.1415926535;
+        final showingBack = t > 0.5;
+        final transform = Matrix4.identity()
+          ..setEntry(3, 2, 0.0015) // perspective
+          ..rotateY(angle);
+        // The back face also rotates with the same matrix; counter-rotate its
+        // contents by pi so it reads correctly when on top.
+        final backChildTransform = Matrix4.identity()..rotateY(3.1415926535);
+        return Transform(
+          alignment: Alignment.center,
+          transform: transform,
+          child: showingBack
+              ? Transform(
+                  alignment: Alignment.center,
+                  transform: backChildTransform,
+                  child: _buildBack(context, cs, accent, isDark),
+                )
+              : _buildFront(context, cs, accent, isDark, l, lib, progress, chapterIdx, totalChapters, bookProgress, showBookBar),
+        );
+      },
+    );
+  }
+
+  Widget _buildFront(
+    BuildContext context,
+    ColorScheme cs,
+    Color accent,
+    bool isDark,
+    AppLocalizations l,
+    LibraryProvider lib,
+    double progress,
+    int chapterIdx,
+    int totalChapters,
+    double bookProgress,
+    bool showBookBar,
+  ) {
+    final tt = Theme.of(context).textTheme;
+    final mediaHeaders = lib.mediaHeaders;
+    final cast = ChromecastService();
     return GestureDetector(
       onVerticalDragEnd: (details) {
         final vy = details.primaryVelocity ?? 0;
@@ -613,9 +679,10 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                       final isCastingThis = castService.isCasting && castService.castingItemId == _itemId;
                       final coverPlaying = isCastingThis ? castService.isPlaying : (_isActive && widget.player.isPlaying);
                       final coverLoading = _isStarting || (_isActive && widget.player.isLoadingOrBuffering && !widget.player.isPlaying);
-                      return Center(child: Column(
-                        mainAxisSize: MainAxisSize.min,
+                      return Column(
+                        mainAxisSize: MainAxisSize.max,
                         children: [
+                          const Spacer(flex: 2),
                           Padding(
                             padding: const EdgeInsets.only(bottom: 4),
                             child: () {
@@ -758,7 +825,29 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                         ),
                       ),
                       ),
-                      ]));
+                      const Spacer(flex: 1),
+                      GestureDetector(
+                        onTap: _toggleFlip,
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: accent.withValues(alpha: 0.3), width: 1),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(_ebookIcon, size: 14, color: accent),
+                              const SizedBox(width: 6),
+                              Text(_ebookLabel, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: accent)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const Spacer(flex: 1),
+                      ]);
                     },
                   ),
                   ),
@@ -867,6 +956,65 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       ),
       ),
     ),
+    );
+  }
+
+  Widget _buildBack(BuildContext context, ColorScheme cs, Color accent, bool isDark) {
+    final tt = Theme.of(context).textTheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? Colors.black.withValues(alpha: 0.85) : Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: accent.withValues(alpha: 0.15), width: 1),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(23),
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_title, style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
+                  if (_author.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(_author, style: tt.titleMedium?.copyWith(color: cs.onSurface.withValues(alpha: 0.7))),
+                  ],
+                  const SizedBox(height: 16),
+                  Divider(color: cs.onSurface.withValues(alpha: 0.15)),
+                  const SizedBox(height: 16),
+                  Text('Back of card', style: tt.titleSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.6), fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  Text(
+                    'This is where the ebook reader will live. Tap the flip icon to return to the player.',
+                    style: tt.bodyMedium?.copyWith(color: cs.onSurface.withValues(alpha: 0.8)),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: _toggleFlip,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: accent.withValues(alpha: 0.15),
+                    ),
+                    child: Icon(Icons.flip_to_front_rounded, size: 18, color: accent),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
