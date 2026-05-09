@@ -11,6 +11,7 @@ import '../screens/app_shell.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import 'absorbing_shared.dart';
+import 'ebook_reader_view.dart';
 import 'card_edge_progress_bar.dart';
 import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
@@ -33,8 +34,14 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     duration: const Duration(milliseconds: 600),
   );
   bool get _showingBack => _flipController.value > 0.5;
+  // Lazy-mount the back face so non-readers don't pay the WebView startup cost.
+  // Once mounted it stays alive across flips (kept paginated in IndexedStack).
+  bool _backInitialized = false;
   void _toggleFlip() {
     if (_flipController.isAnimating) return;
+    if (!_backInitialized) {
+      setState(() => _backInitialized = true);
+    }
     if (_showingBack) {
       _flipController.reverse();
     } else {
@@ -47,6 +54,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   ImageProvider? _coverProvider; // cached for re-deriving on theme change
   bool _isStarting = false;
   List<dynamic>? _fetchedChapters;
+  Map<String, dynamic>? _fetchedEbookFile;
   StreamSubscription<Duration>? _chapterTrackSub;
   int _lastChapterIdx = -1;
   ui.Image? _blurredCover; // Precached blurred background
@@ -75,8 +83,10 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   }
   String get _author => _metadata['authorName'] as String? ?? '';
   double get _duration => (_media['duration'] as num?)?.toDouble() ?? 0;
+  Map<String, dynamic>? get _ebookFile =>
+      (_media['ebookFile'] as Map<String, dynamic>?) ?? _fetchedEbookFile;
   String? get _ebookExt {
-    final ebookFile = _media['ebookFile'] as Map<String, dynamic>?;
+    final ebookFile = _ebookFile;
     if (ebookFile == null) return null;
     final fn = (ebookFile['metadata'] as Map<String, dynamic>?)?['filename'] as String?
         ?? ebookFile['name'] as String?;
@@ -208,9 +218,10 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   }
 
   Future<void> _fetchChaptersIfNeeded() async {
-    // If chapters are already available, skip
-    if (_chapters.isNotEmpty) return;
-    // Fetch full item to get chapters
+    // Skip when the inline item already has both chapters and ebookFile
+    final inlineEbook = _media['ebookFile'] as Map<String, dynamic>?;
+    if (_chapters.isNotEmpty && inlineEbook != null) return;
+    // Fetch full item to fill in whatever's missing
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) return;
@@ -218,6 +229,11 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       final fullItem = await api.getLibraryItem(_itemId);
       if (fullItem != null && mounted) {
         final media = fullItem['media'] as Map<String, dynamic>? ?? {};
+        // Cache ebookFile if the inline item didn't have it
+        if (inlineEbook == null) {
+          final ef = media['ebookFile'] as Map<String, dynamic>?;
+          if (ef != null) setState(() => _fetchedEbookFile = ef);
+        }
         // Books: chapters at media level
         var chapters = media['chapters'] as List<dynamic>? ?? [];
         // Podcasts: chapters on the specific episode
@@ -322,6 +338,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       _blurredCover?.dispose();
       _blurredCover = null;
       _fetchedChapters = null;
+      _fetchedEbookFile = null;
       _lastChapterIdx = -1;
       _fetchChaptersIfNeeded();
     }
@@ -465,28 +482,36 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     }
 
     final showBookBar = (!_isPodcastEpisode || _chapters.isNotEmpty) && (!lib.isPodcastLibrary || _chapters.isNotEmpty);
+
+    // Build both faces ONCE per parent rebuild (not per animation frame).
+    // The AnimatedBuilder below only updates the rotation matrix; the heavy
+    // child trees (front content + embedded reader) are stable references.
+    final frontFace = _buildFront(context, cs, accent, isDark, l, lib, progress, chapterIdx, totalChapters, bookProgress, showBookBar);
+    final backFace = _backInitialized
+        ? Transform(
+            alignment: Alignment.center,
+            // Counter-rotate so back content reads correctly when card is fully flipped.
+            transform: Matrix4.identity()..rotateY(3.1415926535),
+            child: _buildBack(context, cs, accent, isDark),
+          )
+        : const SizedBox.shrink();
+
     return AnimatedBuilder(
       animation: _flipController,
-      builder: (context, _) {
+      builder: (context, child) {
         final t = _flipController.value;
         final angle = t * 3.1415926535;
-        final showingBack = t > 0.5;
-        final transform = Matrix4.identity()
-          ..setEntry(3, 2, 0.0015) // perspective
-          ..rotateY(angle);
-        // The back face also rotates with the same matrix; counter-rotate its
-        // contents by pi so it reads correctly when on top.
-        final backChildTransform = Matrix4.identity()..rotateY(3.1415926535);
         return Transform(
           alignment: Alignment.center,
-          transform: transform,
-          child: showingBack
-              ? Transform(
-                  alignment: Alignment.center,
-                  transform: backChildTransform,
-                  child: _buildBack(context, cs, accent, isDark),
-                )
-              : _buildFront(context, cs, accent, isDark, l, lib, progress, chapterIdx, totalChapters, bookProgress, showBookBar),
+          transform: Matrix4.identity()
+            ..setEntry(3, 2, 0.0015) // perspective
+            ..rotateY(angle),
+          child: IndexedStack(
+            alignment: Alignment.center,
+            sizing: StackFit.passthrough,
+            index: t > 0.5 ? 1 : 0,
+            children: [frontFace, backFace],
+          ),
         );
       },
     );
@@ -961,9 +986,10 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
 
   Widget _buildBack(BuildContext context, ColorScheme cs, Color accent, bool isDark) {
     final tt = Theme.of(context).textTheme;
+    final ebookFile = _ebookFile;
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? Colors.black.withValues(alpha: 0.85) : Colors.white.withValues(alpha: 0.95),
+        color: isDark ? Colors.black : Colors.white,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: accent.withValues(alpha: 0.15), width: 1),
       ),
@@ -971,28 +997,31 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
         borderRadius: BorderRadius.circular(23),
         child: Stack(
           children: [
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(_title, style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
-                  if (_author.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(_author, style: tt.titleMedium?.copyWith(color: cs.onSurface.withValues(alpha: 0.7))),
-                  ],
-                  const SizedBox(height: 16),
-                  Divider(color: cs.onSurface.withValues(alpha: 0.15)),
-                  const SizedBox(height: 16),
-                  Text('Back of card', style: tt.titleSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.6), fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  Text(
-                    'This is where the ebook reader will live. Tap the flip icon to return to the player.',
-                    style: tt.bodyMedium?.copyWith(color: cs.onSurface.withValues(alpha: 0.8)),
+            if (ebookFile != null)
+              EbookReaderView(
+                key: ValueKey('embedded-reader-$_itemId'),
+                itemId: _itemId,
+                title: _title,
+                ebookFile: ebookFile,
+                embedded: true,
+                onClose: _toggleFlip,
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.menu_book_rounded, size: 36, color: cs.onSurface.withValues(alpha: 0.4)),
+                      const SizedBox(height: 12),
+                      Text('No ebook attached', style: tt.titleSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.6))),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
+            // Always-visible flip-back affordance, since the reader's own
+            // controls are hidden until tapped.
             Positioned(
               top: 8,
               right: 8,

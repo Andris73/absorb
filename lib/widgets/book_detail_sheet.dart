@@ -37,7 +37,7 @@ import 'collection_picker_sheet.dart';
 import 'absorb_wave_icon.dart';
 import 'edit_metadata_sheet.dart';
 import 'stackable_sheet.dart';
-import '../screens/ebook_reader_screen.dart';
+import 'ebook_reader_view.dart';
 
 // ─── BOOK DETAIL BOTTOM SHEET ───────────────────────────────
 
@@ -985,7 +985,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   void _openEbookReader(BuildContext context, AuthProvider auth, Map<String, dynamic> ebookFile, String title) {
     Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) => EbookReaderScreen(
+        builder: (_) => EbookReaderView(
           itemId: widget.itemId,
           title: title,
           ebookFile: ebookFile,

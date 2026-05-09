@@ -13,23 +13,36 @@ import '../services/audio_player_service.dart';
 import '../services/ebook_annotation_service.dart';
 import '../services/scoped_prefs.dart';
 
-class EbookReaderScreen extends StatefulWidget {
+class EbookReaderView extends StatefulWidget {
   final String itemId;
   final String title;
   final Map<String, dynamic> ebookFile;
+  /// When true, renders without a Scaffold wrapper / SafeArea / SystemChrome
+  /// changes — for use inside another widget like the absorbing card back.
+  final bool embedded;
+  /// Replaces the back button's behavior. Defaults to Navigator.pop in
+  /// full-screen mode; in embedded mode the host should provide one (e.g. to
+  /// flip the card back to the front face).
+  final VoidCallback? onClose;
+  /// Only shown in embedded mode. Tap surfaces an "expand to full screen"
+  /// affordance the host can wire up.
+  final VoidCallback? onExpand;
 
-  const EbookReaderScreen({
+  const EbookReaderView({
     super.key,
     required this.itemId,
     required this.title,
     required this.ebookFile,
+    this.embedded = false,
+    this.onClose,
+    this.onExpand,
   });
 
   @override
-  State<EbookReaderScreen> createState() => _EbookReaderScreenState();
+  State<EbookReaderView> createState() => _EbookReaderViewState();
 }
 
-class _EbookReaderScreenState extends State<EbookReaderScreen> {
+class _EbookReaderViewState extends State<EbookReaderView> {
   EpubController? _epubController;
   bool _loading = true;
   String? _error;
@@ -88,7 +101,9 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
     _fontSize = await ScopedPrefs.getInt(_kFontSize) ?? 16;
     _lineHeight = await ScopedPrefs.getDouble(_kLineHeight) ?? 1.4;
     _margin = await ScopedPrefs.getInt(_kMargin) ?? 16;
-    _isPaginated = await ScopedPrefs.getBool(_kPaginated) ?? true;
+    // Embedded view always uses scrolled layout — paginated mode doesn't fit
+    // the small card and the host owns the page-flip metaphor.
+    _isPaginated = widget.embedded ? false : (await ScopedPrefs.getBool(_kPaginated) ?? true);
     if (mounted) setState(() {});
   }
 
@@ -164,10 +179,16 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
   }
 
   void _setFullscreen(bool fullscreen) {
+    if (widget.embedded) return; // host owns system chrome
     if (fullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     } else {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      // Explicitly show top + bottom bars. edgeToEdge alone doesn't reliably
+      // undo immersiveSticky on every Android version.
+      SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.manual,
+        overlays: SystemUiOverlay.values,
+      );
     }
   }
 
@@ -1011,6 +1032,30 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
     );
   }
 
+  /// Wraps a body in a Scaffold for full-screen mode, or returns it directly
+  /// (sized to fill the parent) for embedded mode.
+  Widget _wrap(Widget body, Color bg, {PreferredSizeWidget? appBar}) {
+    if (widget.embedded) {
+      return ColoredBox(color: bg, child: body);
+    }
+    return Scaffold(backgroundColor: bg, appBar: appBar, body: body);
+  }
+
+  /// SafeArea is only needed in full-screen mode — embedded callers manage
+  /// their own insets.
+  Widget _maybeSafeArea({required Widget child, bool top = true, bool bottom = true}) {
+    if (widget.embedded) return child;
+    return SafeArea(top: top, bottom: bottom, child: child);
+  }
+
+  void _handleClose() {
+    if (widget.onClose != null) {
+      widget.onClose!();
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -1018,35 +1063,36 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
     final bg = isDark ? Colors.black : Colors.white;
 
     if (_loading) {
-      return Scaffold(
-        backgroundColor: bg,
+      return _wrap(
+        const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        bg,
         appBar: AppBar(
           title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
           backgroundColor: Colors.transparent,
         ),
-        body: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
       );
     }
 
     if (_error != null || _cachedFile == null) {
-      return Scaffold(
-        appBar: AppBar(title: Text(widget.title)),
-        body: Center(
+      return _wrap(
+        Center(
           child: Padding(
             padding: const EdgeInsets.all(32),
             child: Text(_error ?? 'Unknown error', textAlign: TextAlign.center,
                 style: TextStyle(color: cs.onSurfaceVariant)),
           ),
         ),
+        bg,
+        appBar: AppBar(title: Text(widget.title)),
       );
     }
 
-    return Scaffold(
-      backgroundColor: bg,
-      body: Stack(
-        children: [
+    // EpubViewer + overlays. SafeAreas around the viewer and overlays are
+    // skipped in embedded mode (the host card already insets us).
+    final viewerBody = Stack(
+      children: [
           // Epub viewer with safe area padding for camera cutouts
-          SafeArea(
+          _maybeSafeArea(
             child: SizedBox.expand(
               child: EpubViewer(
               key: ValueKey(_viewerKey),
@@ -1126,16 +1172,25 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
                     colors: [bg.withValues(alpha: 0.9), bg.withValues(alpha: 0.0)],
                   ),
                 ),
-                child: SafeArea(
+                child: _maybeSafeArea(
                   bottom: false,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                     child: Row(
                       children: [
                         IconButton(
-                          icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface),
-                          onPressed: () => Navigator.pop(context),
+                          icon: Icon(
+                            widget.embedded ? Icons.flip_to_front_rounded : Icons.arrow_back_rounded,
+                            color: cs.onSurface,
+                          ),
+                          onPressed: _handleClose,
                         ),
+                        if (widget.embedded && widget.onExpand != null)
+                          IconButton(
+                            icon: Icon(Icons.fullscreen_rounded, color: cs.onSurface),
+                            tooltip: 'Expand',
+                            onPressed: widget.onExpand,
+                          ),
                         Expanded(
                           child: Text(
                             widget.title,
@@ -1200,7 +1255,7 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
                       colors: [bg.withValues(alpha: 0.9), bg.withValues(alpha: 0.0)],
                     ),
                   ),
-                  child: SafeArea(
+                  child: _maybeSafeArea(
                     top: false,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -1247,7 +1302,7 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
             Positioned(
               left: 0,
               right: 0,
-              bottom: MediaQuery.of(context).padding.bottom + 16,
+              bottom: (widget.embedded ? 0 : MediaQuery.of(context).padding.bottom) + 16,
               child: Center(
                 child: Material(
                   elevation: 8,
@@ -1295,8 +1350,8 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
               ),
             ),
         ],
-      ),
-    );
+      );
+    return _wrap(viewerBody, bg);
   }
 }
 
