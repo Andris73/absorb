@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,6 +28,13 @@ class EbookReaderView extends StatefulWidget {
   /// Only shown in embedded mode. Tap surfaces an "expand to full screen"
   /// affordance the host can wire up.
   final VoidCallback? onExpand;
+  /// If provided, opens the reader at this exact CFI instead of the saved
+  /// progress location. Used to hand off position between embedded and
+  /// full-screen instances.
+  final String? initialCfi;
+  /// Fires whenever the reader's position changes. Used by hosts to mirror
+  /// position across paired reader instances.
+  final ValueChanged<String>? onPositionChanged;
 
   const EbookReaderView({
     super.key,
@@ -36,13 +44,31 @@ class EbookReaderView extends StatefulWidget {
     this.embedded = false,
     this.onClose,
     this.onExpand,
+    this.initialCfi,
+    this.onPositionChanged,
   });
 
   @override
-  State<EbookReaderView> createState() => _EbookReaderViewState();
+  State<EbookReaderView> createState() => EbookReaderViewState();
 }
 
-class _EbookReaderViewState extends State<EbookReaderView> {
+class EbookReaderViewState extends State<EbookReaderView> {
+  /// Latest known position of the reader. Null until the first relocate fires.
+  String? get currentCfi => _currentCfi;
+  /// Asks the controller for the *live* current location. More accurate than
+  /// [currentCfi] right after a page flip, since onRelocated may not have
+  /// caught up yet. Returns null if the controller isn't ready or errors.
+  Future<String?> getLiveCfi() async {
+    try {
+      final loc = await _epubController?.getCurrentLocation();
+      return loc?.startCfi ?? _currentCfi;
+    } catch (_) {
+      return _currentCfi;
+    }
+  }
+  /// Jump the reader to a specific CFI. Safe to call before the EPUB has loaded;
+  /// the controller no-ops in that case.
+  void seekTo(String cfi) => _epubController?.display(cfi: cfi);
   EpubController? _epubController;
   bool _loading = true;
   String? _error;
@@ -80,12 +106,10 @@ class _EbookReaderViewState extends State<EbookReaderView> {
   int _fontSize = 16;
   double _lineHeight = 1.4;
   int _margin = 16;
-  bool _isPaginated = true;
 
   static const _kFontSize = 'ereader_fontSize';
   static const _kLineHeight = 'ereader_lineHeight';
   static const _kMargin = 'ereader_margin';
-  static const _kPaginated = 'ereader_paginated';
 
   @override
   void initState() {
@@ -101,9 +125,6 @@ class _EbookReaderViewState extends State<EbookReaderView> {
     _fontSize = await ScopedPrefs.getInt(_kFontSize) ?? 16;
     _lineHeight = await ScopedPrefs.getDouble(_kLineHeight) ?? 1.4;
     _margin = await ScopedPrefs.getInt(_kMargin) ?? 16;
-    // Embedded view always uses scrolled layout — paginated mode doesn't fit
-    // the small card and the host owns the page-flip metaphor.
-    _isPaginated = widget.embedded ? false : (await ScopedPrefs.getBool(_kPaginated) ?? true);
     if (mounted) setState(() {});
   }
 
@@ -157,20 +178,6 @@ class _EbookReaderViewState extends State<EbookReaderView> {
     await ScopedPrefs.setInt(_kMargin, margin);
   }
 
-  Future<void> _updatePaginated(bool paginated) async {
-    // Save current position before rebuilding
-    try {
-      final loc = await _epubController?.getCurrentLocation();
-      if (loc != null) _initialCfi = loc.startCfi;
-    } catch (_) {}
-    _epubController = EpubController();
-    setState(() {
-      _isPaginated = paginated;
-      _viewerKey++;
-    });
-    await ScopedPrefs.setBool(_kPaginated, paginated);
-  }
-
   @override
   void dispose() {
     // Restore system UI when leaving
@@ -197,6 +204,11 @@ class _EbookReaderViewState extends State<EbookReaderView> {
   }
 
   void _loadInitialLocation() {
+    // Explicit initialCfi (e.g. handoff from another reader instance) wins.
+    if (widget.initialCfi != null && widget.initialCfi!.isNotEmpty) {
+      _initialCfi = widget.initialCfi;
+      return;
+    }
     final lib = context.read<LibraryProvider>();
     final progressData = lib.getProgressData(widget.itemId);
     final loc = progressData?['ebookLocation'] as String?;
@@ -516,6 +528,72 @@ class _EbookReaderViewState extends State<EbookReaderView> {
     }
   }
 
+  // ── Locations cache ───────────────────────────────────────────────
+  // epub.js spends ~7s on first open building a CFI index for progress
+  // tracking, during which scrolling can produce visible jumps. Cache the
+  // index next to the EPUB file so subsequent opens are instant.
+  String? _locationsCachePath() {
+    final f = _cachedFile;
+    if (f == null) return null;
+    return '${f.path}.locations.json';
+  }
+
+  Future<String?> _loadCachedLocations() async {
+    final path = _locationsCachePath();
+    if (path == null) return null;
+    final f = File(path);
+    if (!await f.exists()) return null;
+    try {
+      return await f.readAsString();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _saveCachedLocations(String json) async {
+    final path = _locationsCachePath();
+    if (path == null) return;
+    try {
+      await File(path).writeAsString(json);
+    } catch (_) {}
+  }
+
+  Future<void> _setupLocations() async {
+    final cached = await _loadCachedLocations();
+    if (!mounted) return;
+    if (cached != null && cached.isNotEmpty) {
+      debugPrint('[Reader] Locations: loading cached (${cached.length} bytes)');
+      final injected = jsonEncode(cached);
+      _epubController?.webViewController?.evaluateJavascript(source: '''
+        (function() {
+          try { rendition.book.locations.load($injected); }
+          catch (e) { console.error('locations.load failed', e); }
+        })();
+      ''');
+      return;
+    }
+    debugPrint('[Reader] Locations: no cache, generating...');
+    _epubController?.webViewController?.addJavaScriptHandler(
+      handlerName: 'locationsGenerated',
+      callback: (args) async {
+        if (args.isEmpty) return;
+        final data = args[0] as String?;
+        if (data != null && data.isNotEmpty) {
+          debugPrint('[Reader] Locations: caching ${data.length} bytes');
+          await _saveCachedLocations(data);
+        }
+      },
+    );
+    _epubController?.webViewController?.evaluateJavascript(source: '''
+      (function() {
+        rendition.book.locations.generate(1024).then(function() {
+          var data = rendition.book.locations.save();
+          window.flutter_inappwebview.callHandler('locationsGenerated', data);
+        }).catch(function(e) { console.error('locations.generate failed', e); });
+      })();
+    ''');
+  }
+
   void _setupPageInfoHandler() {
     _epubController?.webViewController?.addJavaScriptHandler(
       handlerName: 'pageInfo',
@@ -525,6 +603,9 @@ class _EbookReaderViewState extends State<EbookReaderView> {
         if (data == null) return;
         final page = data['page'] as int? ?? 0;
         final total = data['total'] as int? ?? 0;
+        // Brief total=0 reports happen at chapter handoffs; keep the last
+        // valid count visible rather than blanking the indicator.
+        if (total == 0 && _chapterPageTotal > 0) return;
         if (page != _chapterPage || total != _chapterPageTotal) {
           setState(() {
             _chapterPage = page;
@@ -847,30 +928,6 @@ class _EbookReaderViewState extends State<EbookReaderView> {
                     _updateMargin(v.round());
                   },
                 ),
-                const SizedBox(height: 8),
-
-                // Layout mode
-                Row(children: [
-                  Icon(Icons.auto_stories_rounded, size: 20, color: cs.onSurfaceVariant),
-                  const SizedBox(width: 12),
-                  Text('Layout', style: tt.bodyMedium),
-                  const Spacer(),
-                  SegmentedButton<bool>(
-                    segments: const [
-                      ButtonSegment(value: true, label: Text('Page')),
-                      ButtonSegment(value: false, label: Text('Scroll')),
-                    ],
-                    selected: {_isPaginated},
-                    onSelectionChanged: (v) {
-                      Navigator.pop(ctx);
-                      _updatePaginated(v.first);
-                    },
-                    style: ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ),
-                ]),
               ],
             ),
           ),
@@ -1038,7 +1095,16 @@ class _EbookReaderViewState extends State<EbookReaderView> {
     if (widget.embedded) {
       return ColoredBox(color: bg, child: body);
     }
-    return Scaffold(backgroundColor: bg, appBar: appBar, body: body);
+    // Don't resize for the keyboard — epub.js reflows when the WebView
+    // resizes, which would shift the visible page when the search keyboard
+    // pops up. The bottom sheet positions itself above the keyboard via
+    // MediaQuery.viewInsets, so it stays visible regardless.
+    return Scaffold(
+      backgroundColor: bg,
+      appBar: appBar,
+      body: body,
+      resizeToAvoidBottomInset: false,
+    );
   }
 
   /// SafeArea is only needed in full-screen mode — embedded callers manage
@@ -1100,9 +1166,9 @@ class _EbookReaderViewState extends State<EbookReaderView> {
               epubController: _epubController!,
               initialCfi: _initialCfi,
               displaySettings: EpubDisplaySettings(
-                flow: _isPaginated ? EpubFlow.paginated : EpubFlow.scrolled,
-                snap: _isPaginated,
-                useSnapAnimationAndroid: !_isPaginated,
+                flow: EpubFlow.paginated,
+                snap: true,
+                useSnapAnimationAndroid: false,
                 theme: _buildTheme(isDark),
               ),
               onChaptersLoaded: (chapters) {
@@ -1120,10 +1186,18 @@ class _EbookReaderViewState extends State<EbookReaderView> {
                 if (match != null) _addNoteToAnnotation(match);
               },
               onEpubLoaded: () {
-                debugPrint('[EbookReader] Epub loaded');
                 _applySettings();
+                // Re-anchor to the requested CFI after settings reflow the text.
+                // Consume _initialCfi so this only happens once — otherwise any
+                // re-fire of onEpubLoaded would yank the user back to the start.
+                final once = _initialCfi;
+                if (once != null && once.isNotEmpty) {
+                  _initialCfi = null;
+                  _epubController?.display(cfi: once);
+                }
                 _loadAnnotations().then((_) => _restoreHighlights());
                 _setupPageInfoHandler();
+                _setupLocations();
               },
               onRelocated: (value) {
                 if (mounted) {
@@ -1131,6 +1205,7 @@ class _EbookReaderViewState extends State<EbookReaderView> {
                   _updateBookmarkState();
                   setState(() => _progress = value.progress);
                   _syncProgress(value.startCfi, value.progress);
+                  widget.onPositionChanged?.call(value.startCfi);
                 }
               },
               onTouchDown: (x, y) {
@@ -1143,10 +1218,6 @@ class _EbookReaderViewState extends State<EbookReaderView> {
                 _touchDownX = null;
                 _touchDownY = null;
                 if (dx > 0.05 || dy > 0.05) return;
-                if (!_isPaginated) {
-                  if (x > 0.2 && x < 0.8) _toggleControls();
-                  return;
-                }
                 if (x < 0.25) {
                   _epubController?.prev();
                 } else if (x > 0.75) {
@@ -1169,7 +1240,7 @@ class _EbookReaderViewState extends State<EbookReaderView> {
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [bg.withValues(alpha: 0.9), bg.withValues(alpha: 0.0)],
+                    colors: [bg.withValues(alpha: 1.0), bg.withValues(alpha: 0.6)],
                   ),
                 ),
                 child: _maybeSafeArea(
@@ -1252,7 +1323,7 @@ class _EbookReaderViewState extends State<EbookReaderView> {
                     gradient: LinearGradient(
                       begin: Alignment.bottomCenter,
                       end: Alignment.topCenter,
-                      colors: [bg.withValues(alpha: 0.9), bg.withValues(alpha: 0.0)],
+                      colors: [bg.withValues(alpha: 1.0), bg.withValues(alpha: 0.6)],
                     ),
                   ),
                   child: _maybeSafeArea(

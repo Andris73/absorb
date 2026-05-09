@@ -37,6 +37,10 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   // Lazy-mount the back face so non-readers don't pay the WebView startup cost.
   // Once mounted it stays alive across flips (kept paginated in IndexedStack).
   bool _backInitialized = false;
+  final GlobalKey<EbookReaderViewState> _embeddedReaderKey = GlobalKey<EbookReaderViewState>();
+  // CFI to seed the embedded reader on mount. Updated when the full-screen
+  // reader closes so the re-mounted embedded picks up wherever the user left off.
+  String? _readerInitialCfi;
   void _toggleFlip() {
     if (_flipController.isAnimating) return;
     if (!_backInitialized) {
@@ -850,28 +854,31 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                         ),
                       ),
                       ),
-                      const Spacer(flex: 1),
-                      GestureDetector(
-                        onTap: _toggleFlip,
-                        behavior: HitTestBehavior.opaque,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: accent.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: accent.withValues(alpha: 0.3), width: 1),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(_ebookIcon, size: 14, color: accent),
-                              const SizedBox(width: 6),
-                              Text(_ebookLabel, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: accent)),
-                            ],
+                      if (_ebookFile != null) ...[
+                        const Spacer(flex: 1),
+                        GestureDetector(
+                          onTap: _toggleFlip,
+                          behavior: HitTestBehavior.opaque,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: accent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: accent.withValues(alpha: 0.3), width: 1),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(_ebookIcon, size: 14, color: accent),
+                                const SizedBox(width: 6),
+                                Text(_ebookLabel, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: accent)),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      const Spacer(flex: 1),
+                        const Spacer(flex: 1),
+                      ] else
+                        const Spacer(flex: 2),
                       ]);
                     },
                   ),
@@ -984,6 +991,34 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     );
   }
 
+  Future<void> _openFullscreenReader() async {
+    final ebookFile = _ebookFile;
+    if (ebookFile == null) return;
+    final handoffCfi = await _embeddedReaderKey.currentState?.getLiveCfi();
+    debugPrint('[Handoff] small→big handoffCfi=$handoffCfi');
+    String? latestCfi;
+    // Unmount the embedded reader entirely while full-screen is open. This
+    // sidesteps the live-seek-on-hidden-WebView problem — when the route
+    // closes we re-mount fresh with the up-to-date CFI as initial position.
+    setState(() => _backInitialized = false);
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => EbookReaderView(
+          itemId: _itemId,
+          title: _title,
+          ebookFile: ebookFile,
+          initialCfi: handoffCfi,
+          onPositionChanged: (cfi) => latestCfi = cfi,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _readerInitialCfi = latestCfi ?? handoffCfi ?? _readerInitialCfi;
+      _backInitialized = true;
+    });
+  }
+
   Widget _buildBack(BuildContext context, ColorScheme cs, Color accent, bool isDark) {
     final tt = Theme.of(context).textTheme;
     final ebookFile = _ebookFile;
@@ -999,12 +1034,14 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
           children: [
             if (ebookFile != null)
               EbookReaderView(
-                key: ValueKey('embedded-reader-$_itemId'),
+                key: _embeddedReaderKey,
                 itemId: _itemId,
                 title: _title,
                 ebookFile: ebookFile,
                 embedded: true,
+                initialCfi: _readerInitialCfi,
                 onClose: _toggleFlip,
+                onExpand: _openFullscreenReader,
               )
             else
               Padding(
@@ -1020,27 +1057,6 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                   ),
                 ),
               ),
-            // Always-visible flip-back affordance, since the reader's own
-            // controls are hidden until tapped.
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: _toggleFlip,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: accent.withValues(alpha: 0.15),
-                    ),
-                    child: Icon(Icons.flip_to_front_rounded, size: 18, color: accent),
-                  ),
-                ),
-              ),
-            ),
           ],
         ),
       ),
