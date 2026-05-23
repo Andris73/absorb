@@ -9,8 +9,6 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
-import '../screens/app_shell.dart';
-import '../services/audio_player_service.dart';
 import '../services/ebook_annotation_service.dart';
 import '../services/scoped_prefs.dart';
 
@@ -86,11 +84,6 @@ class EbookReaderViewState extends State<EbookReaderView> {
   bool _hasBookmarkAtCurrent = false;
   String? _currentCfi;
 
-  // Audiobook sync data
-  Map<String, dynamic>? _itemData;
-  List<dynamic> _audioChapters = [];
-  bool _hasAudiobook = false;
-
   // Selection state for highlight menu
   String? _selectionText;
   String? _selectionCfi;
@@ -117,7 +110,6 @@ class EbookReaderViewState extends State<EbookReaderView> {
     _epubController = EpubController();
     _loadInitialLocation();
     _loadSettings().then((_) => _downloadAndOpen());
-    _fetchItemData();
     _setFullscreen(true);
   }
 
@@ -314,201 +306,6 @@ class EbookReaderViewState extends State<EbookReaderView> {
       ebookLocation: cfi,
       ebookProgress: progress,
     );
-  }
-
-  Future<void> _fetchItemData() async {
-    final auth = context.read<AuthProvider>();
-    final api = auth.apiService;
-    if (api == null) return;
-    try {
-      final item = await api.getLibraryItem(widget.itemId);
-      if (item != null && mounted) {
-        _itemData = item;
-        final media = item['media'] as Map<String, dynamic>? ?? {};
-        _audioChapters = media['chapters'] as List<dynamic>? ?? [];
-        final duration = (media['duration'] as num?)?.toDouble() ?? 0;
-        _hasAudiobook = duration > 0 && _audioChapters.isNotEmpty;
-        setState(() {});
-      }
-    } catch (e) {
-      debugPrint('[EbookReader] Failed to fetch item data: $e');
-    }
-  }
-
-  /// Match an ebook chapter title to the best audiobook chapter.
-  int _matchAudioChapter(String ebookTitle) {
-    if (_audioChapters.isEmpty) return -1;
-
-    final normalised = _normalise(ebookTitle);
-
-    // Exact match first
-    for (var i = 0; i < _audioChapters.length; i++) {
-      final audioTitle = _audioChapters[i]['title'] as String? ?? '';
-      if (_normalise(audioTitle) == normalised) return i;
-    }
-
-    // Substring match - check if one contains the other
-    for (var i = 0; i < _audioChapters.length; i++) {
-      final audioNorm = _normalise(_audioChapters[i]['title'] as String? ?? '');
-      if (audioNorm.contains(normalised) || normalised.contains(audioNorm)) {
-        return i;
-      }
-    }
-
-    // Number-based match - extract chapter numbers
-    final ebookNum = _extractChapterNumber(normalised);
-    if (ebookNum != null) {
-      for (var i = 0; i < _audioChapters.length; i++) {
-        final audioNum = _extractChapterNumber(
-          _normalise(_audioChapters[i]['title'] as String? ?? ''),
-        );
-        if (audioNum == ebookNum) return i;
-      }
-    }
-
-    return -1;
-  }
-
-  String _normalise(String s) =>
-      s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), '').trim();
-
-  int? _extractChapterNumber(String normalised) {
-    final match = RegExp(r'(?:chapter|ch|part)\s*(\d+)').firstMatch(normalised);
-    if (match != null) return int.tryParse(match.group(1)!);
-    // Try just a standalone number
-    final numMatch = RegExp(r'^\d+$').firstMatch(normalised.trim());
-    if (numMatch != null) return int.tryParse(numMatch.group(0)!);
-    return null;
-  }
-
-  Future<void> _listenFromHere() async {
-    if (!_hasAudiobook || _itemData == null) return;
-
-    final media = _itemData!['media'] as Map<String, dynamic>? ?? {};
-    final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-
-    // Get current ebook chapter title via JS
-    final currentChapterResult = await _epubController?.webViewController
-        ?.evaluateJavascript(source: '''
-      (function() {
-        var loc = rendition.currentLocation();
-        if (loc && loc.start && loc.start.href) {
-          var href = loc.start.href;
-          var toc = book.navigation.toc;
-          function findTitle(items, href) {
-            for (var i = 0; i < items.length; i++) {
-              if (items[i].href && items[i].href.indexOf(href) !== -1) return items[i].label;
-              if (items[i].subitems && items[i].subitems.length > 0) {
-                var found = findTitle(items[i].subitems, href);
-                if (found) return found;
-              }
-            }
-            return null;
-          }
-          return findTitle(toc, href) || href;
-        }
-        return null;
-      })();
-    ''');
-
-    final ebookChapterTitle = currentChapterResult?.toString().trim();
-    if (ebookChapterTitle == null || ebookChapterTitle == 'null' || ebookChapterTitle.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not determine current chapter')),
-        );
-      }
-      return;
-    }
-
-    debugPrint('[EbookReader] Current ebook chapter: $ebookChapterTitle');
-
-    // Match to audio chapter
-    var audioIdx = _matchAudioChapter(ebookChapterTitle);
-
-    // Fallback: try index-based matching using ebook chapter list
-    if (audioIdx == -1 && _chapters.isNotEmpty) {
-      // Find which ebook chapter we're in by matching the title
-      final ebookIdx = _chapters.indexWhere((ch) =>
-          _normalise(ch.title) == _normalise(ebookChapterTitle) ||
-          _normalise(ch.title).contains(_normalise(ebookChapterTitle)) ||
-          _normalise(ebookChapterTitle).contains(_normalise(ch.title)));
-      if (ebookIdx != -1 && ebookIdx < _audioChapters.length) {
-        audioIdx = ebookIdx;
-        debugPrint('[EbookReader] Fallback index match: ebook[$ebookIdx] -> audio[$audioIdx]');
-      }
-    }
-
-    if (audioIdx == -1) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No matching audio chapter for "$ebookChapterTitle"')),
-        );
-      }
-      return;
-    }
-
-    // Calculate position within chapter using page progress
-    final audioChapter = _audioChapters[audioIdx];
-    final chapterStart = (audioChapter['start'] as num).toDouble();
-    final chapterEnd = (audioChapter['end'] as num).toDouble();
-    final chapterDuration = chapterEnd - chapterStart;
-
-    double chapterProgress = 0;
-    if (_chapterPageTotal > 0) {
-      chapterProgress = (_chapterPage / _chapterPageTotal).clamp(0.0, 1.0);
-    }
-
-    final startTime = chapterStart + (chapterDuration * chapterProgress);
-    final audioTitle = audioChapter['title'] as String? ?? 'Chapter ${audioIdx + 1}';
-
-    debugPrint('[EbookReader] Syncing to audio: "$audioTitle" at ${startTime.toStringAsFixed(1)}s '
-        '(${(chapterProgress * 100).toStringAsFixed(0)}% through chapter)');
-
-    // Start audiobook playback
-    final auth = context.read<AuthProvider>();
-    final api = auth.apiService;
-    if (api == null) return;
-
-    final player = AudioPlayerService();
-    final title = metadata['title'] as String? ?? widget.title;
-    final author = metadata['authorName'] as String? ?? '';
-    final coverPath = _itemData!['id'] as String? ?? widget.itemId;
-    final coverUrl = '${api.baseUrl}/api/items/$coverPath/cover';
-    final totalDuration = (media['duration'] as num?)?.toDouble() ?? 0;
-
-    final error = await player.playItem(
-      api: api,
-      itemId: widget.itemId,
-      title: title,
-      author: author,
-      coverUrl: coverUrl,
-      totalDuration: totalDuration,
-      chapters: _audioChapters,
-      startTime: startTime,
-    );
-
-    if (error != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error)),
-      );
-      return;
-    }
-
-    if (mounted) {
-      context.read<LibraryProvider>()
-        ..addToAbsorbing(widget.itemId)
-        ..refreshLocalProgress()
-        ..refresh();
-    }
-
-    // Navigate to the audio player
-    if (mounted) {
-      Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
-      Future.delayed(const Duration(milliseconds: 100), () {
-        AppShell.goToAbsorbingGlobal();
-      });
-    }
   }
 
   Future<void> _loadAnnotations() async {
@@ -1274,12 +1071,6 @@ class EbookReaderViewState extends State<EbookReaderView> {
                             ),
                           ),
                         ),
-                        if (_hasAudiobook)
-                          IconButton(
-                            icon: Icon(Icons.headphones_rounded, color: cs.onSurface),
-                            tooltip: 'Listen from here',
-                            onPressed: _listenFromHere,
-                          ),
                         IconButton(
                           icon: Icon(
                             _hasBookmarkAtCurrent
