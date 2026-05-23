@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../services/wording.dart';
 
 class CardButtonDef {
   final String id;
@@ -30,7 +31,7 @@ String localizedCardButtonLabel(AppLocalizations l, CardButtonDef def) {
     case 'history':
       return l.playbackHistory;
     case 'remove':
-      return l.removeFromAbsorbing;
+      return classicWordingNotifier.value ? 'Remove from Now Playing' : l.removeFromAbsorbing;
     case 'car':
       return l.carModeTitle;
     case 'notes':

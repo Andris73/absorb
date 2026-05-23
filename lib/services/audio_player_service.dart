@@ -11,6 +11,7 @@ import 'api_service.dart';
 import 'download_service.dart';
 import 'playback_history_service.dart' hide PlaybackEvent;
 import 'progress_sync_service.dart';
+import 'sync_logic.dart';
 import 'sleep_timer_service.dart';
 import 'equalizer_service.dart';
 import 'android_auto_service.dart';
@@ -153,11 +154,14 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
     return PlaybackState(
       controls: controls,
-      systemActions: const {
+      // iOS-only: declaring on Android adds prev/next buttons to the notification.
+      systemActions: {
         MediaAction.seek,
         MediaAction.seekForward,
         MediaAction.seekBackward,
         MediaAction.skipToQueueItem,
+        if (Platform.isIOS) MediaAction.skipToNext,
+        if (Platform.isIOS) MediaAction.skipToPrevious,
       },
       androidCompactActionIndices: compactIndices,
       processingState: const {
@@ -362,6 +366,13 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       await _player.seek(pos);
     }
   }
+
+  // iOS BT (AirPods, steering wheel) routes track-skip through these.
+  @override
+  Future<void> skipToNext() => fastForward();
+
+  @override
+  Future<void> skipToPrevious() => rewind();
 
   // Custom click handler with proper multi-press detection
   Timer? _clickTimer;
@@ -907,6 +918,18 @@ class AudioPlayerService extends ChangeNotifier {
   int _lastChapterCheckSec = -1;
   StreamSubscription? _indexSub;
 
+  // ── iOS premature-completion guard (GH #219) ──
+  // ConcatenatingAudioSource on iOS sometimes fires ProcessingState.completed
+  // when advancing to the LAST item without actually rendering its audio,
+  // making books appear to "skip" the final chapter. We watch how recently
+  // _currentTrackIndex flipped to the last track; if completion fires within
+  // a few seconds of that advance for a substantial last track, treat it as
+  // spurious and seek-resume into the last track. Capped to prevent loops
+  // if recovery itself can't get the player unstuck.
+  DateTime? _lastIndexAdvanceTime;
+  int _iosLastTrackRecoveryAttempts = 0;
+  static const _maxIosLastTrackRecoveries = 2;
+
   // ── Notification chapter progress mode ──
   bool _notifChapterMode = false;
   double _currentChapterStart = 0;
@@ -1034,8 +1057,8 @@ class AudioPlayerService extends ChangeNotifier {
         'stage=$stage',
         'playing=${p?.playing}',
         'state=${p?.processingState.name}',
-        'volume=${p?.volume?.toStringAsFixed(2)}',
-        'speed=${p?.speed?.toStringAsFixed(2)}',
+        'volume=${p?.volume.toStringAsFixed(2)}',
+        'speed=${p?.speed.toStringAsFixed(2)}',
         'pos=${pos != null ? "${(pos.inMilliseconds / 1000.0).toStringAsFixed(1)}s" : "null"}',
         'dur=${dur != null ? "${(dur.inMilliseconds / 1000.0).toStringAsFixed(1)}s" : "null"}',
         'buf=${buffered != null ? "${(buffered.inMilliseconds / 1000.0).toStringAsFixed(1)}s" : "null"}',
@@ -1161,7 +1184,12 @@ class AudioPlayerService extends ChangeNotifier {
     if (_player == null || _trackStartOffsets.length <= 1) return;
     _indexSub = _player!.currentIndexStream.listen((index) {
       if (index != null) {
-        _currentTrackIndex = index.clamp(0, _trackStartOffsets.length - 2);
+        final clamped = index.clamp(0, _trackStartOffsets.length - 2);
+        if (clamped != _currentTrackIndex) {
+          _lastIndexAdvanceTime = DateTime.now();
+          debugPrint('[Player] Track index advance: $_currentTrackIndex -> $clamped');
+        }
+        _currentTrackIndex = clamped;
       }
     }, onError: (Object e, StackTrace st) {
       debugPrint('[Player] Index stream error: $e');
@@ -1367,6 +1395,8 @@ class AudioPlayerService extends ChangeNotifier {
             // Re-check: another event (like becoming-noisy) might have fired
             // during the delay.
             if (_noisyPause) return;
+            // Don't double-resume: Assistant may already have called play().
+            if (service._player?.playing == true) return;
             // If we were on BT when interrupted, check if BT is still connected.
             // Some car head units never send AUDIO_BECOMING_NOISY on disconnect,
             // so _noisyPause alone is not enough.
@@ -1844,8 +1874,12 @@ class AudioPlayerService extends ChangeNotifier {
           } else if (startTime > 0) {
             // Local is ahead — verify via timestamp that this isn't stale data.
             // Fetch the server's lastUpdate to compare with the local save time.
+            // Skip the override if we have a pending local sync: local is the
+            // truth, we just haven't shipped it to the server yet.
             bool useServer = false;
-            if (localTs > 0) {
+            final hasPending = await _progressSync.hasPendingSync(pKey);
+            final gap = startTime - serverPos;
+            if (localTs > 0 && !hasPending && gap <= SyncLogic.localAheadSafetySeconds) {
               try {
                 final serverProgress = await _api!.getItemProgress(pKey);
                 final serverLastUpdate = (serverProgress?['lastUpdate'] as num?)?.toInt() ?? 0;
@@ -1857,7 +1891,13 @@ class AudioPlayerService extends ChangeNotifier {
               } catch (_) {}
             }
             if (!useServer) {
-              debugPrint('[Player] Local position is ahead: local=${startTime}s vs server=${serverPos}s — keeping local');
+              if (hasPending) {
+                debugPrint('[Player] Local position is ahead: local=${startTime}s vs server=${serverPos}s — keeping local (pending sync)');
+              } else if (gap > SyncLogic.localAheadSafetySeconds) {
+                debugPrint('[Player] Local position is ahead: local=${startTime}s vs server=${serverPos}s — keeping local (gap ${gap.toStringAsFixed(1)}s exceeds safety threshold)');
+              } else {
+                debugPrint('[Player] Local position is ahead: local=${startTime}s vs server=${serverPos}s — keeping local');
+              }
             }
           } else if (serverPos > 0) {
             debugPrint('[Player] No local position, using server: ${serverPos}s');
@@ -2237,8 +2277,16 @@ class AudioPlayerService extends ChangeNotifier {
       debugPrint('[Player] Server position is ahead: server=${serverPos}s vs local=${startTime}s — using server');
       startTime = serverPos;
     } else if (startTime > 0) {
+      // Skip the staleness override if we have a pending local sync: the
+      // server's lastUpdate can be newer than the local timestamp for reasons
+      // unrelated to listening progress, so trusting it would clobber offline
+      // playback we haven't shipped yet. Also skip if local is meaningfully
+      // ahead of server - a multi-minute gap is real listening progress, not
+      // a save race.
       bool useServer = false;
-      if (localTs > 0) {
+      final hasPending = await _progressSync.hasPendingSync(pKey);
+      final gap = startTime - serverPos;
+      if (localTs > 0 && !hasPending && gap <= SyncLogic.localAheadSafetySeconds) {
         try {
           final serverProgress = await api.getItemProgress(pKey);
           final serverLastUpdate = (serverProgress?['lastUpdate'] as num?)?.toInt() ?? 0;
@@ -2250,7 +2298,13 @@ class AudioPlayerService extends ChangeNotifier {
         } catch (_) {}
       }
       if (!useServer) {
-        debugPrint('[Player] Local position is ahead: local=${startTime}s vs server=${serverPos}s — keeping local');
+        if (hasPending) {
+          debugPrint('[Player] Local position is ahead: local=${startTime}s vs server=${serverPos}s — keeping local (pending sync)');
+        } else if (gap > SyncLogic.localAheadSafetySeconds) {
+          debugPrint('[Player] Local position is ahead: local=${startTime}s vs server=${serverPos}s — keeping local (gap ${gap.toStringAsFixed(1)}s exceeds safety threshold)');
+        } else {
+          debugPrint('[Player] Local position is ahead: local=${startTime}s vs server=${serverPos}s — keeping local');
+        }
       }
     } else if (serverPos > 0) {
       debugPrint('[Player] No local position, using server: ${serverPos}s');
@@ -2621,6 +2675,8 @@ class AudioPlayerService extends ChangeNotifier {
     _lastNotifiedChapterIndex = -1;
     _lastSeekTargetSeconds = null;
     _lastSeekTime = null;
+    _lastIndexAdvanceTime = null;
+    _iosLastTrackRecoveryAttempts = 0;
     _indexSub?.cancel();
     _indexSub = null;
     _syncSub?.cancel();
@@ -2897,6 +2953,37 @@ class AudioPlayerService extends ChangeNotifier {
             final manualOffline = (_prefs ?? await SharedPreferences.getInstance())
                 .getBool('manual_offline_mode') ?? false;
 
+            // If we're online but lost the playback session (e.g. pause-
+            // timeout closed it and _resumeServerSync silently failed when
+            // playback resumed), recreate it before the accumulator branch.
+            // Without this the offline accumulator fills for hours and gets
+            // dumped later as one phantom session with startTime==lastTime.
+            if (!manualOffline &&
+                !_isOfflineMode &&
+                _playbackSessionId == null &&
+                _api != null &&
+                _currentItemId != null &&
+                !_recreatingSession) {
+              _recreatingSession = true;
+              try {
+                final sessionData = _currentEpisodeId != null
+                    ? await _api!.startEpisodePlaybackSession(
+                        _currentItemId!, _currentEpisodeId!)
+                    : await _api!.startPlaybackSession(_currentItemId!);
+                if (sessionData != null) {
+                  _playbackSessionId = sessionData['id'] as String?;
+                  if (_playbackSessionId != null) {
+                    debugPrint('[Player] Recreated session in sync tick: '
+                        '$_playbackSessionId');
+                  }
+                }
+              } catch (e) {
+                debugPrint('[Player] Session recreate in sync tick failed: $e');
+              } finally {
+                _recreatingSession = false;
+              }
+            }
+
             if (manualOffline || _isOfflineMode || _playbackSessionId == null) {
               // Offline or no session - accumulate listening time locally
               final progressKey = _currentEpisodeId != null
@@ -3059,6 +3146,46 @@ class AudioPlayerService extends ChangeNotifier {
     if (_isCompletingBook) return; // prevent re-entry
     _isCompletingBook = true;
 
+    // ── iOS premature last-track completion guard (GH #219) ──
+    // iOS ConcatenatingAudioSource sometimes fires ProcessingState.completed
+    // when advancing to the final item without actually rendering its audio.
+    // Symptoms: _currentTrackIndex just flipped to the last track, completion
+    // fires within seconds (impossible to have played through a multi-minute
+    // last track that fast). Spurious-completion check below can't catch this
+    // because the position-getter math (trackRel + offset[last]) lands at
+    // total duration. Recovery: seek a hair into the last track and resume,
+    // which forces AVPlayer to reload that single item correctly.
+    if (Platform.isIOS && _trackStartOffsets.length > 2) {
+      final lastIdx = _trackStartOffsets.length - 2;
+      final lastTrackStart = _trackStartOffsets[lastIdx];
+      final lastTrackDur = _trackStartOffsets[lastIdx + 1] - lastTrackStart;
+      final advanceTime = _lastIndexAdvanceTime;
+      final msSinceAdvance = advanceTime == null
+          ? -1
+          : DateTime.now().difference(advanceTime).inMilliseconds;
+      if (_currentTrackIndex == lastIdx &&
+          lastTrackDur > 5.0 &&
+          msSinceAdvance >= 0 &&
+          msSinceAdvance < 3000 &&
+          _iosLastTrackRecoveryAttempts < _maxIosLastTrackRecoveries) {
+        _iosLastTrackRecoveryAttempts++;
+        final recoveryTarget = lastTrackStart + 0.5;
+        debugPrint('[Player] iOS premature last-track completion detected '
+            '(idx=$_currentTrackIndex/$lastIdx, lastTrackDur=${lastTrackDur.toStringAsFixed(1)}s, '
+            'advance=${msSinceAdvance}ms ago) — recovery attempt $_iosLastTrackRecoveryAttempts: '
+            'seeking to ${recoveryTarget.toStringAsFixed(1)}s');
+        _logEvent(PlaybackEventType.pause, detail: 'iOS premature completion blocked');
+        _isCompletingBook = false;
+        try {
+          await _seekAbsolute(recoveryTarget);
+          await _player?.play();
+        } catch (e) {
+          debugPrint('[Player] iOS last-track recovery failed: $e');
+        }
+        return;
+      }
+    }
+
     // Sanity check: if we're not near the end of the book, this is a spurious
     // completion signal (iOS AVPlayer can fire completed on audio interruptions,
     // buffer errors, etc.). Save current position and stop - don't mark finished
@@ -3185,6 +3312,7 @@ class AudioPlayerService extends ChangeNotifier {
   bool _syncRecoveryInProgress = false;
   bool _positionSyncInProgress = false;
   int _positionSyncFailures = 0;
+  bool _recreatingSession = false;
 
   Future<void> _syncToServer(Duration pos, {int? timeListenedOverride}) async {
     if (_api == null || _playbackSessionId == null) return;
@@ -3413,6 +3541,7 @@ class AudioPlayerService extends ChangeNotifier {
   /// Runs in the background so play() returns instantly.
   void _resumeServerSync() async {
     if (_api == null || _currentItemId == null) return;
+    if (_recreatingSession) return;
     final manualOffline = (_prefs ?? await SharedPreferences.getInstance())
         .getBool('manual_offline_mode') ?? false;
     if (manualOffline || _isOfflineMode) {
@@ -3423,6 +3552,7 @@ class AudioPlayerService extends ChangeNotifier {
     // (e.g. jumped to a different chapter) — respect the intentional seek.
     final skipOverride = _seekedWhilePaused;
     _seekedWhilePaused = false;
+    _recreatingSession = true;
     try {
       if (_playbackSessionId == null) {
         // Session expired - re-create it
@@ -3461,6 +3591,8 @@ class AudioPlayerService extends ChangeNotifier {
       _lastAutoRewindAmount = 0;
     } catch (e) {
       debugPrint('[Player] Failed to check server progress on resume: $e');
+    } finally {
+      _recreatingSession = false;
     }
   }
 

@@ -469,7 +469,6 @@ class UpcomingReleasesService extends ChangeNotifier {
   static const _maxAsinAttempts = 5;
 
   Future<String?> _resolveSeriesAsin(List<dynamic> books, String seriesName, int gen) async {
-    int booksWithAsin = 0;
     int audnexusAttempts = 0;
     for (final book in books) {
       if (_generation != gen) return null;
@@ -479,7 +478,6 @@ class UpcomingReleasesService extends ChangeNotifier {
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
       final bookAsin = metadata['asin'] as String? ?? '';
       if (bookAsin.isEmpty) continue;
-      booksWithAsin++;
       if (audnexusAttempts >= _maxAsinAttempts) break;
       audnexusAttempts++;
 

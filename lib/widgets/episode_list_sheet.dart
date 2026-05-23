@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../l10n/app_localizations.dart';
+import '../services/wording.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
@@ -80,6 +81,12 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
   String get _description => _metadata['description'] as String? ?? '';
   List<String> get _genres =>
       (_metadata['genres'] as List<dynamic>?)?.cast<String>() ?? [];
+  // ABS keeps tags on the media object, not in metadata. Fall back to
+  // metadata in case some endpoint nests them differently.
+  List<String> get _tags => ((_media['tags'] as List<dynamic>?)
+          ?? (_metadata['tags'] as List<dynamic>?)
+          ?? const [])
+      .cast<String>();
   String get _language => _metadata['language'] as String? ?? '';
   bool get _explicit => PlayerSettings.showExplicitBadge && _metadata['explicit'] == true;
   String get _type => _metadata['type'] as String? ?? '';
@@ -125,10 +132,14 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
       return;
     }
 
-    // Otherwise fetch the full item
+    // Otherwise fetch the full item from the server. Skip when offline so
+    // the sheet doesn't sit on a loading spinner for the full network timeout
+    // (downloaded podcasts populate from the section entity above; everything
+    // else just shows the empty state immediately).
+    final lib = context.read<LibraryProvider>();
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
-    if (api == null) {
+    if (api == null || lib.isOffline) {
       setState(() => _isLoading = false);
       return;
     }
@@ -612,15 +623,26 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
 
               // Metadata chips
               const SizedBox(height: 12),
-              Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
+              Builder(builder: (_) {
+                final unfinishedCount = _episodes.where((e) {
+                  final epId = (e is Map<String, dynamic>) ? (e['id'] as String? ?? '') : '';
+                  if (epId.isEmpty) return false;
+                  final pd = lib.getEpisodeProgressData(_itemId, epId);
+                  final isFinished = pd?['isFinished'] == true;
+                  return !isFinished;
+                }).length;
+                return Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
                 if (!_isLoading) _chip(Icons.podcasts_rounded, l.episodeListEpisodeCount(_episodes.length)),
+                if (unfinishedCount > 0) _chip(Icons.fiber_new_rounded, l.episodeListUnfinishedCount(unfinishedCount), highlight: true),
                 if (_autoDownloadEnabled) _chip(Icons.downloading_rounded, l.episodeListAutoDownloadChip),
                 if (_subscribed) _chip(Icons.notifications_active_rounded, l.episodeListSubscribedChip, highlight: true),
                 ..._genres.take(3).map((g) => _chip(Icons.tag_rounded, g)),
+                ..._tags.take(5).map((t) => _chip(Icons.local_offer_outlined, t)),
                 if (_language.isNotEmpty) _chip(Icons.language_rounded, _language.toUpperCase()),
                 if (_explicit) _chip(Icons.explicit_rounded, l.episodeListExplicitChip),
                 if (_type.isNotEmpty && _type != 'episodic') _chip(Icons.list_rounded, _type[0].toUpperCase() + _type.substring(1)),
-              ]),
+              ]);
+              }),
 
               // Episodes section header
               const SizedBox(height: 16),
@@ -772,7 +794,7 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
                                 lib.absorbingItemCache[absorbKey] = cached;
                                 HapticFeedback.mediumImpact();
                                 if (context.mounted) {
-                                  showOverlayToast(context, l.episodeListAddedToAbsorbing(epTitle), icon: Icons.add_circle_outline_rounded);
+                                  showOverlayToast(context, Wording.of(context).episodeListAddedToAbsorbing(epTitle), icon: Icons.add_circle_outline_rounded);
                                 }
                                 return false;
                               },

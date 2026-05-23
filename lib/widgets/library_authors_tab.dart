@@ -7,16 +7,18 @@ class LibraryAuthorsTab extends StatelessWidget {
   final List<Map<String, dynamic>> authors;
   final bool isLoadingAuthors;
   final bool authorsLoaded;
-  final ScrollController scrollController;
   final Future<void> Function() onRefresh;
+  final Widget? headerSliver;
+  final ScrollController? scrollController;
 
   const LibraryAuthorsTab({
     super.key,
     required this.authors,
     required this.isLoadingAuthors,
     required this.authorsLoaded,
-    required this.scrollController,
     required this.onRefresh,
+    this.headerSliver,
+    this.scrollController,
   });
 
   @override
@@ -25,51 +27,69 @@ class LibraryAuthorsTab extends StatelessWidget {
     final tt = Theme.of(context).textTheme;
     final l = AppLocalizations.of(context)!;
 
+    final headers = <Widget>[if (headerSliver != null) headerSliver!];
+
+    Widget body;
     if (isLoadingAuthors) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (authors.isEmpty && authorsLoaded) {
-      return RefreshIndicator(
-        onRefresh: onRefresh,
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverFillRemaining(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.people_outline_rounded,
-                        size: 56, color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
-                    const SizedBox(height: 12),
-                    Text(l.libraryNoAuthorsFound,
-                        style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
-                  ],
-                ),
+      body = CustomScrollView(
+        controller: scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          ...headers,
+          const SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ],
+      );
+    } else if (authors.isEmpty && authorsLoaded) {
+      body = CustomScrollView(
+        controller: scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          ...headers,
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.people_outline_rounded,
+                      size: 56, color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
+                  const SizedBox(height: 12),
+                  Text(l.libraryNoAuthorsFound,
+                      style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
+      );
+    } else {
+      body = CustomScrollView(
+        controller: scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          ...headers,
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, libraryGridBottomPadding),
+            sliver: SliverGrid(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: responsiveGridCount(context),
+                childAspectRatio: 0.68,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => GridAuthorTile(author: authors[index]),
+                childCount: authors.length,
+              ),
+            ),
+          ),
+        ],
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      child: GridView.builder(
-        controller: scrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: responsiveGridCount(context),
-          childAspectRatio: 0.68,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-        ),
-        itemCount: authors.length,
-        itemBuilder: (context, index) {
-          return GridAuthorTile(author: authors[index]);
-        },
-      ),
-    );
+    return RefreshIndicator(onRefresh: onRefresh, child: body);
   }
 }

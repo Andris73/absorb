@@ -64,8 +64,15 @@ class _GridBookTileState extends State<GridBookTile> {
     final isDownloaded = _dl.isDownloaded(itemId);
     final isFinished = lib.getProgressData(itemId)?['isFinished'] == true;
     final isSubscribed = lib.isPodcastLibrary && lib.isPodcastSubscribed(itemId);
+    final unfinishedCount =
+        lib.isPodcastLibrary ? lib.getUnfinishedEpisodeCount(widget.item) : 0;
 
     return GestureDetector(
+      // opaque so taps on the blank space below the title (the tile's tall
+      // aspect ratio leaves a gap when the Column children stop short)
+      // still trigger the onTap. Without this, taps in that blank strip
+      // miss the Column's hit test and nothing happens.
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         if (itemId.isNotEmpty) {
           if (lib.isPodcastLibrary) {
@@ -105,10 +112,33 @@ class _GridBookTileState extends State<GridBookTile> {
                       ),
                     ),
 
-                  // Subscribed bell
-                  if (isSubscribed)
+                  // Unplayed-episode count badge (podcasts only)
+                  if (unfinishedCount > 0)
                     Positioned(
                       top: 4,
+                      right: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: cs.primary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$unfinishedCount',
+                          style: TextStyle(
+                            color: cs.onPrimary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // Subscribed bell (sits below unplayed badge when both show)
+                  if (isSubscribed)
+                    Positioned(
+                      top: unfinishedCount > 0 ? 26 : 4,
                       right: 4,
                       child: Container(
                         padding: const EdgeInsets.all(3),
@@ -124,7 +154,7 @@ class _GridBookTileState extends State<GridBookTile> {
                   // Explicit badge
                   if (isExplicit)
                     Positioned(
-                      top: isSubscribed ? 22 : 4,
+                      top: (unfinishedCount > 0 ? 26 : 4) + (isSubscribed ? 22 : 0),
                       right: 4,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
@@ -246,18 +276,18 @@ class _GridBookTileState extends State<GridBookTile> {
     }
     if (coverUrl.startsWith('/')) {
       return BlurPaddedCover(
-        child: Image.file(File(coverUrl), fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => placeholder),
         blurChild: Image.file(File(coverUrl), fit: BoxFit.cover,
             errorBuilder: (_, __ ,___) => const SizedBox.shrink()),
+        child: Image.file(File(coverUrl), fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => placeholder),
       );
     }
     return BlurPaddedCover(
+      blurChild: CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover,
+          httpHeaders: headers, errorWidget: (_, __, ___) => const SizedBox.shrink()),
       child: CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.contain,
           httpHeaders: headers, placeholder: (_, __) => placeholder,
           errorWidget: (_, __, ___) => placeholder),
-      blurChild: CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover,
-          httpHeaders: headers, errorWidget: (_, __, ___) => const SizedBox.shrink()),
     );
   }
 }
@@ -288,37 +318,31 @@ class _StackedCovers extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    final count = coverUrls.length.clamp(1, 4);
+    // Cap at 3 stacked covers (front + two back). 4 was visually busy and the
+    // extra image decodes + per-shadow blur repaints made the Series grid
+    // visibly janky during scroll.
+    final count = coverUrls.length.clamp(1, 3);
 
     const inset = 5.0;
     final totalOffset = count > 1 ? inset * (count - 1) : 0.0;
 
     return AspectRatio(
       aspectRatio: coverAspectRatio,
-      child: Stack(
+      child: RepaintBoundary(
+        child: Stack(
         children: [
-          // Back covers (furthest back first so front paints on top)
+          // Back covers (furthest back first so front paints on top). Drop
+          // the per-back-cover BoxShadow blur — front cover's shadow is
+          // enough visual depth and blurred shadows are expensive.
           for (int i = count - 1; i > 0; i--)
             Positioned(
               top: (totalOffset - i * inset),
               right: (totalOffset - i * inset),
               left: i * inset,
               bottom: i * inset,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.15),
-                      blurRadius: 2,
-                      offset: const Offset(-1, 1),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: _coverImage(coverUrls[i]),
-                ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: _coverImage(coverUrls[i]),
               ),
             ),
           // Front cover (bottom-left)
@@ -421,6 +445,7 @@ class _StackedCovers extends StatelessWidget {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -496,6 +521,7 @@ class GridSeriesTile extends StatelessWidget {
     final seriesProgress = itemIds.isNotEmpty ? totalProgress / itemIds.length : 0.0;
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         if (seriesId.isNotEmpty) {
           showSeriesBooksSheet(
@@ -606,18 +632,20 @@ class GridSeriesTileDirect extends StatelessWidget {
     final seriesProgress = books.isNotEmpty ? totalProgress / books.length : 0.0;
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
-        if (seriesId.isNotEmpty) {
-          showSeriesBooksSheet(
-            context,
-            seriesName: seriesName,
-            seriesId: seriesId,
-            books: const [],
-            serverUrl: auth.serverUrl,
-            token: auth.token,
-            parentSeriesId: parentSeriesId,
-          );
-        }
+        // When seriesId is missing (e.g. collapsed-series tiles inferred from
+        // book metadata in the author sheet), open the sheet with the books
+        // we already have rather than dropping the tap silently.
+        showSeriesBooksSheet(
+          context,
+          seriesName: seriesName,
+          seriesId: seriesId.isEmpty ? null : seriesId,
+          books: seriesId.isEmpty ? books : const [],
+          serverUrl: auth.serverUrl,
+          token: auth.token,
+          parentSeriesId: parentSeriesId,
+        );
       },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -686,6 +714,7 @@ class GridAuthorTile extends StatelessWidget {
     final headers = lib.mediaHeaders;
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         if (authorId.isNotEmpty) {
           showAuthorDetailSheet(context, authorId: authorId, authorName: name);
@@ -765,3 +794,4 @@ class GridAuthorTile extends StatelessWidget {
     );
   }
 }
+

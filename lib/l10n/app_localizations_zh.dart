@@ -251,7 +251,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get libraryTitle => '媒体库';
 
   @override
-  String get librarySearchBooksHint => '搜索书籍、系列和作者...';
+  String get librarySearchBooksHint => '搜索书籍、系列、作者、旁白...';
 
   @override
   String get librarySearchShowsHint => '搜索播客和单集...';
@@ -264,6 +264,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get libraryTabAuthors => '作者';
+
+  @override
+  String get libraryTabNarrators => '旁白';
 
   @override
   String get libraryNoBooks => '未找到书籍';
@@ -292,10 +295,18 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String libraryNoBooksWithTag(String tag) {
+    return 'No books tagged \"$tag\"';
+  }
+
+  @override
   String get libraryClearFilter => '清除筛选';
 
   @override
   String get libraryNoAuthorsFound => '未找到作者';
+
+  @override
+  String get libraryNoNarratorsFound => '未找到旁白';
 
   @override
   String get libraryNoResults => '未找到结果';
@@ -316,6 +327,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get librarySearchAuthors => '作者';
 
   @override
+  String get librarySearchTags => 'Tags';
+
+  @override
+  String get librarySearchGenres => 'Genres';
+
+  @override
   String librarySeriesCount(int count) {
     return '$count 个系列';
   }
@@ -323,6 +340,11 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String libraryAuthorsCount(int count) {
     return '$count 位作者';
+  }
+
+  @override
+  String libraryNarratorsCount(int count) {
+    return '$count 位旁白';
   }
 
   @override
@@ -385,10 +407,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get genre => '分类';
 
   @override
+  String get tag => 'Tag';
+
+  @override
   String get clearFilter => '清除筛选';
 
   @override
   String get noGenresFound => '未找到分类';
+
+  @override
+  String get noTagsFound => 'No tags found';
 
   @override
   String get asc => '升序';
@@ -653,6 +681,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appShellSettingsTab => '设置';
 
   @override
+  String get appShellDiscoverTab => '发现';
+
+  @override
+  String get appShellShowsTab => '节目';
+
+  @override
   String get appShellPressBackToExit => '再按一次返回键退出';
 
   @override
@@ -660,6 +694,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sectionAppearance => '外观';
+
+  @override
+  String get languageLabel => '语言';
+
+  @override
+  String get languageSystemDefault => '跟随系统';
+
+  @override
+  String get languageHelpTranslateInvite => '想帮 Absorb 翻译成你的语言吗？';
 
   @override
   String get themeLabel => '主题';
@@ -831,6 +874,57 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get queueModeAuto => '自动';
+
+  @override
+  String get queueModePlaylist => 'Playlist';
+
+  @override
+  String get queueModeInfoPlaylist => 'Playlist Queue';
+
+  @override
+  String get queueModeInfoPlaylistDesc =>
+      'Plays items in order from a chosen playlist, skipping anything already finished. Stops at the end of the list.';
+
+  @override
+  String get queuePlaylistPickerTitle => 'Choose a playlist';
+
+  @override
+  String get queuePlaylistNone => 'No playlist selected';
+
+  @override
+  String queuePlaylistActiveLabel(String name) {
+    return 'Playlist: $name';
+  }
+
+  @override
+  String get queueModePlaylistHint =>
+      'Start a playlist queue by opening a playlist on the home page.';
+
+  @override
+  String get exit => 'Exit';
+
+  @override
+  String upNext(String label) {
+    return 'Up next: $label';
+  }
+
+  @override
+  String get nothingUpNext => 'Nothing up next';
+
+  @override
+  String get showUpNextLabel => 'Show Up next on the absorbing page';
+
+  @override
+  String get openSeries => 'Open series';
+
+  @override
+  String get openPlaylist => 'Open playlist';
+
+  @override
+  String get playlistPlayAction => 'Play playlist';
+
+  @override
+  String get playlistAllFinished => 'All finished';
 
   @override
   String get queueModeBooks => '书籍';
@@ -1608,6 +1702,203 @@ class AppLocalizationsZh extends AppLocalizations {
       'ReadMeABook 是一个用于请求和下载有声书的自托管服务，需要由您的服务器管理员安装和设置。';
 
   @override
+  String get rmabConfigTitle => 'Connect ReadMeABook';
+
+  @override
+  String get rmabConfigExplainerAdmin =>
+      'ReadMeABook is a self-hosted service for requesting audiobooks. Generate an API token in RMAB under Admin Dashboard > Settings > API, then paste the server URL and token below. Absorb doesn\'t host or download any content, it just sends requests to your server.';
+
+  @override
+  String get rmabConfigExplainerUser =>
+      'ReadMeABook is a self-hosted service for requesting audiobooks. Ask your server admin for the RMAB URL and an API token. Absorb doesn\'t host or download any content, it just sends requests to your server.';
+
+  @override
+  String get rmabConfigLearnMore => 'Learn more about ReadMeABook';
+
+  @override
+  String get rmabConfigBaseUrlLabel => 'RMAB server URL';
+
+  @override
+  String get rmabConfigBaseUrlHint => 'https://rmab.example.com';
+
+  @override
+  String get rmabConfigTokenLabel => 'API token';
+
+  @override
+  String get rmabConfigTokenHint => 'rmab_...';
+
+  @override
+  String get rmabConfigLegacyUrlLabel => 'Web UI login URL (optional)';
+
+  @override
+  String get rmabConfigLegacyUrlHint => 'https://rmab.example.com/?token=...';
+
+  @override
+  String get rmabConfigLegacyUrlHelp =>
+      'Paste your auto-login URL so \'Open in browser view\' lands you signed in. Leave blank to use a regular login.';
+
+  @override
+  String get rmabConfigConnect => 'Connect';
+
+  @override
+  String get rmabConfigDisconnect => 'Disconnect';
+
+  @override
+  String get rmabConfigOpenWebView => 'Open in browser view';
+
+  @override
+  String rmabConfigConnectedAs(String name) {
+    return 'Connected as $name';
+  }
+
+  @override
+  String get rmabConfigErrorInvalidUrl => 'Enter a valid http(s) URL';
+
+  @override
+  String get rmabConfigErrorMissingToken => 'Enter your API token';
+
+  @override
+  String get rmabConfigErrorUnauthorized => 'Token rejected by server';
+
+  @override
+  String get rmabConfigErrorForbidden =>
+      'This token isn\'t allowed for that action';
+
+  @override
+  String get rmabConfigErrorNetwork => 'Couldn\'t reach RMAB. Check the URL.';
+
+  @override
+  String get rmabConfigErrorGeneric => 'Couldn\'t connect';
+
+  @override
+  String get rmabConfigSavedSnackbar => 'ReadMeABook connected';
+
+  @override
+  String get rmabConfigDisconnectedSnackbar => 'ReadMeABook disconnected';
+
+  @override
+  String get rmabRequestCta => 'Request via ReadMeABook';
+
+  @override
+  String get rmabSearchHeader => 'Request via ReadMeABook';
+
+  @override
+  String get rmabSearchHint => 'Search by title or author';
+
+  @override
+  String get rmabSearchEmpty => 'No matches on your ReadMeABook server';
+
+  @override
+  String get rmabSearchError => 'Couldn\'t search ReadMeABook';
+
+  @override
+  String get rmabSearchPrompt => 'Type a title or author to search';
+
+  @override
+  String get rmabSearchFooterPrompt => 'Looking for something else?';
+
+  @override
+  String rmabSearchFooterCta(String query) {
+    return 'Search ReadMeABook for \"$query\"';
+  }
+
+  @override
+  String get rmabBookDetailExplainer =>
+      'This request will be sent through your ReadMeABook server. The admin will review and process it. You can track it under My Requests on the ReadMeABook tile.';
+
+  @override
+  String get rmabBookAlreadyAvailable => 'Already in your library';
+
+  @override
+  String get rmabBookAlreadyRequested => 'Already requested';
+
+  @override
+  String get rmabRequestSubmitting => 'Submitting…';
+
+  @override
+  String get rmabRequestSent => 'Request sent';
+
+  @override
+  String get rmabRequestErrorAlreadyAvailable => 'Already in your library';
+
+  @override
+  String get rmabRequestErrorBeingProcessed => 'Already being processed';
+
+  @override
+  String get rmabRequestErrorDuplicate => 'You\'ve already requested this';
+
+  @override
+  String get rmabRequestErrorValidation => 'Couldn\'t send the request';
+
+  @override
+  String get rmabRequestErrorUserNotFound =>
+      'Token user no longer exists. Reconnect ReadMeABook.';
+
+  @override
+  String get rmabRequestErrorIgnored => 'This book is on your ignore list';
+
+  @override
+  String get rmabRequestErrorGeneric => 'Couldn\'t send the request';
+
+  @override
+  String get rmabRequestErrorTokenRejected =>
+      'Token rejected by server. Reconnect ReadMeABook.';
+
+  @override
+  String get rmabMyRequestsTab => 'My Requests';
+
+  @override
+  String get rmabSetupTab => 'Setup';
+
+  @override
+  String get rmabMyRequestsEmpty => 'You haven\'t requested any books yet';
+
+  @override
+  String get rmabMyRequestsError => 'Couldn\'t load requests';
+
+  @override
+  String get rmabMyRequestsRefresh => 'Refresh';
+
+  @override
+  String get rmabRequestDetailTitle => 'Request details';
+
+  @override
+  String get rmabRequestDetailStatus => 'Status';
+
+  @override
+  String get rmabRequestDetailRequestedOn => 'Requested on';
+
+  @override
+  String get rmabRequestDetailCompletedOn => 'Completed on';
+
+  @override
+  String get rmabRequestDetailProgress => 'Progress';
+
+  @override
+  String get rmabStatusActive => 'In progress';
+
+  @override
+  String get rmabStatusWaiting => 'Waiting';
+
+  @override
+  String get rmabStatusAvailable => 'Available';
+
+  @override
+  String get rmabStatusDownloaded => 'Downloaded';
+
+  @override
+  String get rmabStatusFailed => 'Failed';
+
+  @override
+  String get rmabStatusCancelled => 'Cancelled';
+
+  @override
+  String get rmabStatusDenied => 'Denied';
+
+  @override
+  String get rmabStatusUnknown => 'Unknown';
+
+  @override
   String narratedBy(String narrator) {
     return '朗读者: $narrator';
   }
@@ -1679,6 +1970,56 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get editServerDetails => '编辑服务器详情';
+
+  @override
+  String get encodeTab => 'Encode';
+
+  @override
+  String get codec => 'Codec';
+
+  @override
+  String get bitrate => 'Bitrate';
+
+  @override
+  String get channels => 'Channels';
+
+  @override
+  String get mono => 'Mono';
+
+  @override
+  String get stereo => 'Stereo';
+
+  @override
+  String get startM4bEncode => 'Start M4B Encode';
+
+  @override
+  String get encodeStarted => 'M4B encode started';
+
+  @override
+  String get encodeFailed => 'Failed to start encode';
+
+  @override
+  String get encodeFinished => 'M4B encode finished';
+
+  @override
+  String get currentlyLabel => 'Currently:';
+
+  @override
+  String encodeOutputPathNote(String path) {
+    return 'Finished M4B will be put into your audiobook folder at: $path/';
+  }
+
+  @override
+  String encodeBackupNote(String itemId) {
+    return 'A backup of your original audio files will be stored in: /metadata/cache/items/$itemId/. Make sure to periodically purge items cache.';
+  }
+
+  @override
+  String get encodeTimeNote => 'Encoding can take up to 30 minutes.';
+
+  @override
+  String get encodeRescanNote =>
+      'If you have the watcher disabled you will need to re-scan this audiobook afterwards.';
 
   @override
   String get aboutSection => '关于';
@@ -1965,10 +2306,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get yearLabel => '年份';
 
   @override
-  String get languageLabel => '语言';
+  String get genresLabel => '分类';
 
   @override
-  String get genresLabel => '分类';
+  String get tagsLabel => 'Tags';
 
   @override
   String get commaSeparated => '逗号分隔';
@@ -3316,6 +3657,17 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String episodeListUnfinishedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count unfinished',
+      one: '1 unfinished',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get episodeListAutoDownloadChip => 'Auto-Download';
 
   @override
@@ -4644,4 +4996,53 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get speedPresetsReset => '速度预设已重置';
+
+  @override
+  String get editAuthor => 'Edit author';
+
+  @override
+  String get authorName => 'Name';
+
+  @override
+  String get authorImage => 'Author image';
+
+  @override
+  String get authorRemoveImage => 'Remove image';
+
+  @override
+  String get authorRemoveImageTitle => 'Remove author image?';
+
+  @override
+  String get authorRemoveImageConfirm =>
+      'This deletes the image on the server.';
+
+  @override
+  String get authorImageRemoved => 'Image removed';
+
+  @override
+  String get authorImageFailed => 'Couldn\'t update author image';
+
+  @override
+  String get authorUpdated => 'Author updated';
+
+  @override
+  String get authorUpdateFailed => 'Couldn\'t update author';
+
+  @override
+  String get authorMatched => 'Author updated from match';
+
+  @override
+  String get authorNoMatchFound => 'No match found';
+
+  @override
+  String authorMergedInto(String name) {
+    return 'Merged into $name';
+  }
+
+  @override
+  String get authorQuickMatchHint =>
+      'Pull name, ASIN, description and image from Audible for the chosen region.';
+
+  @override
+  String get region => 'Region';
 }

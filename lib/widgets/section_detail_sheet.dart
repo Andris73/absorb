@@ -4,12 +4,28 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../l10n/app_localizations.dart';
+import '../services/wording.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import 'book_detail_sheet.dart';
+import 'episode_detail_sheet.dart';
 import 'overlay_toast.dart';
 import 'stackable_sheet.dart';
+
+/// Open the right detail sheet for a section entity: episode detail for
+/// podcast entries (which carry a `recentEpisode`), book detail otherwise.
+/// Falls back to book detail if a podcast entry is missing its episode payload.
+void _openEntityDetail(BuildContext context, Map<String, dynamic> item) {
+  final recentEpisode = item['recentEpisode'] as Map<String, dynamic>?;
+  if (recentEpisode != null) {
+    EpisodeDetailSheet.show(context, item, recentEpisode);
+    return;
+  }
+  final itemId = item['id'] as String? ?? '';
+  if (itemId.isEmpty) return;
+  showBookDetailSheet(context, itemId);
+}
 
 /// Generic detail sheet for any home screen section (Continue Listening,
 /// Recently Added, Downloads, etc.). Shows items in a list or 3-column grid
@@ -145,7 +161,7 @@ class _SectionDetailSheetState extends State<SectionDetailSheet> {
                 borderRadius: BorderRadius.circular(14)),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
-              onTap: () => showBookDetailSheet(context, itemId),
+              onTap: () => _openEntityDetail(context, item),
               borderRadius: BorderRadius.circular(14),
               child: SizedBox(
                 height: 112,
@@ -200,7 +216,7 @@ class _SectionDetailSheetState extends State<SectionDetailSheet> {
             lib.absorbingItemCache[itemId] = Map<String, dynamic>.from(item);
             HapticFeedback.mediumImpact();
             if (context.mounted) {
-              showOverlayToast(context, l.sectionDetailAddedToAbsorbing(title),
+              showOverlayToast(context, Wording.of(context).sectionDetailAddedToAbsorbing(title),
                   icon: Icons.add_circle_outline_rounded);
             }
             return false;
@@ -254,7 +270,7 @@ class _SectionDetailSheetState extends State<SectionDetailSheet> {
         final isDownloaded = DownloadService().isDownloaded(itemId);
 
         return GestureDetector(
-          onTap: () => showBookDetailSheet(context, itemId),
+          onTap: () => _openEntityDetail(context, item),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

@@ -678,9 +678,12 @@ class DownloadService extends ChangeNotifier {
                 if (!dir.existsSync()) dir.createSync(recursive: true);
                 final coverFile = File('${dir.path}/cover.jpg');
                 await coverFile.writeAsBytes(resp.bodyBytes);
+                final evicted = PaintingBinding.instance.imageCache
+                    .evict(FileImage(coverFile));
                 localCoverPath = coverFile.path;
                 needsUpdate = true;
-                debugPrint('[Download] Cached cover for ${info.itemId}');
+                debugPrint('[Download] Cached cover for ${info.itemId} '
+                    '(${resp.bodyBytes.length} bytes, evict=$evicted)');
               }
             } catch (e) {
               debugPrint('[Download] Cover cache failed for ${info.itemId}: $e');
@@ -1208,12 +1211,20 @@ class DownloadService extends ChangeNotifier {
       }
     } catch (_) {}
 
-    // Clean up cached cover image (stored separately in internal storage)
     try {
       final internalBase = await _internalBasePath;
       final coverDir = Directory('$internalBase/$itemId');
+      final coverFile = File('$internalBase/$itemId/cover.jpg');
+      // FileImage caches by path; evict so a re-download at the same path renders fresh.
+      if (coverFile.existsSync()) {
+        final evicted = PaintingBinding.instance.imageCache
+            .evict(FileImage(coverFile));
+        debugPrint('[Download] evict cover ${coverFile.path} -> $evicted');
+      }
       if (coverDir.existsSync()) coverDir.deleteSync(recursive: true);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Download] cover cleanup failed: $e');
+    }
 
     _downloads.remove(itemId);
     await _save();

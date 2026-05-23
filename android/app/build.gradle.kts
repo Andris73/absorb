@@ -73,7 +73,7 @@ android {
     applicationVariants.all {
         outputs.all {
             (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl)
-                .outputFileName = "absorb-${versionName}+${versionCode}.apk"
+                .outputFileName = "absorb-${versionName}-${versionCode}.apk"
         }
     }
 }

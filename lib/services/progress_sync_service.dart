@@ -72,7 +72,8 @@ class ProgressSyncService {
   /// Cache server-known progress locally without marking it as a pending sync.
   /// Skips items with a pending sync so unsynced local writes (e.g. a finished
   /// state saved while offline) are not clobbered by a stale server snapshot.
-  Future<void> cacheServerProgress({
+  /// Returns true if the cache was written, false if it was refused.
+  Future<bool> cacheServerProgress({
     required String itemId,
     required double currentTime,
     required double duration,
@@ -81,7 +82,7 @@ class ProgressSyncService {
     final pendingList = await ScopedPrefs.getStringList('pending_syncs');
     if (pendingList.contains(itemId)) {
       debugPrint('[Sync] Skipping server cache for $itemId - pending local sync would be clobbered (isFinished=$isFinished)');
-      return;
+      return false;
     }
     final data = {
       'itemId': itemId,
@@ -92,6 +93,7 @@ class ProgressSyncService {
       'timestamp': 0,
     };
     await ScopedPrefs.setString('progress_$itemId', jsonEncode(data));
+    return true;
   }
 
   /// Get locally saved progress for an item.
@@ -115,6 +117,13 @@ class ProgressSyncService {
   Future<int> getSavedTimestamp(String itemId) async {
     final data = await getLocal(itemId);
     return (data?['timestamp'] as num?)?.toInt() ?? 0;
+  }
+
+  /// Whether the given item has unsynced local progress. Callers can use this
+  /// to avoid clobbering offline-listening progress with a stale server snapshot.
+  Future<bool> hasPendingSync(String itemId) async {
+    final pendingList = await ScopedPrefs.getStringList('pending_syncs');
+    return pendingList.contains(itemId);
   }
 
   /// Delete locally saved progress for an item.
@@ -234,15 +243,23 @@ class ProgressSyncService {
               hasOfflineListening: hasOfflineListening,
             )) {
               debugPrint('[Sync] Server is newer for $itemId: server=$serverTime s ($serverTimestamp) vs local=$localTime s ($localTimestamp) — pulling');
-              await cacheServerProgress(
+              final cached = await cacheServerProgress(
                 itemId: itemId,
                 currentTime: serverTime,
                 duration: localDuration,
                 isFinished: serverProgress['isFinished'] as bool? ?? false,
               );
-              final updated = await ScopedPrefs.getStringList('pending_syncs');
-              updated.remove(itemId);
-              await ScopedPrefs.setStringList('pending_syncs', updated);
+              if (cached) {
+                // Pull succeeded - safe to clear pending.
+                final updated = await ScopedPrefs.getStringList('pending_syncs');
+                updated.remove(itemId);
+                await ScopedPrefs.setStringList('pending_syncs', updated);
+              } else {
+                // Clobber guard refused. Keep pending so the next flush retries
+                // and eventually pushes local; otherwise the unsynced local
+                // entry sits in limbo and gets overwritten on next playback.
+                debugPrint('[Sync] Keeping $itemId in pending_syncs after pull was refused by clobber guard');
+              }
               continue;
             }
             debugPrint('[Sync] Local is newer for $itemId: local=$localTime s ($localTimestamp) vs server=$serverTime s ($serverTimestamp) — pushing');

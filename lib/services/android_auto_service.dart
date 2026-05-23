@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 import 'package:audio_service/audio_service.dart';
 
 import 'package:flutter/foundation.dart';
@@ -203,7 +203,29 @@ class AutoLibraryEntry {
 class AndroidAutoService {
   static final AndroidAutoService _instance = AndroidAutoService._();
   factory AndroidAutoService() => _instance;
-  AndroidAutoService._();
+  AndroidAutoService._() {
+    DownloadService().addListener(_onDownloadsChanged);
+  }
+
+  Timer? _downloadsRefreshDebounce;
+  void _onDownloadsChanged() {
+    // Coalesce bursts (multiple state ticks during a download).
+    _downloadsRefreshDebounce?.cancel();
+    _downloadsRefreshDebounce = Timer(const Duration(milliseconds: 500), () async {
+      await _refreshDownloaded();
+      _childrenCache.remove(AutoMediaIds.downloads);
+      _childrenCache.remove(AutoMediaIds.root);
+      if (Platform.isAndroid) {
+        try {
+          // ignore: deprecated_member_use
+          await AudioServiceBackground.notifyChildrenChanged(AutoMediaIds.downloads);
+        } catch (_) {}
+      }
+      try {
+        onServerDataChanged?.call();
+      } catch (_) {}
+    });
+  }
 
   // ── Cached data ──
   List<AutoBookEntry> _continueListening = [];
@@ -220,6 +242,13 @@ class AndroidAutoService {
   DateTime? _lastRefresh;
   bool _isRefreshing = false;
 
+  // Per-parent MediaItem list cache. Returning the same instances on
+  // re-requests is what lets AA preserve scroll position when the user goes
+  // into an item and presses back. Also dedupes the back-to-back getChildren
+  // calls AA fires when it re-renders.
+  final Map<String, List<MediaItem>> _childrenCache = {};
+  final Map<String, Future<List<MediaItem>>> _childrenInFlight = {};
+
   /// Clear all cached browse-tree data and force a fresh server fetch
   /// on the next access.  Call when the user switches accounts or logs out.
   void clearCache() {
@@ -230,7 +259,26 @@ class AndroidAutoService {
     _lastRefresh = null;
     _downloadsReady = false;
     _isRefreshing = false;
+    _childrenCache.clear();
+    _childrenInFlight.clear();
     debugPrint('[AutoBrowse] Cache cleared (user switch/logout)');
+  }
+
+  // Top-level parents whose contents change with server refresh. Drilldown
+  // children (series/author books, podcast episodes) stay cached until the
+  // user explicitly switches accounts so scroll position survives.
+  static const _refreshSensitiveParents = {
+    AutoMediaIds.root,
+    AutoMediaIds.continueListening,
+    AutoMediaIds.recentlyAdded,
+    AutoMediaIds.library,
+    AutoMediaIds.downloads,
+  };
+
+  void _invalidateRefreshSensitiveChildren() {
+    _childrenCache.removeWhere((k, _) =>
+        _refreshSensitiveParents.contains(k) ||
+        k.startsWith(AutoMediaIds.libPrefix));
   }
 
   // ── API helpers ──
@@ -331,6 +379,7 @@ class AndroidAutoService {
       debugPrint('[AutoBrowse] Server refresh failed (downloads still available): $e');
     } finally {
       _isRefreshing = false;
+      _invalidateRefreshSensitiveChildren();
       if (Platform.isAndroid) {
         try {
           // ignore: deprecated_member_use
@@ -349,10 +398,37 @@ class AndroidAutoService {
   /// Must match the authority registered in AndroidManifest.xml.
   static const _coverAuthority = 'com.barnabas.absorb.covers';
 
+  // Per-item updatedAt for cover ?ts= cache busting on AA/CarPlay.
+  static final Map<String, int> _itemUpdatedAt = {};
+
+  static int? coverTsFor(String itemId) => _itemUpdatedAt[itemId];
+
   /// Build a content:// URI for a locally cached cover image.
-  /// Android Auto requires content:// URIs — file:// won't work.
-  static String localCoverUri(String itemId) =>
-      'content://$_coverAuthority/cover/$itemId';
+  /// Android Auto requires content:// URIs, file:// won't work.
+  static String localCoverUri(String itemId) {
+    final ts = _itemUpdatedAt[itemId];
+    final base = 'content://$_coverAuthority/cover/$itemId';
+    return ts != null ? '$base?ts=$ts' : base;
+  }
+
+  static void notifyItemUpdated(String itemId, int updatedAt) {
+    final prev = _itemUpdatedAt[itemId];
+    if (prev == updatedAt) return;
+    _itemUpdatedAt[itemId] = updatedAt;
+    // Children cache holds old cover URIs.
+    _instance._childrenCache.clear();
+    try {
+      onServerDataChanged?.call();
+    } catch (e) {
+      debugPrint('[AutoBrowse] notifyItemUpdated listener threw: $e');
+    }
+    if (Platform.isAndroid) {
+      try {
+        // ignore: deprecated_member_use
+        AudioServiceBackground.notifyChildrenChanged(AutoMediaIds.root);
+      } catch (_) {}
+    }
+  }
 
   Future<void> _refreshDownloaded() async {
     final ds = DownloadService();
@@ -381,16 +457,24 @@ class AndroidAutoService {
         episodeId = dl.itemId.substring(37);
       }
 
-      // Use show ID for podcast episode covers so the CoverContentProvider
-      // can fall back to /api/items/<showId>/cover on the server.
+      // Podcast episode covers use the show ID so the provider can fall back
+      // to /api/items/<showId>/cover.
       final coverKey = isEpisode ? showId! : dl.itemId;
-      // iOS CarPlay can't load Android content:// URIs - use the local
-      // cover file directly. Android Auto requires content:// (file://
-      // doesn't work for it). Falls back to the content URI on iOS too if
-      // there's no local file path so behavior degrades gracefully.
+      if (dl.localCoverPath != null && dl.localCoverPath!.isNotEmpty) {
+        try {
+          final f = File(dl.localCoverPath!);
+          if (f.existsSync()) {
+            final ms = f.lastModifiedSync().millisecondsSinceEpoch;
+            final prev = _itemUpdatedAt[coverKey];
+            if (prev == null || ms > prev) _itemUpdatedAt[coverKey] = ms;
+          }
+        } catch (_) {}
+      }
       String coverUrl;
       if (Platform.isIOS && dl.localCoverPath != null && dl.localCoverPath!.isNotEmpty) {
         coverUrl = Uri.file(dl.localCoverPath!).toString();
+        final ts = _itemUpdatedAt[coverKey];
+        if (ts != null) coverUrl = '$coverUrl?ts=$ts';
       } else {
         coverUrl = localCoverUri(coverKey);
       }
@@ -657,6 +741,9 @@ class AndroidAutoService {
     final id = item['id'] as String?;
     if (id == null) return null;
 
+    final updatedAt = (item['updatedAt'] as num?)?.toInt();
+    if (updatedAt != null) _itemUpdatedAt[id] = updatedAt;
+
     final media = item['media'] as Map<String, dynamic>?;
     final metadata = media?['metadata'] as Map<String, dynamic>? ?? {};
     final title = metadata['title'] as String? ?? 'Unknown';
@@ -733,7 +820,27 @@ class AndroidAutoService {
   }
 
   /// Main entry point for browse tree. May make API calls for drilldowns.
-  Future<List<MediaItem>> getChildrenOf(String parentMediaId) async {
+  Future<List<MediaItem>> getChildrenOf(String parentMediaId) {
+    final cached = _childrenCache[parentMediaId];
+    if (cached != null) return Future.value(cached);
+
+    final inFlight = _childrenInFlight[parentMediaId];
+    if (inFlight != null) return inFlight;
+
+    final future = () async {
+      try {
+        final children = await _computeChildren(parentMediaId);
+        _childrenCache[parentMediaId] = children;
+        return children;
+      } finally {
+        _childrenInFlight.remove(parentMediaId);
+      }
+    }();
+    _childrenInFlight[parentMediaId] = future;
+    return future;
+  }
+
+  Future<List<MediaItem>> _computeChildren(String parentMediaId) async {
     // Ensure downloads are always populated before returning root.
     // This is instant (no network) so Android Auto never waits on a server.
     if (!_downloadsReady) {
@@ -742,7 +849,7 @@ class AndroidAutoService {
     }
 
     // Kick off a full server refresh in the background if we haven't done one.
-    // Don't await — return what we have now (downloads at minimum).
+    // Don't await, return what we have now (downloads at minimum).
     if (_lastRefresh == null && !_isRefreshing) {
       _backgroundRefresh();
     }
@@ -978,8 +1085,7 @@ class AndroidAutoService {
 
     try {
       final results = await api.getBooksBySeries(libraryId, seriesId);
-      return results
-          .whereType<Map<String, dynamic>>()
+      return _sortBySeriesSequence(results, seriesId)
           .map((item) => _libraryItemToEntry(item, api))
           .whereType<AutoBookEntry>()
           .map((e) => e.toMediaItem())
@@ -988,6 +1094,38 @@ class AndroidAutoService {
       debugPrint('[AutoBrowse] Error fetching series books: $e');
       return [];
     }
+  }
+
+  /// Sort raw library items by their sequence within the given series.
+  /// The server's `sort=media.metadata.series.sequence` param sorts as a
+  /// string, so "10" lands before "2". Books missing a sequence go last.
+  static final _leadingNumberRe = RegExp(r'^[\d.]+');
+  List<Map<String, dynamic>> _sortBySeriesSequence(
+      List<dynamic> results, String seriesId) {
+    final maps = results.whereType<Map<String, dynamic>>().toList();
+    double seqFor(Map<String, dynamic> item) {
+      final media = item['media'] as Map<String, dynamic>? ?? const {};
+      final metadata = media['metadata'] as Map<String, dynamic>? ?? const {};
+      final raw = metadata['series'];
+      final seriesList = raw is List
+          ? raw.whereType<Map<String, dynamic>>()
+          : raw is Map<String, dynamic>
+              ? [raw]
+              : const <Map<String, dynamic>>[];
+      for (final s in seriesList) {
+        if (s['id'] != seriesId) continue;
+        final match = _leadingNumberRe
+            .firstMatch((s['sequence'] ?? '').toString().trim());
+        if (match != null) {
+          final parsed = double.tryParse(match.group(0)!);
+          if (parsed != null) return parsed;
+        }
+      }
+      return double.maxFinite;
+    }
+
+    maps.sort((a, b) => seqFor(a).compareTo(seqFor(b)));
+    return maps;
   }
 
   Future<List<MediaItem>> _fetchAuthorBooks(String authorId, String libraryId) async {
@@ -1121,7 +1259,7 @@ class AndroidAutoService {
   Future<String?> getCoverHttpUrl(String itemId) async {
     final api = await getApi();
     if (api == null) return null;
-    return api.getCoverUrl(itemId);
+    return api.getCoverUrl(itemId, updatedAt: _itemUpdatedAt[itemId]);
   }
 
   /// Fetch books for a library, returning raw entries.
@@ -1212,8 +1350,7 @@ class AndroidAutoService {
     if (api == null) return [];
     try {
       final results = await api.getBooksBySeries(libraryId, seriesId);
-      return results
-          .whereType<Map<String, dynamic>>()
+      return _sortBySeriesSequence(results, seriesId)
           .map((item) => _libraryItemToEntry(item, api))
           .whereType<AutoBookEntry>()
           .toList();
@@ -1260,10 +1397,12 @@ class AndroidAutoService {
           if (item is! Map<String, dynamic>) continue;
           final id = item['id'] as String?;
           if (id == null) continue;
+          final updatedAt = (item['updatedAt'] as num?)?.toInt();
+          if (updatedAt != null) _itemUpdatedAt[id] = updatedAt;
           final media = item['media'] as Map<String, dynamic>?;
           final metadata = media?['metadata'] as Map<String, dynamic>? ?? {};
           final title = metadata['title'] as String? ?? 'Unknown';
-          allShows.add((id: id, title: title, coverUrl: api.getCoverUrl(id)));
+          allShows.add((id: id, title: title, coverUrl: api.getCoverUrl(id, updatedAt: updatedAt)));
         }
         final total = (result['total'] as num?)?.toInt() ?? 0;
         if (allShows.length >= total || results.length < pageSize) break;
@@ -1283,6 +1422,8 @@ class AndroidAutoService {
     try {
       final fullItem = await api.getLibraryItem(showId);
       if (fullItem == null) return [];
+      final showUpdatedAt = (fullItem['updatedAt'] as num?)?.toInt();
+      if (showUpdatedAt != null) _itemUpdatedAt[showId] = showUpdatedAt;
       final media = fullItem['media'] as Map<String, dynamic>?;
       final metadata = media?['metadata'] as Map<String, dynamic>? ?? {};
       final showTitle = metadata['title'] as String? ?? 'Podcast';
@@ -1303,7 +1444,7 @@ class AndroidAutoService {
           title: ep['title'] as String? ?? 'Episode',
           author: showTitle,
           duration: (ep['duration'] as num?)?.toDouble() ?? 0,
-          coverUrl: api.getCoverUrl(showId),
+          coverUrl: api.getCoverUrl(showId, updatedAt: showUpdatedAt),
           chapters: ep['chapters'] as List<dynamic>? ?? [],
           episodeId: epId,
           showId: showId,

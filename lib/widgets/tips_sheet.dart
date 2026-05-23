@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../services/wording.dart';
 
 void showTipsSheet(BuildContext context) {
   final cs = Theme.of(context).colorScheme;
   final tt = Theme.of(context).textTheme;
   final l = AppLocalizations.of(context)!;
+  final w = Wording.of(context);
   showModalBottomSheet(
     context: context, isScrollControlled: true, useSafeArea: true,
     backgroundColor: Colors.transparent,
@@ -46,8 +48,8 @@ void showTipsSheet(BuildContext context) {
             ),
             _tipCard(cs, tt,
               icon: Icons.swipe_right_rounded,
-              title: l.tipsSheetQuickAddAbsorbingTitle,
-              desc: l.tipsSheetQuickAddAbsorbingDesc,
+              title: w.tipsSheetQuickAddAbsorbingTitle,
+              desc: w.tipsSheetQuickAddAbsorbingDesc,
             ),
             _tipCard(cs, tt,
               icon: Icons.vibration_rounded,

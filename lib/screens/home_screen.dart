@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -21,6 +22,8 @@ import '../widgets/collection_detail_sheet.dart';
 import '../widgets/section_detail_sheet.dart';
 import '../widgets/feature_hint.dart';
 import '../widgets/offline_status_icon.dart';
+import '../widgets/scroll_reveal.dart';
+import '../widgets/section_labels.dart';
 import 'app_shell.dart';
 import '../l10n/app_localizations.dart';
 
@@ -31,17 +34,17 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => HomeScreenState();
 }
 
-class HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   final _player = AudioPlayerService();
   bool _hideEbookOnly = false;
   bool _rectangleCovers = false;
 
   // ── Scroll-to-hide bars ──
-  final ValueNotifier<bool> barsVisibleNotifier = ValueNotifier(true);
+  /// Continuous 0..1 reveal value the AppShell mirrors onto the bottom nav.
+  late final ScrollRevealDriver _revealDriver = ScrollRevealDriver(vsync: this);
+  ValueListenable<double> get barsRevealNotifier => _revealDriver.notifier;
+  void resetReveal() => _revealDriver.resetToShown();
   final _scrollController = ScrollController();
-  double _lastScrollOffset = 0;
-  double _scrollAccumulator = 0;
-  static const _scrollThreshold = 40.0;
 
   // Cached filtered sections — invalidated when source data or settings change.
   List<Map<String, dynamic>>? _cachedSections;
@@ -58,45 +61,10 @@ class HomeScreenState extends State<HomeScreen> {
   String? _lastKnownItemId;
   bool _lastKnownPlaying = false;
 
-  void _onScrollDirection() {
-    if (!_scrollController.hasClients) return;
-    final offset = _scrollController.offset;
-    final delta = offset - _lastScrollOffset;
-    _lastScrollOffset = offset;
-
-    if (offset <= 0) {
-      _scrollAccumulator = 0;
-      _showBars();
-      return;
-    }
-    if (delta.abs() < 0.5) return;
-
-    if ((delta > 0) != (_scrollAccumulator > 0)) _scrollAccumulator = 0;
-    _scrollAccumulator += delta;
-
-    if (_scrollAccumulator > _scrollThreshold) {
-      _hideBars();
-    } else if (_scrollAccumulator < -_scrollThreshold) {
-      _showBars();
-    }
-  }
-
-  void _showBars() {
-    if (!barsVisibleNotifier.value) {
-      barsVisibleNotifier.value = true;
-    }
-  }
-
-  void _hideBars() {
-    if (barsVisibleNotifier.value) {
-      barsVisibleNotifier.value = false;
-    }
-  }
-
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_onScrollDirection);
+    _revealDriver.attach(_scrollController);
     _player.addListener(_onPlayerChanged);
     PlayerSettings.settingsChanged.addListener(_loadSettings);
     _loadSettings();
@@ -104,6 +72,11 @@ class HomeScreenState extends State<HomeScreen> {
       final lib = context.read<LibraryProvider>();
       if (lib.libraries.isEmpty) lib.loadLibraries();
       lib.refreshLocalProgress();
+    });
+    // Tell AppShell we're alive so its bottom-nav listener can attach now
+    // rather than waiting on a postFrame retry that may never re-fire.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) AppShell.notifyScreenReady(0);
     });
   }
 
@@ -192,8 +165,8 @@ class HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _revealDriver.dispose();
     _scrollController.dispose();
-    barsVisibleNotifier.dispose();
     _player.removeListener(_onPlayerChanged);
     PlayerSettings.settingsChanged.removeListener(_loadSettings);
     super.dispose();
@@ -297,19 +270,6 @@ class HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  String _sectionLabel(String id, AppLocalizations l) {
-    switch (id) {
-      case 'continue-listening': return l.continueListening;
-      case 'continue-series': return l.continueSeries;
-      case 'recently-added': return l.recentlyAdded;
-      case 'listen-again': return l.listenAgain;
-      case 'discover': return l.discover;
-      case 'episodes-recently-added': return l.newEpisodes;
-      case 'downloaded-books': return l.downloads;
-    }
-    return _titleCase(id);
-  }
-
   static const _sectionIcons = {
     'continue-listening': Icons.play_circle_outline_rounded,
     'continue-series': Icons.auto_stories_rounded,
@@ -319,14 +279,6 @@ class HomeScreenState extends State<HomeScreen> {
     'episodes-recently-added': Icons.podcasts_rounded,
     'downloaded-books': Icons.download_done_rounded,
   };
-
-  String _titleCase(String s) {
-    return s
-        .replaceAll('-', ' ')
-        .split(' ')
-        .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
-        .join(' ');
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -365,7 +317,12 @@ class HomeScreenState extends State<HomeScreen> {
           ),
         ),
         child: SafeArea(
-          child: RefreshIndicator(
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (n) {
+              if (n is ScrollEndNotification) _revealDriver.settle();
+              return false;
+            },
+            child: RefreshIndicator(
             onRefresh: () async {
               await lib.refresh();
             },
@@ -616,7 +573,7 @@ class HomeScreenState extends State<HomeScreen> {
                       ];
                     }
 
-                    final label = section['label'] ?? _sectionLabel(id, l);
+                    final label = sectionLabel(id, section['label'] as String?, l);
                     final entities = _filterEbookOnly(
                         (section['entities'] as List<dynamic>?) ?? [],
                         sectionType: section['type'] as String?);
@@ -637,7 +594,7 @@ class HomeScreenState extends State<HomeScreen> {
                       sectionIcon = Icons.collections_bookmark_rounded;
                     } else if (id.startsWith('genre:')) {
                       sectionIcon = Icons.label_outline_rounded;
-                      final sectionLabel = label as String;
+                      final sectionLabel = label;
                       titleTap = () => SectionDetailSheet.show(
                         context,
                         title: sectionLabel,
@@ -650,7 +607,7 @@ class HomeScreenState extends State<HomeScreen> {
                       // Author/series sections don't have book-shaped entities,
                       // so skip the book-oriented SectionDetailSheet for them.
                       if (type != 'authors' && type != 'series') {
-                        final sectionLabel = label as String;
+                        final sectionLabel = label;
                         titleTap = () => SectionDetailSheet.show(
                           context,
                           title: sectionLabel,
@@ -679,6 +636,7 @@ class HomeScreenState extends State<HomeScreen> {
                 const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
               ],
             ),
+          ),
           ),
         ),
       ),
@@ -758,8 +716,8 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
     // copy of the cover (matches the absorbing card aesthetic). Both image()
     // calls share the same cached bytes by URL.
     return BlurPaddedCover(
-      child: image(fit: BoxFit.contain),
       blurChild: image(fit: BoxFit.cover),
+      child: image(fit: BoxFit.contain),
     );
   }
 

@@ -5,10 +5,15 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/api_service.dart';
 import '../services/audio_player_service.dart';
+import '../services/rmab_service.dart';
+import '../services/scoped_prefs.dart';
 import '../services/upcoming_releases_service.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/audible_series_sheet.dart';
 import '../widgets/overlay_toast.dart';
+import '../widgets/rmab_book_detail_sheet.dart';
+import '../widgets/rmab_config_sheet.dart'
+    show kRmabBaseUrlKey, kRmabApiTokenKey;
 import '../l10n/app_localizations.dart';
 
 class UpcomingReleasesScreen extends StatefulWidget {
@@ -22,12 +27,26 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
   final _service = UpcomingReleasesService();
   String _region = 'us';
   bool _sortByDate = false;
+  bool _rmabConfigured = false;
 
   @override
   void initState() {
     super.initState();
     _service.addListener(_onServiceChanged);
     _initAndStart();
+    _loadRmabConfigured();
+  }
+
+  Future<void> _loadRmabConfigured() async {
+    final base = await ScopedPrefs.getString(kRmabBaseUrlKey);
+    final token = await ScopedPrefs.getString(kRmabApiTokenKey);
+    if (!mounted) return;
+    final next =
+        (base ?? '').isNotEmpty && (token ?? '').isNotEmpty;
+    debugPrint('[RMAB] upcoming: _rmabConfigured=$next');
+    if (next != _rmabConfigured) {
+      setState(() => _rmabConfigured = next);
+    }
   }
 
   Future<void> _initAndStart() async {
@@ -142,15 +161,21 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
     return l.statsScreenDurationShortM(m);
   }
 
-  void _showBookMenu(Map<String, dynamic> book, String seriesName) {
+  void _showBookMenu(Map<String, dynamic> book, String seriesName,
+      {bool isUpcoming = false}) {
     final l = AppLocalizations.of(context)!;
+    final cs = Theme.of(context).colorScheme;
+    final isOwned = book['_owned'] == true;
+    // Show the RMAB request entry only for books that have been released but
+    // aren't in the library yet, and only when the user has RMAB configured.
+    final showRequest = _rmabConfigured && !isOwned && !isUpcoming;
     showAudibleBookMenu(context,
       book: book,
       seriesName: seriesName,
       region: _region,
       extraActions: [
         ListTile(
-          leading: Icon(Icons.refresh_rounded, color: Theme.of(context).colorScheme.primary, size: 22),
+          leading: Icon(Icons.refresh_rounded, color: cs.primary, size: 22),
           title: Text(l.upcomingReleasesRescanReleaseDate, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
           dense: true, visualDensity: VisualDensity.compact,
           onTap: () {
@@ -158,6 +183,26 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
             _rescanBook(book['asin'] as String? ?? '');
           },
         ),
+        if (showRequest)
+          ListTile(
+            leading: Icon(Icons.menu_book_rounded, color: cs.primary, size: 22),
+            title: Text(l.rmabRequestCta,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w500)),
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            onTap: () {
+              Navigator.pop(context);
+              final asin = book['asin'] as String? ?? '';
+              final title = book['title'] as String? ?? '';
+              debugPrint(
+                  '[RMAB] upcoming Request tapped (asin=$asin title="$title")');
+              showRmabBookDetailSheet(
+                context,
+                book: RmabSearchResult.fromUpcomingBookMap(book),
+              );
+            },
+          ),
       ],
     );
   }
@@ -436,7 +481,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
-        onTap: () => _showBookMenu(book, seriesName),
+        onTap: () => _showBookMenu(book, seriesName, isUpcoming: isUpcoming),
         child: Card(
           elevation: 0,
           color: isUpcoming
@@ -610,7 +655,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
-        onTap: () => _showBookMenu(book, seriesName),
+        onTap: () => _showBookMenu(book, seriesName, isUpcoming: isUpcoming),
         child: Card(
           elevation: 0,
           color: isUpcoming

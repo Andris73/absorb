@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
+import '../services/wording.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../screens/app_shell.dart';
@@ -1552,7 +1553,7 @@ class CardActionDelegate {
         );
       case 'remove':
         return CardWideButton(
-          icon: Icons.remove_circle_outline_rounded, label: (compact || short) ? l.remove : l.removeFromAbsorbing,
+          icon: Icons.remove_circle_outline_rounded, label: (compact || short) ? l.remove : Wording.of(context).removeFromAbsorbing,
           accent: Colors.red.shade300, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
           onTap: () { removeFromAbsorbing(); onRemoveExtra?.call(); },
         );
@@ -1665,7 +1666,7 @@ class CardActionDelegate {
         );
       case 'remove':
         return MoreMenuItem(
-          icon: Icons.remove_circle_outline_rounded, label: l.removeFromAbsorbing,
+          icon: Icons.remove_circle_outline_rounded, label: Wording.of(context).removeFromAbsorbing,
           accent: Colors.red.shade300,
           onTap: () { Navigator.pop(ctx); removeFromAbsorbing(); onRemoveExtra?.call(); },
         );

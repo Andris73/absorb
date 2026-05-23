@@ -166,6 +166,7 @@ class LibraryProvider extends ChangeNotifier
           socket.onCollectionUpdated = _onRemoteCollectionUpdated;
           socket.onUserUpdated = _onRemoteUserUpdated;
           socket.onReconnectFailed = _onSocketReconnectFailed;
+          socket.onEncodeFinished = _onEncodeFinished;
           socket.connect(auth.serverUrl!, auth.token!, customHeaders: auth.customHeaders);
         }
         debugPrint('[Library] Calling loadLibraries()');
@@ -379,4 +380,5 @@ class LibraryProvider extends ChangeNotifier
     }
     return getProgressData(key)?['isFinished'] == true;
   }
+
 }

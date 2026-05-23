@@ -359,7 +359,11 @@ class ApiService {
   }) async {
     try {
       var url = '$_cleanBaseUrl/api/libraries/$libraryId/items'
-          '?page=$page&limit=$limit&sort=$sort&desc=$desc';
+          '?page=$page&limit=$limit&sort=$sort&desc=$desc'
+          // Ask the server to populate numEpisodesIncomplete on podcast items
+          // so podcast tiles can show an unplayed-count badge without loading
+          // every show's full episode list.
+          '&include=numEpisodesIncomplete';
       if (filter != null) url += '&filter=$filter';
       if (expanded) url += '&minified=0';
       if (collapseSeries) url += '&collapseseries=1';
@@ -536,6 +540,48 @@ class ApiService {
     return [];
   }
 
+  /// Get all narrators for a library. ABS exposes narrators only via the
+  /// filterdata endpoint as a list of name strings (no IDs/images/bios).
+  Future<List<String>> getLibraryNarrators(String libraryId) async {
+    try {
+      final data = await getLibraryFilterData(libraryId);
+      if (data == null) return [];
+      final raw = data['narrators'] as List<dynamic>? ?? [];
+      return raw
+          .map((e) => e?.toString() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList();
+    } catch (e) {
+      debugPrint('[API] getLibraryNarrators error: $e');
+    }
+    return [];
+  }
+
+  /// Get books narrated by a specific person.
+  /// Filter format: narrators.<base64(name)>
+  Future<List<dynamic>> getBooksByNarrator(
+    String libraryId,
+    String narratorName, {
+    int limit = 50,
+  }) async {
+    try {
+      final filterValue = base64Encode(utf8.encode(narratorName));
+      final url = '$_cleanBaseUrl/api/libraries/$libraryId/items'
+          '?filter=narrators.$filterValue&sort=media.metadata.title&limit=$limit';
+      final response = await _authGet(
+        Uri.parse(url),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['results'] as List<dynamic>? ?? [];
+      }
+    } catch (e) {
+      debugPrint('[API] getBooksByNarrator error: $e');
+    }
+    return [];
+  }
+
   /// Get full author details including description/bio.
   Future<Map<String, dynamic>?> getAuthorById(String authorId, {String? libraryId}) async {
     try {
@@ -552,6 +598,95 @@ class ApiService {
       debugPrint('[API] getAuthorById error: $e');
     }
     return null;
+  }
+
+  /// Update an author's editable fields (admin/root only).
+  /// Returns one of:
+  ///   { ok: true, author: {...} }         - normal update succeeded
+  ///   { ok: true, merged: { id, name } }  - name matched another author, this one was merged
+  ///   { ok: false }                       - request failed
+  /// PATCH /api/authors/:id
+  Future<Map<String, dynamic>> updateAuthor(
+    String authorId, {
+    String? name,
+    String? description,
+    String? asin,
+    String? imagePath,
+  }) async {
+    try {
+      final body = <String, dynamic>{};
+      if (name != null) body['name'] = name;
+      if (description != null) body['description'] = description;
+      if (asin != null) body['asin'] = asin;
+      if (imagePath != null) body['imagePath'] = imagePath;
+      final r = await _authPatch(
+        Uri.parse('$_cleanBaseUrl/api/authors/$authorId'),
+        body: jsonEncode(body),
+      );
+      debugPrint('[API] updateAuthor $authorId -> ${r.statusCode}: ${r.body}');
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body) as Map<String, dynamic>;
+        if (data['merged'] != null) {
+          return {'ok': true, 'merged': data['merged']};
+        }
+        return {'ok': true, 'author': data['author'] ?? data};
+      }
+    } catch (e) { debugPrint('updateAuthor error: $e'); }
+    return {'ok': false};
+  }
+
+  /// Quick-match an author against the configured provider (Audible).
+  /// Server fetches name/asin/description/image, updates the author server-side,
+  /// and returns the updated author. Returns null if no match or on error.
+  /// POST /api/authors/:id/match  body: { q, region }
+  /// Response: { updated: true, author: {...} } on match, { updated: false } on no match.
+  Future<Map<String, dynamic>?> matchAuthor(
+    String authorId, {
+    required String q,
+    String region = 'us',
+  }) async {
+    try {
+      final r = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/authors/$authorId/match'),
+        body: jsonEncode({'q': q, 'region': region}),
+      );
+      debugPrint('[API] matchAuthor $authorId -> ${r.statusCode}: ${r.body}');
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body) as Map<String, dynamic>;
+        // Server signals no match with { updated: false } and no author payload.
+        if (data['updated'] == false) return null;
+        if (data['author'] is Map) return data['author'] as Map<String, dynamic>;
+        return data;
+      }
+    } catch (e) { debugPrint('matchAuthor error: $e'); }
+    return null;
+  }
+
+  /// Set the author image from a remote URL.
+  /// POST /api/authors/:id/image  body: { url }
+  Future<bool> updateAuthorImageFromUrl(String authorId, String url) async {
+    try {
+      final r = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/authors/$authorId/image'),
+        body: jsonEncode({'url': url}),
+        timeout: const Duration(seconds: 30),
+      );
+      debugPrint('[API] updateAuthorImageFromUrl $authorId -> ${r.statusCode}');
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('updateAuthorImageFromUrl error: $e'); }
+    return false;
+  }
+
+  /// Remove the author's image.
+  /// DELETE /api/authors/:id/image
+  Future<bool> deleteAuthorImage(String authorId) async {
+    try {
+      final r = await _authDelete(
+        Uri.parse('$_cleanBaseUrl/api/authors/$authorId/image'),
+      );
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('deleteAuthorImage error: $e'); }
+    return false;
   }
 
   /// Get books in a specific series using the filter API.
@@ -1700,12 +1835,20 @@ class ApiService {
   }
 
   /// Update a library item's media metadata (admin/root only).
-  /// Uses POST /api/items/:id/match which requires update permission.
-  Future<bool> updateItemMedia(String itemId, Map<String, dynamic> media) async {
+  /// PATCH /api/items/:id/media. Tags live on `media`, not `metadata`, so
+  /// pass them via the [tags] arg to be included at the top level of the
+  /// payload alongside the metadata block.
+  Future<bool> updateItemMedia(
+    String itemId,
+    Map<String, dynamic> media, {
+    List<String>? tags,
+  }) async {
     try {
+      final body = <String, dynamic>{'metadata': media};
+      if (tags != null) body['tags'] = tags;
       final r = await _authPatch(
         Uri.parse('$_cleanBaseUrl/api/items/$itemId/media'),
-        body: jsonEncode({'metadata': media}),
+        body: jsonEncode(body),
       );
       debugPrint('[API] updateItemMedia $itemId -> ${r.statusCode}: ${r.body}');
       return r.statusCode == 200;
@@ -1930,6 +2073,29 @@ class ApiService {
       }
     } catch (e) { debugPrint('matchLibraryItem error: $e'); }
     return null;
+  }
+
+  /// Start an M4B encode task on the server.
+  /// POST /api/tools/item/:id/encode-m4b?codec=&bitrate=&channels=
+  Future<bool> startM4bEncode(
+    String itemId, {
+    required String codec,
+    required String bitrate,
+    required int channels,
+  }) async {
+    try {
+      final uri = Uri.parse('$_cleanBaseUrl/api/tools/item/$itemId/encode-m4b')
+          .replace(queryParameters: {
+        'codec': codec,
+        'bitrate': bitrate,
+        'channels': '$channels',
+      });
+      final r = await _authPost(uri);
+      return r.statusCode == 200;
+    } catch (e) {
+      debugPrint('startM4bEncode error: $e');
+    }
+    return false;
   }
 
   /// Update podcast media settings (auto-download, etc.)

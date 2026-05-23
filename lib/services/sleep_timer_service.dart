@@ -130,6 +130,10 @@ class SleepTimerService extends ChangeNotifier {
   // Reset on pause/play
   bool _wasPlaying = false; // tracks play state transitions
 
+  // Tracked locally so tick scheduling doesn't race AudioPlayerService's flag
+  // during the lifecycle callback fan-out.
+  bool _isBackgrounded = false;
+
   // ── Getters ──
   SleepTimerMode get mode => _mode;
   Duration get timeRemaining => _timeRemaining;
@@ -183,7 +187,7 @@ class SleepTimerService extends ChangeNotifier {
     // Only slow down to 5s when backgrounded and far from the fade - no UI to
     // update, so we save a handful of wake-ups.
     final nearFade = _timeRemaining <= _fadeThreshold + const Duration(seconds: 5);
-    final fastTick = nearFade || !_player.isBackgrounded;
+    final fastTick = nearFade || !_isBackgrounded;
     _tickIntervalSeconds = fastTick ? 1 : 5;
     _timer = Timer.periodic(Duration(seconds: _tickIntervalSeconds), _onTimerTick);
   }
@@ -631,6 +635,7 @@ class SleepTimerService extends ChangeNotifier {
   /// Only pauses shake detection if nothing is playing (user might shake
   /// with screen off to extend sleep timer).
   void onAppBackgrounded() {
+    _isBackgrounded = true;
     if (!_isPlaybackActive) {
       _accelSub?.cancel();
       _accelSub = null;
@@ -644,6 +649,7 @@ class SleepTimerService extends ChangeNotifier {
 
   /// Resume operations when app is foregrounded.
   void onAppForegrounded() {
+    _isBackgrounded = false;
     if (isActive && _accelSub == null) {
       _startShakeDetection();
       debugPrint('[SleepTimer] Resumed shake detection (foregrounded)');

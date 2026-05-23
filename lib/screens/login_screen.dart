@@ -16,6 +16,7 @@ import '../widgets/absorb_wave_icon.dart';
 import '../services/audio_player_service.dart';
 import '../main.dart' show applyTrustAllCerts, oledNotifier;
 import '../l10n/app_localizations.dart';
+import '../services/wording.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -408,7 +409,7 @@ class _LoginScreenState extends State<LoginScreen>
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          l.loginTagline,
+                          Wording.of(context).loginTagline,
                           style: tt.bodyLarge?.copyWith(
                             color: cs.onSurfaceVariant.withValues(alpha: 0.6),
                             fontWeight: FontWeight.w400,

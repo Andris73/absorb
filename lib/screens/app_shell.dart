@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -14,6 +15,7 @@ import 'package:palette_generator/palette_generator.dart';
 import '../main.dart'
     show snappyTransitionsNotifier, coverSchemeNotifier, rootNavigatorKey;
 import '../l10n/app_localizations.dart';
+import '../services/wording.dart';
 import '../services/android_auto_service.dart';
 import '../services/carplay_service.dart';
 import '../widgets/expanded_card.dart';
@@ -53,6 +55,63 @@ class AppShell extends StatefulWidget {
     if (inst == null) return false;
     inst._openSearch();
     return true;
+  }
+
+  /// Switch to the Library tab and apply a tag filter. Used by the book
+  /// detail sheet's tag chip so tapping a tag jumps the user to the library
+  /// view filtered by that tag. Returns false when the shell or library
+  /// state isn't mounted yet.
+  static bool openLibraryWithTagFilterGlobal(String tag) =>
+      _applyLibraryFilterGlobal((s) => s.applyTagFilter(tag));
+
+  /// Switch to the Library tab and apply a genre filter. Mirrors the tag
+  /// version above; used by the genre chip in book detail.
+  static bool openLibraryWithGenreFilterGlobal(String genre) =>
+      _applyLibraryFilterGlobal((s) => s.applyGenreFilter(genre));
+
+  static bool _applyLibraryFilterGlobal(
+      void Function(LibraryScreenState) apply) {
+    final inst = _AppShellState._instance;
+    if (inst == null) return false;
+    // If the full-screen expanded player is on top of the shell, pop it
+    // first. Otherwise switching to the Library tab leaves the player
+    // covering the filtered library underneath. Caller (e.g. the book
+    // detail sheet) has already popped its own modal route at this point.
+    if (inst._expandedIsOpen && inst.mounted) {
+      Navigator.of(inst.context, rootNavigator: true).maybePop();
+    }
+    inst._navigateTo(1);
+    // The retry budget has to survive the fade transition (~200ms by
+    // default, see `_fadeController` and `_navigateTo`) plus the library
+    // widget's own mount + first build. On cold start that easily takes
+    // 300-500ms before `_libraryKey.currentState` becomes non-null. ~3s
+    // worth of frames is generous enough to cover slow devices and stingy
+    // enough to give up if something is genuinely broken.
+    const maxAttempts = 180; // ~3s at 60fps
+    var attempts = 0;
+    void tryApply() {
+      if (!inst.mounted) return;
+      final state = inst._libraryKey.currentState;
+      if (state != null) {
+        apply(state);
+        return;
+      }
+      if (++attempts < maxAttempts) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => tryApply());
+      }
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => tryApply());
+    return true;
+  }
+
+  /// Called by Home (callingTab=0) and Library (callingTab=1) after their
+  /// first frame. Lets the AppShell re-sync the bottom-nav listener to the
+  /// right notifier — handles both "screen state didn't exist on initial
+  /// attach" and "lazy attach attached to the wrong tab during a fade
+  /// transition" (LibraryProvider notify can rebuild AppShell mid-fade and
+  /// schedule a postFrame that fires before _currentIndex transitions).
+  static void notifyScreenReady(int callingTab) {
+    _AppShellState._instance?._reattachIfNeeded(callingTab);
   }
 
   @override
@@ -149,48 +208,59 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     }
   }
 
-  /// Subscribe to the active screen's barsVisibleNotifier when on Home or
+  /// Subscribe to the active screen's barsRevealNotifier when on Home or
   /// Library tab, and ensure the nav bar is visible on all other tabs.
   void _syncNavBarListener(int index) {
-    debugPrint('[NavBar] _syncNavBarListener(index=$index) ctrl=${_navBarAnimController.value.toStringAsFixed(2)}');
     _detachNavBarListener();
-    ValueNotifier<bool>? notifier;
+    // Snap visible immediately on every tab change so a partial-hide state
+    // from another tab can never bleed into the new tab.
+    _navBarAnimController.value = 1.0;
+    ValueListenable<double>? notifier;
     if (index == 0) {
-      notifier = _homeKey.currentState?.barsVisibleNotifier;
+      notifier = _homeKey.currentState?.barsRevealNotifier;
     } else if (index == 1) {
-      notifier = _libraryKey.currentState?.barsVisibleNotifier;
+      notifier = _libraryKey.currentState?.barsRevealNotifier;
     }
     if (notifier != null) {
       _activeBarNotifier = notifier;
+      // Mirror the screen's continuous 0..1 reveal value directly onto the
+      // controller so the bottom nav slides in lockstep with the header.
       _navBarListener = () {
-        if (notifier!.value) {
-          _navBarAnimController.forward();
-        } else {
-          _navBarAnimController.reverse();
-        }
+        final v = notifier!.value.clamp(0.0, 1.0);
+        // Skip no-op controller writes. AnimationController.value setter
+        // notifies listeners (and triggers SizeTransition + Scaffold layout)
+        // even when the value didn't change, which causes scroll jank when
+        // the bar is already fully open/closed.
+        if ((_navBarAnimController.value - v).abs() < 0.005) return;
+        _navBarAnimController.value = v;
       };
       notifier.addListener(_navBarListener!);
       _navBarListener!();
-      debugPrint('[NavBar] Attached listener to tab=$index notifier.value=${notifier.value} ctrl=${_navBarAnimController.value.toStringAsFixed(2)}');
-    } else {
-      // Not a scroll-hide tab - force nav bar visible immediately.
-      // Use .value to snap instead of animate, avoiding races where
-      // the controller gets stuck mid-animation.
-      _navBarAnimController.value = 1.0;
-      debugPrint('[NavBar] Snap to 1.0 for non-scroll tab=$index');
     }
   }
 
-  ValueNotifier<bool>? _activeBarNotifier;
+  ValueListenable<double>? _activeBarNotifier;
 
   void _detachNavBarListener() {
     if (_navBarListener != null && _activeBarNotifier != null) {
       _activeBarNotifier!.removeListener(_navBarListener!);
-      // Reset the notifier so bars are visible when the user returns to this tab
-      _activeBarNotifier!.value = true;
     }
     _navBarListener = null;
     _activeBarNotifier = null;
+  }
+
+  /// Hook called by Home/Library when their state finishes mounting so we can
+  /// pick up (or correct) the listener attach. Re-syncs unconditionally when
+  /// the calling tab matches the current tab, even if a listener is already
+  /// attached — that listener may have been attached to the wrong tab by the
+  /// lazy-attach race during a fade transition.
+  void _reattachIfNeeded(int callingTab) {
+    if (!mounted) return;
+    // Only act when the screen calling us is actually the active one. If the
+    // user has navigated away in the meantime, leave the existing attachment
+    // to whatever screen they're on.
+    if (_currentIndex != callingTab) return;
+    _syncNavBarListener(_currentIndex);
   }
 
   void _ensurePageBuilt(int index) {
@@ -447,6 +517,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Belt-and-suspenders: never let the nav bar come back hidden after a
+      // resume. The screens snap their own driver back to shown on next scroll
+      // anyway, but mirror it here in case the user resumes onto a stale tab.
+      _navBarAnimController.value = 1.0;
       context.read<LibraryProvider>().onAppForegrounded();
       SleepTimerService().onAppForegrounded();
       AudioPlayerService.onAppForegrounded();
@@ -464,6 +538,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
       final cast = ChromecastService();
       if (cast.isConnected) cast.disconnect();
     }
+  }
+
+  @override
+  void didChangeMetrics() {
+    // Orientation change, software keyboard, anything that resizes the window:
+    // make sure the bottom nav isn't stuck partway hidden.
+    _navBarAnimController.value = 1.0;
+    _homeKey.currentState?.resetReveal();
+    _libraryKey.currentState?.resetReveal();
   }
 
   DateTime? _lastRefresh;
@@ -544,14 +627,28 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
   }
 
   Widget _buildBottomNav(BuildContext context) {
-    // Lazily attach listener when on Home or Library tab (handles start-on-tab case).
-    // The screen's state may not exist on the first frame, so retry until attached.
-    if ((_currentIndex == 0 || _currentIndex == 1) && _navBarListener == null) {
+    // Determine the *correct* notifier for the active tab so we can detect
+    // both "no listener" and "listener attached to the wrong tab" — the
+    // second happens when LibraryProvider.notify() rebuilds AppShell mid-fade
+    // and the lazy attach captures the pre-fade _currentIndex.
+    final isHomeOrLibrary = _currentIndex == 0 || _currentIndex == 1;
+    ValueListenable<double>? correctNotifier;
+    if (_currentIndex == 0) {
+      correctNotifier = _homeKey.currentState?.barsRevealNotifier;
+    } else if (_currentIndex == 1) {
+      correctNotifier = _libraryKey.currentState?.barsRevealNotifier;
+    }
+    final wrongAttachment = isHomeOrLibrary &&
+        _navBarListener != null &&
+        correctNotifier != null &&
+        !identical(_activeBarNotifier, correctNotifier);
+    final missingAttachment = isHomeOrLibrary && _navBarListener == null;
+
+    if (missingAttachment || wrongAttachment) {
       final scheduledIndex = _currentIndex;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _currentIndex != scheduledIndex) return;
         _syncNavBarListener(_currentIndex);
-        // If the screen state wasn't ready yet, retry on next frame
         if (_navBarListener == null && _currentIndex == scheduledIndex) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && _currentIndex == scheduledIndex) {
@@ -560,12 +657,31 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
           });
         }
       });
+    } else if (!isHomeOrLibrary && _navBarListener != null) {
+      // Stale listener left over from a fade transition — detach and snap the
+      // nav bar visible so it doesn't get hidden by the previous tab's notifier.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_currentIndex != 0 && _currentIndex != 1 && _navBarListener != null) {
+          _detachNavBarListener();
+          _navBarAnimController.value = 1.0;
+        }
+      });
     }
+    // On phone landscape, shrink the nav bar so it doesn't eat ~20% of the
+    // shorter screen height. Tablets keep the full-size bar in any orientation.
+    final mq = MediaQuery.of(context);
+    final isTablet = mq.size.shortestSide >= 600;
+    final isPhoneLandscape = !isTablet && mq.orientation == Orientation.landscape;
     return SizeTransition(
       sizeFactor: _navBarAnimController,
       axisAlignment: 1.0,
       child: NavigationBar(
         selectedIndex: _currentIndex,
+        height: isPhoneLandscape ? 56 : null,
+        labelBehavior: isPhoneLandscape
+            ? NavigationDestinationLabelBehavior.alwaysHide
+            : NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: (i) {
           // If tapping Library while already on Library, clear search
           if (i == 1 && _currentIndex == 1 &&
@@ -593,17 +709,17 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
       NavigationDestination(
         icon: Icon(isPodcast ? Icons.explore_outlined : Icons.home_outlined),
         selectedIcon: Icon(isPodcast ? Icons.explore_rounded : Icons.home_rounded),
-        label: isPodcast ? 'Discover' : l.appShellHomeTab,
+        label: isPodcast ? l.appShellDiscoverTab : l.appShellHomeTab,
       ),
       NavigationDestination(
         icon: Icon(isPodcast ? Icons.podcasts_outlined : Icons.library_books_outlined),
         selectedIcon: Icon(isPodcast ? Icons.podcasts_rounded : Icons.library_books_rounded),
-        label: isPodcast ? 'Shows' : l.appShellLibraryTab,
+        label: isPodcast ? l.appShellShowsTab : l.appShellLibraryTab,
       ),
       NavigationDestination(
         icon: const _AnimatedWaveIcon(size: 24, active: false),
         selectedIcon: const _AnimatedWaveIcon(size: 24, active: true),
-        label: l.appShellAbsorbingTab,
+        label: Wording.of(context).appShellAbsorbingTab,
       ),
       NavigationDestination(
         icon: const Icon(Icons.bar_chart_rounded),

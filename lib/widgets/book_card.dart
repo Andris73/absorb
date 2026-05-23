@@ -44,13 +44,18 @@ class BookCard extends StatelessWidget {
     final isFinished = lib.getProgressData(itemId)?['isFinished'] == true;
     final isExplicit = PlayerSettings.showExplicitBadge && metadata['explicit'] == true;
     final isDownloaded = DownloadService().isDownloaded(itemId ?? '');
+    // Only compute for podcast shows that aren't being rendered as an episode
+    // (an episode card shows the recentEpisode payload, not show-level info).
+    final unfinishedCount = (lib.isPodcastLibrary && item['recentEpisode'] == null)
+        ? lib.getUnfinishedEpisodeCount(item)
+        : 0;
 
     final headers = lib.mediaHeaders;
 
     if (isWide) {
       return _buildWideCard(context, cs, tt, l, title, authorName, coverUrl, progress, headers, isExplicit: isExplicit);
     }
-    return _buildCompactCard(context, cs, tt, l, title, authorName, coverUrl, progress, headers, isFinished: isFinished, isDownloaded: isDownloaded, isExplicit: isExplicit);
+    return _buildCompactCard(context, cs, tt, l, title, authorName, coverUrl, progress, headers, isFinished: isFinished, isDownloaded: isDownloaded, isExplicit: isExplicit, unfinishedCount: unfinishedCount);
   }
 
   void _navigateToDetail(BuildContext context) {
@@ -206,6 +211,7 @@ class BookCard extends StatelessWidget {
     bool isFinished = false,
     bool isDownloaded = false,
     bool isExplicit = false,
+    int unfinishedCount = 0,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -248,7 +254,8 @@ class BookCard extends StatelessWidget {
                     ),
                   if (isExplicit)
                     Positioned(
-                      top: 4, right: 4,
+                      top: unfinishedCount > 0 ? 26 : 4,
+                      right: 4,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                         decoration: BoxDecoration(
@@ -256,6 +263,27 @@ class BookCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(l.bookCardExplicitBadge, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                  if (unfinishedCount > 0)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: cs.primary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$unfinishedCount',
+                          style: TextStyle(
+                            color: cs.onPrimary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                     ),
                   if (isFinished || isDownloaded)
@@ -367,8 +395,8 @@ class _CoverImage extends StatelessWidget {
       if (file.existsSync()) {
         return BlurPaddedCover(
           enabled: isSquare,
-          child: Image.file(file, fit: effectiveFit, errorBuilder: (_, __, ___) => _placeholder()),
           blurChild: Image.file(file, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+          child: Image.file(file, fit: effectiveFit, errorBuilder: (_, __, ___) => _placeholder()),
         );
       }
       return _placeholder();
@@ -376,18 +404,18 @@ class _CoverImage extends StatelessWidget {
 
     return BlurPaddedCover(
       enabled: isSquare,
+      blurChild: CachedNetworkImage(
+        imageUrl: coverUrl!,
+        fit: BoxFit.cover,
+        httpHeaders: httpHeaders,
+        errorWidget: (_, __, ___) => const SizedBox.shrink(),
+      ),
       child: CachedNetworkImage(
         imageUrl: coverUrl!,
         fit: effectiveFit,
         httpHeaders: httpHeaders,
         placeholder: (_, __) => _placeholder(),
         errorWidget: (_, __, ___) => _placeholder(),
-      ),
-      blurChild: CachedNetworkImage(
-        imageUrl: coverUrl!,
-        fit: BoxFit.cover,
-        httpHeaders: httpHeaders,
-        errorWidget: (_, __, ___) => const SizedBox.shrink(),
       ),
     );
   }

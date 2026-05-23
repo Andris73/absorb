@@ -106,6 +106,10 @@
 		<string>Absorb may use the microphone for audio features.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>Absorb needs access to your photo library to save or select images.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>Absorb does not use the camera. This entry is required because a third-party library Absorb depends on references the camera API.</string>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>Absorb does not use your location. This entry is required because a third-party library Absorb depends on references the location API.</string>
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false/>
 		<key>UIApplicationShortcutItems</key>

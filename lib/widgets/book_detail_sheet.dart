@@ -16,6 +16,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../l10n/app_localizations.dart';
+import '../services/wording.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
@@ -26,8 +27,10 @@ import '../services/download_service.dart';
 import '../services/progress_sync_service.dart';
 import '../services/metadata_override_service.dart';
 import '../services/scoped_prefs.dart';
+import '../main.dart' show rootNavigatorKey;
 import '../screens/app_shell.dart';
 import 'author_books_sheet.dart';
+import 'narrator_books_sheet.dart';
 import 'series_books_sheet.dart';
 import 'absorbing_shared.dart';
 import 'html_description.dart';
@@ -71,6 +74,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   bool _showGoodreads = false;
   bool _ebookSaved = false;
   bool _authorsExpanded = false;
+  bool _narratorsExpanded = false;
   bool _squareCovers = false;
   ColorScheme? _coverScheme;
   String? _coverSchemeUrl; // URL the current scheme was derived from
@@ -339,11 +343,17 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final chapters = media['chapters'] as List<dynamic>? ?? [];
     final title = metadata['title'] as String? ?? l.unknown;
     final authorName = metadata['authorName'] as String? ?? '';
-    final narrator = metadata['narratorName'] as String? ?? '';
     final descRaw = metadata['description'] as String? ?? '';
     final duration = (media['duration'] as num?)?.toDouble() ?? 0;
     final seriesEntries = metadata['series'] as List<dynamic>? ?? [];
     final genres = (metadata['genres'] as List<dynamic>?)?.cast<String>() ?? [];
+    // ABS puts tags on the media object (LibraryItem.media.tags), not in
+    // metadata. Some endpoints may stash them in metadata too — fall back to
+    // that if media doesn't have them.
+    final tagsRaw = (media['tags'] as List<dynamic>?)
+        ?? (metadata['tags'] as List<dynamic>?)
+        ?? const [];
+    final tags = tagsRaw.cast<String>();
     final publisher = metadata['publisher'] as String? ?? '';
     final year = metadata['publishedYear'] as String? ?? '';
     final serverPath = _item!['path'] as String? ?? _item!['relPath'] as String? ?? '';
@@ -375,22 +385,22 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             child: _squareCovers
                 ? (_coverUrl!.startsWith('/')
                     ? BlurPaddedCover(
-                        child: Image.file(File(_coverUrl!), fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) => const SizedBox()),
                         blurChild: Image.file(File(_coverUrl!), fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+                        child: Image.file(File(_coverUrl!), fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const SizedBox()),
                       )
                     : BlurPaddedCover(
+                        blurChild: CachedNetworkImage(
+                          imageUrl: _coverUrl!, fit: BoxFit.cover,
+                          httpHeaders: lib.mediaHeaders,
+                          errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                        ),
                         child: CachedNetworkImage(
                           imageUrl: _coverUrl!, fit: BoxFit.contain,
                           httpHeaders: lib.mediaHeaders,
                           placeholder: (_, __) => const SizedBox(),
                           errorWidget: (_, __, ___) => const SizedBox(),
-                        ),
-                        blurChild: CachedNetworkImage(
-                          imageUrl: _coverUrl!, fit: BoxFit.cover,
-                          httpHeaders: lib.mediaHeaders,
-                          errorWidget: (_, __, ___) => const SizedBox.shrink(),
                         ),
                       ))
                 : CachedNetworkImage(
@@ -406,8 +416,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       Text(title, textAlign: TextAlign.center, style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
       const SizedBox(height: 4),
       _buildAuthorLinks(context, metadata, cs, tt, accent),
-      if (narrator.isNotEmpty) ...[const SizedBox(height: 2),
-        Text(l.narratedBy(narrator), textAlign: TextAlign.center, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant))],
+      _buildNarratorLinks(context, metadata, cs, tt, accent),
       // ─── AUDIBLE RATING (space always reserved) ─────────
       const SizedBox(height: 8),
       if (_rating != null && (_rating!['rating'] as num).toDouble() > 0)
@@ -500,10 +509,10 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                       : Icon(Icons.waves_rounded, size: 24, color: _coverScheme?.onPrimary ?? cs.onPrimary),
               label: Text(
                 showAbsorbingState
-                    ? l.absorbing
+                    ? Wording.of(context).absorbing
                     : isFinished
-                        ? l.absorbAgain
-                        : l.absorb,
+                        ? Wording.of(context).absorbAgain
+                        : Wording.of(context).absorb,
                 style: tt.titleMedium
                     ?.copyWith(fontWeight: FontWeight.w600, color: _coverScheme?.onPrimary ?? cs.onPrimary),
               ),
@@ -541,7 +550,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
               ),
               const SizedBox(width: 6),
               Text(
-                isFinished ? l.fullyAbsorbed : l.fullyAbsorbAction,
+                isFinished ? Wording.of(context).fullyAbsorbed : Wording.of(context).fullyAbsorbAction,
                 style: TextStyle(
                   color: isFinished ? Colors.green : cs.onSurfaceVariant,
                   fontSize: 12, fontWeight: FontWeight.w500,
@@ -572,7 +581,22 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         if (chapters.isNotEmpty) _chip(Icons.list_rounded, l.chaptersChip(chapters.length)),
         ..._audioInfoChips(media),
         if (publisher.isNotEmpty) _chip(Icons.business_rounded, publisher),
-        ...genres.take(3).map((g) => _chip(Icons.tag_rounded, g)),
+        ...genres.take(3).map((g) => _chip(
+              Icons.tag_rounded,
+              g,
+              onTap: () {
+                Navigator.of(context).pop();
+                AppShell.openLibraryWithGenreFilterGlobal(g);
+              },
+            )),
+        ...tags.take(5).map((t) => _chip(
+              Icons.local_offer_outlined,
+              t,
+              onTap: () {
+                Navigator.of(context).pop();
+                AppShell.openLibraryWithTagFilterGlobal(t);
+              },
+            )),
         if (progressData?['startedAt'] is num)
           _chip(Icons.play_circle_outline_rounded, l.startedDate(_fmtDate((progressData!['startedAt'] as num).toInt()))),
         if (progressData?['finishedAt'] is num)
@@ -668,14 +692,14 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                 decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
               _moreItem(cs, lib.isOnAbsorbingList(widget.itemId)
                   ? Icons.remove_circle_outline_rounded : Icons.add_circle_outline_rounded,
-                lib.isOnAbsorbingList(widget.itemId) ? l.removeFromAbsorbing : l.addToAbsorbing,
+                lib.isOnAbsorbingList(widget.itemId) ? Wording.of(context).removeFromAbsorbing : Wording.of(context).addToAbsorbing,
                 onTap: () async {
                   Navigator.pop(ctx);
                   if (lib.isOnAbsorbingList(widget.itemId)) {
                     await lib.removeFromAbsorbing(widget.itemId);
                     HapticFeedback.mediumImpact();
                     if (context.mounted) {
-                      showOverlayToast(context, l.removedFromAbsorbing, icon: Icons.remove_circle_outline_rounded);
+                      showOverlayToast(context, Wording.of(context).removedFromAbsorbing, icon: Icons.remove_circle_outline_rounded);
                     }
                   } else {
                     await lib.addToAbsorbingQueue(widget.itemId);
@@ -686,7 +710,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                     }
                     HapticFeedback.mediumImpact();
                     if (context.mounted) {
-                      showOverlayToast(context, l.addedToAbsorbing, icon: Icons.add_circle_outline_rounded);
+                      showOverlayToast(context, Wording.of(context).addedToAbsorbing, icon: Icons.add_circle_outline_rounded);
                     }
                   }
                 }),
@@ -723,13 +747,24 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
               if (_showGoodreads)
                 _moreItem(cs, Icons.local_library_rounded, l.searchOnGoodreads,
                   onTap: () { Navigator.pop(ctx); _openGoodreads(title, authorName); }),
-              if (auth.isRoot && !lib.isOffline)
+              if (auth.canUpdateMetadata && !lib.isOffline)
                 _moreItem(cs, Icons.edit_rounded, l.editServerDetails,
                   onTap: () {
                     Navigator.pop(ctx);
                     final media = _item!['media'] as Map<String, dynamic>? ?? {};
                     final meta = media['metadata'] as Map<String, dynamic>? ?? {};
-                    showEditMetadataSheet(context, itemId: widget.itemId, metadata: meta);
+                    final mediaTags =
+                        ((media['tags'] as List<dynamic>?) ?? const [])
+                            .cast<String>();
+                    final audioFiles =
+                        (media['audioFiles'] as List<dynamic>?) ?? const [];
+                    final rel = _item!['relPath'] as String? ?? '';
+                    showEditMetadataSheet(context,
+                        itemId: widget.itemId,
+                        metadata: meta,
+                        tags: mediaTags,
+                        audioFiles: audioFiles,
+                        relPath: rel);
                   }),
               if (auth.isAdmin && serverPath.isNotEmpty) ...[
                 const SizedBox(height: 8),
@@ -791,17 +826,41 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     return '${(bytes / 1073741824).toStringAsFixed(2)} GB';
   }
 
-  Widget _chip(IconData icon, String text) {
+  Widget _chip(IconData icon, String text, {VoidCallback? onTap}) {
     final cs = Theme.of(context).colorScheme;
-    return Container(
+    final pill = Container(
       constraints: const BoxConstraints(maxWidth: 200),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: cs.onSurface.withValues(alpha: 0.08))),
+      decoration: BoxDecoration(
+        color: onTap != null
+            ? cs.tertiary.withValues(alpha: 0.10)
+            : cs.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: onTap != null
+              ? cs.tertiary.withValues(alpha: 0.30)
+              : cs.onSurface.withValues(alpha: 0.08),
+        ),
+      ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 12, color: cs.onSurface.withValues(alpha: 0.3)), const SizedBox(width: 4),
-        Flexible(child: Text(text, overflow: TextOverflow.ellipsis, maxLines: 1,
-          style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11)))]));
+        Icon(icon,
+            size: 12,
+            color: onTap != null
+                ? cs.tertiary
+                : cs.onSurface.withValues(alpha: 0.3)),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(text,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: TextStyle(
+                  color: onTap != null ? cs.tertiary : cs.onSurfaceVariant,
+                  fontSize: 11)),
+        ),
+      ]),
+    );
+    if (onTap == null) return pill;
+    return GestureDetector(onTap: onTap, child: pill);
   }
 
   String _fmtDate(int ms) {
@@ -965,6 +1024,71 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             )),
           ),
       ],
+    );
+  }
+
+  Widget _buildNarratorLinks(BuildContext context, Map<String, dynamic> metadata, ColorScheme cs, TextTheme tt, Color accent) {
+    final raw = metadata['narrators'] as List<dynamic>? ?? [];
+    final names = <String>[
+      for (final n in raw)
+        if (n is String && n.trim().isNotEmpty)
+          n.trim()
+        else if (n is Map<String, dynamic>)
+          (n['name'] as String? ?? '').trim()
+    ].where((s) => s.isNotEmpty).toList();
+
+    if (names.isEmpty) {
+      final fallback = (metadata['narratorName'] as String? ?? '').trim();
+      if (fallback.isEmpty) return const SizedBox.shrink();
+      names.addAll(fallback.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty));
+    }
+    if (names.isEmpty) return const SizedBox.shrink();
+
+    final l = AppLocalizations.of(context)!;
+    // Split the localized "Narrated by {narrator}" template so we can prepend
+    // the prefix (and append any suffix, e.g. Chinese colon) around clickable
+    // narrator links.
+    final parts = l.narratedBy('||X||').split('||X||');
+    final prefix = parts.isNotEmpty ? parts[0] : '';
+    final suffix = parts.length > 1 ? parts[1] : '';
+
+    const int collapsedCount = 3;
+    final showAll = _narratorsExpanded || names.length <= collapsedCount;
+    final visible = showAll ? names : names.sublist(0, collapsedCount);
+    final remaining = names.length - collapsedCount;
+
+    final baseStyle = tt.bodySmall?.copyWith(color: cs.onSurfaceVariant);
+    final linkStyle = tt.bodySmall?.copyWith(
+      color: accent,
+      decoration: TextDecoration.underline,
+      decorationColor: accent.withValues(alpha: 0.4),
+    );
+    final commaStyle = tt.bodySmall?.copyWith(color: accent);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        children: [
+          if (prefix.isNotEmpty) Text(prefix, style: baseStyle),
+          for (int i = 0; i < visible.length; i++) ...[
+            GestureDetector(
+              onTap: () => showNarratorBooksSheet(context, narratorName: visible[i]),
+              child: Text(visible[i], style: linkStyle),
+            ),
+            if (i < visible.length - 1 || (!showAll && remaining > 0))
+              Text(', ', style: commaStyle),
+          ],
+          if (!showAll)
+            GestureDetector(
+              onTap: () => setState(() => _narratorsExpanded = true),
+              child: Text(l.andCountMore(remaining), style: tt.bodySmall?.copyWith(
+                color: accent.withValues(alpha: 0.7),
+              )),
+            ),
+          if (suffix.isNotEmpty) Text(suffix, style: baseStyle),
+        ],
+      ),
     );
   }
 
@@ -1143,34 +1267,34 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final api = auth.apiService;
     if (api == null) return;
 
-    // Start playback
-    final error = await player.playItem(api: api, itemId: widget.itemId, title: title, author: author, coverUrl: coverUrl, totalDuration: duration, chapters: chapters);
-    if (error != null && context.mounted) showErrorSnackBar(context, error);
+    final lib = context.mounted ? context.read<LibraryProvider>() : null;
 
-    // Refresh library so the absorbing screen picks up the new book
-    if (context.mounted) {
-      final lib = context.read<LibraryProvider>();
-      lib.refreshLocalProgress();
-      lib.refresh();
-    }
-
-    // Close all sheets and navigate
+    // Pop sheets and switch tab BEFORE starting playback. Otherwise the
+    // auto-expand triggered by playItem pushes the expanded player on top
+    // of the sheet, and the popUntil below kills the expanded player too.
     rootNav.popUntil((route) => route.isFirst);
-    Future.delayed(const Duration(milliseconds: 100), () {
-      AppShell.goToAbsorbingGlobal();
-    });
+    AppShell.goToAbsorbingGlobal();
+
+    final error = await player.playItem(api: api, itemId: widget.itemId, title: title, author: author, coverUrl: coverUrl, totalDuration: duration, chapters: chapters);
+    if (error != null) {
+      final ctx = rootNavigatorKey.currentContext;
+      if (ctx != null) showErrorSnackBar(ctx, error);
+    }
+    lib?.refreshLocalProgress();
+    lib?.refresh();
   }
 
   Future<void> _markFinished(BuildContext context, AuthProvider auth, double duration) async {
     final l = AppLocalizations.of(context)!;
+    final w = Wording.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(l.markAsFullyAbsorbedQuestion),
+        title: Text(w.markAsFullyAbsorbedQuestion),
         content: Text(l.markAsFullyAbsorbedContent),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.fullyAbsorbAction)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(w.fullyAbsorbAction)),
         ],
       ),
     );

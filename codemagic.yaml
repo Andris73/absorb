@@ -25,7 +25,7 @@ workflows:
         script: |
           RAW=$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //')
           APK_SRC=$(ls build/app/outputs/apk/github/release/*.apk | head -1)
-          mv "$APK_SRC" "build/app/outputs/apk/github/release/absorb-${RAW}.apk"
+          mv "$APK_SRC" "build/app/outputs/apk/github/release/absorb-${RAW//+/-}.apk"
       - name: Publish to GitHub Draft Release
         script: |
           VERSION="v$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //' | cut -d'+' -f1)"
@@ -72,7 +72,7 @@ workflows:
         script: |
           RAW=$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //')
           APK_SRC=$(ls build/app/outputs/apk/github/release/*.apk | head -1)
-          mv "$APK_SRC" "build/app/outputs/apk/github/release/absorb-${RAW}.apk"
+          mv "$APK_SRC" "build/app/outputs/apk/github/release/absorb-${RAW//+/-}.apk"
           AAB_SRC=$(ls build/app/outputs/bundle/playstoreRelease/*.aab | head -1)
           mv "$AAB_SRC" "build/app/outputs/bundle/playstoreRelease/absorb-${RAW}.aab"
       - name: Publish to GitHub Draft Release
@@ -214,7 +214,7 @@ workflows:
         script: |
           RAW=$(grep 'version:' pubspec.yaml | head -1 | sed 's/version: //')
           APK_SRC=$(ls build/app/outputs/apk/github/release/*.apk | head -1)
-          mv "$APK_SRC" "build/app/outputs/apk/github/release/absorb-${RAW}.apk"
+          mv "$APK_SRC" "build/app/outputs/apk/github/release/absorb-${RAW//+/-}.apk"
           AAB_SRC=$(ls build/app/outputs/bundle/playstoreRelease/*.aab | head -1)
           mv "$AAB_SRC" "build/app/outputs/bundle/playstoreRelease/absorb-${RAW}.aab"
           IPA_SRC=$(ls build/ios/ipa/*.ipa | head -1)

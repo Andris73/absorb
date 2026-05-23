@@ -433,6 +433,8 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
           _manualQueueAdvance(itemId);
         } else if (mode == 'auto_next') {
           _autoAdvanceOffline(itemId);
+        } else if (mode == 'playlist') {
+          _advanceInPlaylist(itemId);
         }
       });
     }
@@ -920,5 +922,365 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
         episodeTitle: ep['title'] as String?,
       );
     });
+  }
+
+  // ── Playlist queue mode ──────────────────────────────────────────────
+
+  String _playlistItemKey(Map<String, dynamic> item) {
+    final lid = item['libraryItemId'] as String? ?? '';
+    final eid = item['episodeId'] as String?;
+    return eid != null ? '$lid-$eid' : lid;
+  }
+
+  /// Index of the first playlist item that isn't marked finished. Returns -1
+  /// if every item is finished or the list is empty.
+  int firstUnfinishedPlaylistIndex(List<dynamic> items) {
+    final self = this as LibraryProvider;
+    for (var i = 0; i < items.length; i++) {
+      final m = items[i];
+      if (m is! Map<String, dynamic>) continue;
+      final key = _playlistItemKey(m);
+      if (key.isEmpty) continue;
+      if (!self.isItemFinishedByKey(key)) return i;
+    }
+    return -1;
+  }
+
+  Future<Map<String, dynamic>?> _getPlaylistById(String playlistId) async {
+    final cached = _playlists.cast<Map<String, dynamic>>().where(
+      (p) => p['id'] == playlistId,
+    ).firstOrNull;
+    if (cached != null) return cached;
+    if (_api == null) return null;
+    try {
+      return await _api!.getPlaylist(playlistId);
+    } catch (e) {
+      debugPrint('[Playlist] getPlaylist($playlistId) failed: $e');
+      return null;
+    }
+  }
+
+  Future<bool> _playPlaylistItem(Map<String, dynamic> playlistItem) async {
+    final api = _api;
+    if (api == null) return false;
+    final libraryItemId = playlistItem['libraryItemId'] as String? ?? '';
+    if (libraryItemId.isEmpty) return false;
+    final episodeId = playlistItem['episodeId'] as String?;
+    final libraryItem =
+        playlistItem['libraryItem'] as Map<String, dynamic>? ?? const {};
+    final media = libraryItem['media'] as Map<String, dynamic>? ?? const {};
+    final metadata = media['metadata'] as Map<String, dynamic>? ?? const {};
+
+    if (episodeId != null) {
+      Map<String, dynamic>? episode =
+          playlistItem['episode'] as Map<String, dynamic>?;
+      episode ??= (media['episodes'] as List<dynamic>? ?? const [])
+          .cast<Map<String, dynamic>>()
+          .where((e) => e['id'] == episodeId)
+          .firstOrNull;
+      final epDuration = (episode?['duration'] as num?)?.toDouble() ??
+          ((episode?['audioFile'] as Map<String, dynamic>?)?['duration']
+                  as num?)
+              ?.toDouble() ??
+          0.0;
+      await AudioPlayerService().playItem(
+        api: api,
+        itemId: libraryItemId,
+        title: metadata['title'] as String? ?? '',
+        author: metadata['author'] as String? ??
+            metadata['authorName'] as String? ??
+            '',
+        coverUrl: getCoverUrl(libraryItemId),
+        totalDuration: epDuration,
+        chapters: const [],
+        episodeId: episodeId,
+        episodeTitle: episode?['title'] as String?,
+      );
+    } else {
+      final duration = (media['duration'] as num?)?.toDouble() ?? 0;
+      final chapters = media['chapters'] as List<dynamic>? ?? const [];
+      await AudioPlayerService().playItem(
+        api: api,
+        itemId: libraryItemId,
+        title: metadata['title'] as String? ?? '',
+        author: metadata['authorName'] as String? ?? '',
+        coverUrl: getCoverUrl(libraryItemId),
+        totalDuration: duration,
+        chapters: chapters,
+      );
+    }
+    return true;
+  }
+
+  /// Start playing the first unfinished item in [playlistId]. Returns true if
+  /// playback started. Used by the "Play playlist" entry point.
+  Future<bool> playPlaylistFromStart(String playlistId) async {
+    final pl = await _getPlaylistById(playlistId);
+    if (pl == null) return false;
+    final items = (pl['items'] as List<dynamic>?) ?? const [];
+    final idx = firstUnfinishedPlaylistIndex(items);
+    if (idx < 0) return false;
+    final item = items[idx] as Map<String, dynamic>? ?? const {};
+    return _playPlaylistItem(item);
+  }
+
+  /// Returns true if [libraryItemId] (+ optional [episodeId]) appears in the
+  /// active queue playlist's items. Used to decide whether playing a given
+  /// item should keep playlist mode active or kick the user out of it.
+  Future<bool> isInActiveQueuePlaylist(String libraryItemId,
+      {String? episodeId}) async {
+    final playlistId = await PlayerSettings.getQueuePlaylistId();
+    if (playlistId == null) return false;
+    final pl = await _getPlaylistById(playlistId);
+    if (pl == null) return false;
+    final items = (pl['items'] as List<dynamic>?) ?? const [];
+    final target =
+        episodeId != null ? '$libraryItemId-$episodeId' : libraryItemId;
+    for (final m in items) {
+      if (m is! Map<String, dynamic>) continue;
+      if (_playlistItemKey(m) == target) return true;
+    }
+    return false;
+  }
+
+  Future<void> _advanceInPlaylist(String finishedKey) async {
+    final playlistId = await PlayerSettings.getQueuePlaylistId();
+    if (playlistId == null) {
+      debugPrint('[AutoAdvance] Playlist mode but no queuePlaylistId; no-op');
+      return;
+    }
+    final pl = await _getPlaylistById(playlistId);
+    if (pl == null) {
+      debugPrint('[AutoAdvance] Playlist $playlistId missing; exiting playlist queue mode');
+      await PlayerSettings.clearQueueModePlaylist();
+      return;
+    }
+    final items = (pl['items'] as List<dynamic>?) ?? const [];
+    int idx = -1;
+    for (var i = 0; i < items.length; i++) {
+      final m = items[i];
+      if (m is! Map<String, dynamic>) continue;
+      if (_playlistItemKey(m) == finishedKey) { idx = i; break; }
+    }
+    if (idx < 0) {
+      debugPrint('[AutoAdvance] Finished item $finishedKey not in playlist $playlistId');
+      return;
+    }
+    final self = this as LibraryProvider;
+    for (var i = idx + 1; i < items.length; i++) {
+      final m = items[i];
+      if (m is! Map<String, dynamic>) continue;
+      final key = _playlistItemKey(m);
+      if (key.isEmpty) continue;
+      if (self.isItemFinishedByKey(key)) continue;
+      final ok = await _playPlaylistItem(m);
+      if (ok) {
+        debugPrint('[AutoAdvance] Playlist advanced to $key (index $i)');
+        return;
+      }
+    }
+    debugPrint('[AutoAdvance] Playlist $playlistId exhausted after $finishedKey');
+  }
+
+  /// Returns the (seriesId, sequence) for [item]. Public wrapper around the
+  /// private `_StateMixin._extractSeries` so sheets in other files can use
+  /// it without reaching into private mixins.
+  (String?, double?) extractSeries(Map<String, dynamic> item) =>
+      _StateMixin._extractSeries(item);
+
+  // ── Public fetch helpers for sheets ─────────────────────────────────
+
+  Future<Map<String, dynamic>?> fetchLibraryItem(String itemId) async {
+    if (_api == null) return null;
+    final id = itemId.length > 36 ? itemId.substring(0, 36) : itemId;
+    return _api!.getLibraryItem(id);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchBooksBySeries(
+      String libraryId, String seriesId) async {
+    if (_api == null) return const [];
+    final books = await _api!.getBooksBySeries(libraryId, seriesId, limit: 100);
+    return books.whereType<Map<String, dynamic>>().toList();
+  }
+
+  Future<Map<String, dynamic>?> fetchPlaylistById(String playlistId) =>
+      _getPlaylistById(playlistId);
+
+  // ── Up-next preview ─────────────────────────────────────────────────
+
+  String? _playlistItemTitle(Map<String, dynamic> item) {
+    final libraryItem = item['libraryItem'] as Map<String, dynamic>? ?? const {};
+    final media = libraryItem['media'] as Map<String, dynamic>? ?? const {};
+    final metadata = media['metadata'] as Map<String, dynamic>? ?? const {};
+    final epId = item['episodeId'] as String?;
+    if (epId != null) {
+      final ep = item['episode'] as Map<String, dynamic>? ??
+          (media['episodes'] as List<dynamic>? ?? const [])
+              .cast<Map<String, dynamic>>()
+              .where((e) => e['id'] == epId)
+              .firstOrNull;
+      return ep?['title'] as String? ?? metadata['title'] as String?;
+    }
+    return metadata['title'] as String?;
+  }
+
+  String? _entryTitle(Map<String, dynamic> entry) {
+    final media = entry['media'] as Map<String, dynamic>? ?? const {};
+    final metadata = media['metadata'] as Map<String, dynamic>? ?? const {};
+    final ep = entry['recentEpisode'] as Map<String, dynamic>?;
+    if (ep != null) return ep['title'] as String? ?? metadata['title'] as String?;
+    return metadata['title'] as String?;
+  }
+
+  /// Returns a short label describing what would play next given the current
+  /// queue mode and player state, or null when nothing is queued. Used by the
+  /// "Up next: ..." chip under the queue-mode pill on the absorbing page.
+  Future<String?> peekUpNext({required String? currentItemId}) async {
+    final self = this as LibraryProvider;
+    if (currentItemId == null) return null;
+
+    final isPodCurrent = currentItemId.length > 36;
+    final mode = isPodCurrent
+        ? await PlayerSettings.getPodcastQueueMode()
+        : await PlayerSettings.getBookQueueMode();
+    if (mode == 'off') return null;
+
+    if (mode == 'playlist') {
+      final pid = await PlayerSettings.getQueuePlaylistId();
+      if (pid == null) return null;
+      final pl = await _getPlaylistById(pid);
+      if (pl == null) return null;
+      final items = (pl['items'] as List<dynamic>?) ?? const [];
+      final playlistName = pl['name'] as String? ?? '';
+      // The current item must be in the active playlist - otherwise we're
+      // playing off-playlist and advance stops after this item.
+      int currentIdx = -1;
+      for (var i = 0; i < items.length; i++) {
+        final m = items[i];
+        if (m is Map<String, dynamic> && _playlistItemKey(m) == currentItemId) {
+          currentIdx = i;
+          break;
+        }
+      }
+      if (currentIdx < 0) return null;
+      for (var i = currentIdx + 1; i < items.length; i++) {
+        final m = items[i];
+        if (m is! Map<String, dynamic>) continue;
+        final key = _playlistItemKey(m);
+        if (key.isEmpty) continue;
+        if (self.isItemFinishedByKey(key)) continue;
+        final title = _playlistItemTitle(m);
+        return playlistName.isNotEmpty ? '$playlistName - $title' : title;
+      }
+      return null;
+    }
+
+    if (mode == 'manual') {
+      final idx = _absorbingBookIds.indexOf(currentItemId);
+      final start = idx >= 0 ? idx + 1 : 0;
+      for (var i = start; i < _absorbingBookIds.length; i++) {
+        final key = _absorbingBookIds[i];
+        if (self.isItemFinishedByKey(key)) continue;
+        final cached = _absorbingItemCache[key];
+        if (cached == null) continue;
+        return _entryTitle(cached);
+      }
+      return null;
+    }
+
+    // auto_next
+    if (isPodCurrent) {
+      return _peekNextPodcastEpisode(currentItemId);
+    }
+    return await _peekNextBookInSeries(currentItemId);
+  }
+
+  Future<String?> _peekNextBookInSeries(String currentBookId) async {
+    final self = this as LibraryProvider;
+    var data = _itemDataWithSeries(currentBookId);
+    var (seriesId, currentSeq) =
+        data != null ? _StateMixin._extractSeries(data) : (null, null);
+    if ((seriesId == null || currentSeq == null) && _api != null) {
+      final full = await _api!.getLibraryItem(currentBookId);
+      if (full != null) {
+        data = full;
+        (seriesId, currentSeq) = _StateMixin._extractSeries(full);
+      }
+    }
+    if (seriesId == null || currentSeq == null) return null;
+
+    final candidates = <double, Map<String, dynamic>>{};
+    void consider(String id, Map<String, dynamic> d) {
+      if (id == currentBookId) return;
+      if (self.isItemFinishedByKey(id)) return;
+      final (sid, seq) = _StateMixin._extractSeries(d);
+      if (sid != seriesId || seq == null || seq <= currentSeq!) return;
+      candidates[seq] = d;
+    }
+
+    for (final entry in _absorbingItemCache.entries) {
+      consider(entry.key, entry.value);
+    }
+    final dl = DownloadService();
+    for (final dlInfo in dl.downloadedItems) {
+      final id = dlInfo.itemId;
+      if (id.length > 36) continue;
+      if (candidates.values.any((d) => d['id'] == id)) continue;
+      final d = _itemDataWithSeries(id);
+      if (d != null) consider(id, d);
+    }
+
+    // Server fallback when next book isn't loaded locally. Mirrors what
+    // _addNextSeriesBookToAbsorbing does so the peek matches the eventual
+    // advance behaviour.
+    if (candidates.isEmpty && _api != null && _selectedLibraryId != null) {
+      try {
+        final books = await _api!.getBooksBySeries(
+          _selectedLibraryId!,
+          seriesId,
+          limit: 100,
+        );
+        for (final book in books) {
+          if (book is! Map<String, dynamic>) continue;
+          final id = book['id'] as String?;
+          if (id == null) continue;
+          consider(id, book);
+        }
+      } catch (e) {
+        debugPrint('[UpNext] series fetch failed: $e');
+      }
+    }
+
+    if (candidates.isEmpty) return null;
+    final nextSeq = candidates.keys.toList()..sort();
+    final next = candidates[nextSeq.first]!;
+    return _entryTitle(next);
+  }
+
+  String? _peekNextPodcastEpisode(String currentCompoundKey) {
+    if (currentCompoundKey.length < 37) return null;
+    final showId = currentCompoundKey.substring(0, 36);
+    final currentEpId = currentCompoundKey.substring(37);
+    final showCached = _absorbingItemCache.values.cast<Map<String, dynamic>>().where((e) {
+      final mt = e['mediaType'] as String?;
+      return mt == 'podcast' && (e['id'] as String?) == showId;
+    }).firstOrNull;
+    if (showCached == null) return null;
+    final media = showCached['media'] as Map<String, dynamic>? ?? const {};
+    final eps = (media['episodes'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    if (eps.isEmpty) return null;
+    final self = this as LibraryProvider;
+    final currentIdx = eps.indexWhere((e) => e['id'] == currentEpId);
+    final start = currentIdx >= 0 ? currentIdx + 1 : 0;
+    for (var i = start; i < eps.length; i++) {
+      final ep = eps[i];
+      final epId = ep['id'] as String?;
+      if (epId == null) continue;
+      if (self.isItemFinishedByKey('$showId-$epId')) continue;
+      return ep['title'] as String?;
+    }
+    return null;
   }
 }

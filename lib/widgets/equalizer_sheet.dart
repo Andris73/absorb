@@ -53,7 +53,6 @@ class _EqualizerSheetContentState extends State<_EqualizerSheetContent> {
   // and write edits back to that item's storage without touching the platform
   // (which is still applying the playing book's EQ).
   bool _previewMode = false;
-  bool _previewLoaded = false;
   bool _pEnabled = false;
   String _pPreset = 'flat';
   List<double> _pBands = [];
@@ -87,7 +86,6 @@ class _EqualizerSheetContentState extends State<_EqualizerSheetContent> {
         && widget.openedForItemId != _eq.currentItemId;
     if (shouldPreview && !_previewMode) {
       _previewMode = true;
-      _previewLoaded = false;
       // Seed the buffer so the UI has a valid shape (correct band count)
       // until loadItemSnapshot returns. These defaults get overwritten
       // once the real saved snapshot loads.
@@ -102,7 +100,6 @@ class _EqualizerSheetContentState extends State<_EqualizerSheetContent> {
       _loadPreview();
     } else if (!shouldPreview && _previewMode) {
       _previewMode = false;
-      _previewLoaded = false;
     }
   }
 
@@ -120,7 +117,6 @@ class _EqualizerSheetContentState extends State<_EqualizerSheetContent> {
       _pMono = snap['mono'] as bool;
       _pSkipSilence = snap['skipSilence'] as bool? ?? false;
       _pBands = List<double>.from((snap['bands'] as List).cast<double>());
-      _previewLoaded = true;
     });
   }
 

@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'overlay_toast.dart';
 import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
+import '../services/wording.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
@@ -775,11 +776,11 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                     final confirmed = await showDialog<bool>(
                       context: context,
                       builder: (dlg) => AlertDialog(
-                        title: Text(l.fullyAbsorbSeries),
+                        title: Text(Wording.of(context).fullyAbsorbSeries),
                         content: Text(l.seriesBooksFullyAbsorbContent(_books.length)),
                         actions: [
                           TextButton(onPressed: () => Navigator.pop(dlg, false), child: Text(l.cancel)),
-                          FilledButton(onPressed: () => Navigator.pop(dlg, true), child: Text(l.fullyAbsorbAction)),
+                          FilledButton(onPressed: () => Navigator.pop(dlg, true), child: Text(Wording.of(context).fullyAbsorbAction)),
                         ],
                       ),
                     );
@@ -1102,7 +1103,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
           lib.absorbingItemCache[bookId] = Map<String, dynamic>.from(book);
           if (context.mounted) {
             HapticFeedback.mediumImpact();
-            showOverlayToast(context, l.episodeListAddedToAbsorbing(bookTitle), icon: Icons.add_circle_outline_rounded);
+            showOverlayToast(context, Wording.of(context).episodeListAddedToAbsorbing(bookTitle), icon: Icons.add_circle_outline_rounded);
           }
           return false;
         },

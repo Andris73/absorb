@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/library_provider.dart';
+import 'overlay_toast.dart';
 
 class PlaylistPickerSheet extends StatefulWidget {
   final String libraryItemId;
@@ -55,13 +56,8 @@ class _PlaylistPickerSheetState extends State<PlaylistPickerSheet> {
       );
       if (mounted) {
         final l = AppLocalizations.of(context)!;
+        showOverlayToast(context, l.addedToName(name), icon: Icons.playlist_add_check_rounded);
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          duration: const Duration(seconds: 3),
-          content: Text(l.addedToName(name)),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ));
       }
     } else {
       setState(() => _adding = false);
@@ -77,13 +73,12 @@ class _PlaylistPickerSheetState extends State<PlaylistPickerSheet> {
       playlistId, widget.libraryItemId, episodeId: widget.episodeId,
     );
     if (mounted) {
+      showOverlayToast(
+        context,
+        ok ? l.addedToName(name) : l.failedToAdd,
+        icon: ok ? Icons.playlist_add_check_rounded : Icons.error_outline_rounded,
+      );
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        duration: const Duration(seconds: 3),
-        content: Text(ok ? l.addedToName(name) : l.failedToAdd),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ));
     }
   }
 

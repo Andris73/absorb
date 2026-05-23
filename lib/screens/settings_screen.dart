@@ -21,10 +21,10 @@ import '../screens/login_screen.dart';
 import '../screens/app_shell.dart';
 import '../services/update_checker_service.dart';
 import '../screens/admin_screen.dart';
-import '../screens/admin_rmab_screen.dart';
 import '../screens/downloads_screen.dart';
 import '../screens/bookmarks_screen.dart';
-import '../main.dart' show applyThemeMode, applyTrustAllCerts, oledNotifier, snappyTransitionsNotifier;
+import '../main.dart' show applyThemeMode, applyTrustAllCerts, localeNotifier, oledNotifier, snappyTransitionsNotifier;
+import '../services/wording.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/absorb_slider.dart';
 import '../widgets/collapsible_section.dart';
@@ -32,6 +32,8 @@ import '../widgets/overlay_toast.dart';
 import '../widgets/tips_sheet.dart';
 import '../widgets/feature_hint.dart';
 import '../widgets/welcome_sheet.dart';
+import '../widgets/rmab_config_sheet.dart';
+import '../widgets/queue_playlist_picker_sheet.dart';
 import '../l10n/app_localizations.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -66,9 +68,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _shakeSensitivity = 'medium';
   String _bookQueueMode = 'off';
   String _podcastQueueMode = 'off';
+  String? _queuePlaylistId;
   // Returns the more restrictive of the two modes so the merged control
-  // never shows 'Auto' if one type is still 'off' or 'manual'.
+  // never shows 'Auto' if one type is still 'off' or 'manual'. Playlist
+  // mode is set atomically on both, so if either is 'playlist' the merged
+  // value is 'playlist'.
   String get _mergedQueueMode {
+    if (_bookQueueMode == 'playlist' || _podcastQueueMode == 'playlist') {
+      return 'playlist';
+    }
     const order = ['off', 'manual', 'auto_next'];
     final bi = order.indexOf(_bookQueueMode);
     final pi = order.indexOf(_podcastQueueMode);
@@ -84,9 +92,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _fullScreenPlayer = false;
   // card button layout is now managed in the edit sheet (more menu)
   bool _snappyTransitions = false;
+  bool _classicWording = false;
   bool _rectangleCovers = false;
   bool _coverPlayButton = false;
   String _themeMode = 'dark';
+  String _language = '';
   int _startScreen = 2;
   int _streamingCacheSizeMb = 0;
   bool _localServerEnabled = false;
@@ -94,7 +104,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _localServerController;
   bool _trustAllCerts = false;
   bool _includePreReleases = false;
-  String? _rmabUrl;
+  String? _rmabBaseUrl;
+  String? _rmabApiToken;
   bool _loaded = false;
   String _downloadLocationLabel = 'App Internal Storage (Default)';
   bool _canPickDownloadLocation = false;
@@ -147,12 +158,117 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _onExternalSettingsChange() async {
     final bookMode = await PlayerSettings.getBookQueueMode();
     final podMode = await PlayerSettings.getPodcastQueueMode();
+    final qpId = await PlayerSettings.getQueuePlaylistId();
     if (mounted) {
       setState(() {
         _bookQueueMode = bookMode;
         _podcastQueueMode = podMode;
+        _queuePlaylistId = qpId;
       });
     }
+  }
+
+  Future<void> _enterPlaylistMode() async {
+    final id = _queuePlaylistId;
+    if (id == null) {
+      if (!mounted) return;
+      final l = AppLocalizations.of(context)!;
+      showOverlayToast(context, l.queueModePlaylistHint,
+          icon: Icons.playlist_play_rounded);
+      return;
+    }
+    await PlayerSettings.setQueueModePlaylist(id);
+    if (!mounted) return;
+    setState(() {
+      _bookQueueMode = 'playlist';
+      _podcastQueueMode = 'playlist';
+    });
+  }
+
+  Future<void> _setBookQueueMode(String mode) async {
+    if (mode == 'playlist') return _enterPlaylistMode();
+    final wasPlaylist =
+        _bookQueueMode == 'playlist' || _podcastQueueMode == 'playlist';
+    await PlayerSettings.setBookQueueMode(mode);
+    if (wasPlaylist) {
+      await PlayerSettings.setPodcastQueueMode(mode);
+    }
+    if (!mounted) return;
+    setState(() {
+      _bookQueueMode = mode;
+      if (wasPlaylist) _podcastQueueMode = mode;
+    });
+    PlayerSettings.notifySettingsChanged();
+  }
+
+  Future<void> _setPodcastQueueMode(String mode) async {
+    if (mode == 'playlist') return _enterPlaylistMode();
+    final wasPlaylist =
+        _bookQueueMode == 'playlist' || _podcastQueueMode == 'playlist';
+    await PlayerSettings.setPodcastQueueMode(mode);
+    if (wasPlaylist) {
+      await PlayerSettings.setBookQueueMode(mode);
+    }
+    if (!mounted) return;
+    setState(() {
+      _podcastQueueMode = mode;
+      if (wasPlaylist) _bookQueueMode = mode;
+    });
+    PlayerSettings.notifySettingsChanged();
+  }
+
+  Widget _buildActivePlaylistRow(
+    ColorScheme cs,
+    TextTheme tt,
+    LibraryProvider lib,
+    AppLocalizations l,
+  ) {
+    String name = l.queuePlaylistNone;
+    if (_queuePlaylistId != null) {
+      final match = lib.playlists.cast<Map<String, dynamic>>().where(
+        (p) => p['id'] == _queuePlaylistId,
+      ).firstOrNull;
+      final n = match?['name'] as String?;
+      if (n != null && n.isNotEmpty) name = n;
+    }
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 4, 4, 4),
+      decoration: BoxDecoration(
+        color: cs.primaryContainer.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.primary.withValues(alpha: 0.25), width: 0.5),
+      ),
+      child: Row(children: [
+        Icon(Icons.playlist_play_rounded, size: 16, color: cs.primary),
+        const SizedBox(width: 8),
+        Expanded(child: Text(
+          name,
+          style: tt.bodySmall?.copyWith(color: cs.onPrimaryContainer, fontWeight: FontWeight.w600),
+          maxLines: 1, overflow: TextOverflow.ellipsis,
+        )),
+        IconButton(
+          icon: const Icon(Icons.close_rounded, size: 16),
+          color: cs.onPrimaryContainer.withValues(alpha: 0.7),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          visualDensity: VisualDensity.compact,
+          tooltip: l.exit,
+          onPressed: () => PlayerSettings.clearQueueModePlaylist(),
+        ),
+      ]),
+    );
+  }
+
+  Future<void> _setMergedQueueMode(String mode) async {
+    if (mode == 'playlist') return _enterPlaylistMode();
+    await PlayerSettings.setBookQueueMode(mode);
+    await PlayerSettings.setPodcastQueueMode(mode);
+    if (!mounted) return;
+    setState(() {
+      _bookQueueMode = mode;
+      _podcastQueueMode = mode;
+    });
+    PlayerSettings.notifySettingsChanged();
   }
 
   Future<void> _loadSettings() async {
@@ -203,6 +319,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       PlayerSettings.getSleepChime(),                                         // 46
       PlayerSettings.getSleepChimeVolume(),                                   // 47
       PlayerSettings.getShakeSensitivity(),                                   // 48
+      PlayerSettings.getLanguage(),                                           // 49
+      PlayerSettings.getClassicWording(),                                     // 50
+      PlayerSettings.getQueuePlaylistId(),                                    // 51
     ]);
     final s = results[0] as AutoRewindSettings;
     final speed = results[1] as double;
@@ -250,9 +369,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final chime = results[43] as bool;
     final chimeVol = results[44] as double;
     final shakeSens = results[45] as String;
-    final rmabUrl = await ScopedPrefs.getString('rmab_url');
+    final language = results[46] as String;
+    final classicWording = results[47] as bool;
+    final qpId = results[48] as String?;
+    final rmabBaseUrl = await ScopedPrefs.getString(kRmabBaseUrlKey);
+    final rmabApiToken = await ScopedPrefs.getString(kRmabApiTokenKey);
     if (mounted) setState(() {
-      _rmabUrl = rmabUrl;
+      _rmabBaseUrl = rmabBaseUrl;
+      _rmabApiToken = rmabApiToken;
       _rewindSettings = s;
       _defaultSpeed = speed;
       _wifiOnlyDownloads = wifiOnly;
@@ -270,6 +394,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _shakeAddMinutes = shakeMins;
       _bookQueueMode = bookQueueMode;
       _podcastQueueMode = podcastQueueMode;
+      _queuePlaylistId = qpId;
       _queueAutoDownload = queueAutoDl;
       _mergeAbsorbingLibraries = mergeLibs;
       _maxConcurrentDownloads = maxConc;
@@ -278,6 +403,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _loggingEnabled = logging;
       _fullScreenPlayer = fullScreen;
       _snappyTransitions = snappyTrans;
+      _classicWording = classicWording;
       _themeMode = theme;
       _downloadLocationLabel = dlLabel;
       _totalDownloadSizeBytes = dlSize;
@@ -303,6 +429,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _sleepChime = chime;
       _sleepChimeVolume = chimeVol;
       _shakeSensitivity = shakeSens;
+      _language = language;
       _canPickDownloadLocation = !_isPlayStoreBuild;
 
       _loaded = true;
@@ -328,6 +455,83 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case 'medium':
       default: return l.shakeSensitivityMedium;
     }
+  }
+
+  /// Display name for a language code, in that language's own script.
+  /// Empty string => "System default" in the active locale.
+  String _languageDisplayName(String code, AppLocalizations l) {
+    switch (code) {
+      case 'en': return 'English';
+      case 'de': return 'Deutsch';
+      case 'zh': return '中文';
+      default: return l.languageSystemDefault;
+    }
+  }
+
+  Future<void> _pickLanguage() async {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
+    const codes = ['', 'en', 'de', 'zh'];
+
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: cs.surfaceContainerLow,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: cs.onSurface.withValues(alpha: 0.24),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(l.languageLabel,
+                style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            for (final code in codes)
+              RadioListTile<String>(
+                value: code,
+                groupValue: _language,
+                onChanged: (v) => Navigator.pop(ctx, v),
+                title: Text(_languageDisplayName(code, l)),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+              child: InkWell(
+                onTap: () => launchUrl(
+                  Uri.parse('https://crowdin.com/project/absorb'),
+                  mode: LaunchMode.externalApplication,
+                ),
+                child: Text(
+                  l.languageHelpTranslateInvite,
+                  style: tt.bodySmall?.copyWith(
+                    color: cs.primary,
+                    decoration: TextDecoration.underline,
+                    decorationColor: cs.primary.withValues(alpha: 0.6),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (picked == null || picked == _language) return;
+    setState(() => _language = picked);
+    await PlayerSettings.setLanguage(picked);
+    localeNotifier.value = picked.isEmpty ? null : Locale(picked);
   }
 
   Widget _infoIcon(String title, String content) {
@@ -532,6 +736,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   isExpanded: _expandedSection == 'Appearance',
                   onExpansionChanged: (v) => _onSectionExpanded('Appearance', v),
                   children: [
+                    InkWell(
+                      onTap: _loaded ? () => _pickLanguage() : null,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(l.languageLabel, style: tt.titleSmall)),
+                            Text(
+                              _languageDisplayName(_language, l),
+                              style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                            ),
+                            Icon(Icons.chevron_right_rounded,
+                                color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                       child: Column(
@@ -544,10 +766,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             child: SegmentedButton<String>(
                               showSelectedIcon: false,
                               segments: [
-                                ButtonSegment(value: 'dark', label: Text(l.themeDark)),
-                                ButtonSegment(value: 'oled', label: Text(l.themeOled)),
-                                ButtonSegment(value: 'light', label: Text(l.themeLight)),
-                                ButtonSegment(value: 'system', label: Text(l.themeAuto)),
+                                ButtonSegment(value: 'dark', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.themeDark, maxLines: 1))),
+                                ButtonSegment(value: 'oled', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.themeOled, maxLines: 1))),
+                                ButtonSegment(value: 'light', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.themeLight, maxLines: 1))),
+                                ButtonSegment(value: 'system', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.themeAuto, maxLines: 1))),
                               ],
                               selected: {_themeMode},
                               onSelectionChanged: _loaded ? (selected) {
@@ -582,10 +804,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             child: SegmentedButton<int>(
                               showSelectedIcon: false,
                               segments: [
-                                ButtonSegment(value: 0, label: Text(l.startScreenHome)),
-                                ButtonSegment(value: 1, label: Text(l.startScreenLibrary)),
-                                ButtonSegment(value: 2, label: Text(l.startScreenAbsorb)),
-                                ButtonSegment(value: 3, label: Text(l.startScreenStats)),
+                                ButtonSegment(value: 0, label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.startScreenHome, maxLines: 1))),
+                                ButtonSegment(value: 1, label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.startScreenLibrary, maxLines: 1))),
+                                ButtonSegment(value: 2, label: FittedBox(fit: BoxFit.scaleDown, child: Text(Wording.of(context).startScreenAbsorb, maxLines: 1))),
+                                ButtonSegment(value: 3, label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.startScreenStats, maxLines: 1))),
                               ],
                               selected: {_startScreen},
                               onSelectionChanged: _loaded ? (selected) {
@@ -626,6 +848,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         PlayerSettings.setRectangleCovers(v);
                       } : null,
                     ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    SwitchListTile(
+                      title: const Text('Classic wording'),
+                      subtitle: Text(
+                        _classicWording
+                            ? 'Using "Play", "Now Playing", "Finished"'
+                            : 'Using "Absorb", "Absorbing", "Fully Absorbed"',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _classicWording,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _classicWording = v);
+                        PlayerSettings.setClassicWording(v);
+                        classicWordingNotifier.value = v;
+                      } : null,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -634,7 +871,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 CollapsibleSection(
                   key: _keyFor('Absorbing Cards'),
                   icon: Icons.style_rounded,
-                  title: l.sectionAbsorbingCards,
+                  title: Wording.of(context).sectionAbsorbingCards,
                   cs: cs,
                   isExpanded: _expandedSection == 'Absorbing Cards',
                   onExpansionChanged: (v) => _onSectionExpanded('Absorbing Cards', v),
@@ -687,21 +924,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       } : null,
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
-                    SwitchListTile(
-                      title: Row(children: [
-                        Flexible(child: Text(l.mergeLibraries)),
-                        _infoIcon(l.mergeLibrariesInfoTitle, l.mergeLibrariesInfoContent),
-                      ]),
-                      subtitle: Text(
-                        _mergeAbsorbingLibraries
-                            ? l.mergeLibrariesOnSubtitle
-                            : l.mergeLibrariesOffSubtitle,
-                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                      value: _mergeAbsorbingLibraries,
-                      onChanged: _loaded ? (v) {
-                        setState(() => _mergeAbsorbingLibraries = v);
-                        PlayerSettings.setMergeAbsorbingLibraries(v);
-                      } : null,
+                    ValueListenableBuilder<bool>(
+                      valueListenable: classicWordingNotifier,
+                      builder: (context, _, __) {
+                        final w = Wording.of(context);
+                        return SwitchListTile(
+                          title: Row(children: [
+                            Flexible(child: Text(w.mergeLibraries)),
+                            _infoIcon(w.mergeLibrariesInfoTitle, w.mergeLibrariesInfoContent),
+                          ]),
+                          subtitle: Text(
+                            _mergeAbsorbingLibraries
+                                ? w.mergeLibrariesOnSubtitle
+                                : w.mergeLibrariesOffSubtitle,
+                            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                          value: _mergeAbsorbingLibraries,
+                          onChanged: _loaded ? (v) {
+                            setState(() => _mergeAbsorbingLibraries = v);
+                            PlayerSettings.setMergeAbsorbingLibraries(v);
+                          } : null,
+                        );
+                      },
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     Padding(
@@ -730,6 +973,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     Text(l.queueModeInfoSeries, style: const TextStyle(fontWeight: FontWeight.w600)),
                                     const SizedBox(height: 4),
                                     Text(l.queueModeInfoSeriesDesc),
+                                    const SizedBox(height: 12),
+                                    Text(l.queueModeInfoPlaylist, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                    const SizedBox(height: 4),
+                                    Text(l.queueModeInfoPlaylistDesc),
                                   ],
                                 ),
                                 actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l.gotIt))],
@@ -750,17 +997,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff))),
                               ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual))),
                               ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeAuto))),
+                              ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist))),
                             ],
                             selected: {_mergedQueueMode},
-                            onSelectionChanged: _loaded ? (s) {
-                              setState(() {
-                                _bookQueueMode = s.first;
-                                _podcastQueueMode = s.first;
-                              });
-                              PlayerSettings.setBookQueueMode(s.first);
-                              PlayerSettings.setPodcastQueueMode(s.first);
-                              PlayerSettings.notifySettingsChanged();
-                            } : null,
+                            onSelectionChanged: _loaded
+                                ? (s) { if (s.isNotEmpty) _setMergedQueueMode(s.first); }
+                                : null,
                             style: const ButtonStyle(visualDensity: VisualDensity.compact),
                           )),
                         ] else ...[
@@ -773,13 +1015,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff))),
                               ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual))),
                               ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeSeriesLabel))),
+                              ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist))),
                             ],
                             selected: {_bookQueueMode},
-                            onSelectionChanged: _loaded ? (s) {
-                              setState(() => _bookQueueMode = s.first);
-                              PlayerSettings.setBookQueueMode(s.first);
-                              PlayerSettings.notifySettingsChanged();
-                            } : null,
+                            onSelectionChanged: _loaded
+                                ? (s) { if (s.isNotEmpty) _setBookQueueMode(s.first); }
+                                : null,
                             style: const ButtonStyle(visualDensity: VisualDensity.compact),
                           )),
                           if (lib.libraries.any((lib) => lib['mediaType'] == 'podcast')) ...[
@@ -792,13 +1033,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff))),
                                 ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual))),
                                 ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeShowLabel))),
+                                ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist))),
                               ],
                               selected: {_podcastQueueMode},
-                              onSelectionChanged: _loaded ? (s) {
-                                setState(() => _podcastQueueMode = s.first);
-                                PlayerSettings.setPodcastQueueMode(s.first);
-                                PlayerSettings.notifySettingsChanged();
-                              } : null,
+                              onSelectionChanged: _loaded
+                                  ? (s) { if (s.isNotEmpty) _setPodcastQueueMode(s.first); }
+                                  : null,
                               style: const ButtonStyle(visualDensity: VisualDensity.compact),
                             )),
                           ],
@@ -1535,8 +1775,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     SwitchListTile(
                       title: Row(children: [
-                        Flexible(child: Text(l.deleteAbsorbedDownloads)),
-                        _infoIcon(l.deleteAbsorbedDownloadsInfoTitle, l.deleteAbsorbedDownloadsInfoContent),
+                        Flexible(child: Text(Wording.of(context).deleteAbsorbedDownloads)),
+                        _infoIcon(Wording.of(context).deleteAbsorbedDownloadsInfoTitle, l.deleteAbsorbedDownloadsInfoContent),
                       ]),
                       subtitle: Text(
                         _rollingDownloadDeleteFinished
@@ -2011,34 +2251,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     ListTile(
                       leading: Icon(Icons.menu_book_rounded, color: cs.primary),
-                      title: Row(children: [
-                        Flexible(child: Text(l.adminRmab)),
-                        _infoIcon(l.adminRmab, l.adminRmabSettingsInfo),
-                      ]),
+                      title: Text(l.adminRmab),
                       subtitle: Text(
-                        (_rmabUrl ?? '').isNotEmpty ? l.adminRmabConnected : l.adminRmabAskAdmin,
+                        ((_rmabBaseUrl ?? '').isNotEmpty && (_rmabApiToken ?? '').isNotEmpty)
+                            ? l.adminRmabConnected
+                            : l.adminRmabAskAdmin,
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                      trailing: (_rmabUrl ?? '').isNotEmpty
-                          ? PopupMenuButton<String>(
-                              icon: Icon(Icons.more_vert_rounded, color: cs.onSurfaceVariant),
-                              onSelected: (v) {
-                                if (v == 'edit') _showRmabSettingsDialog();
-                                if (v == 'remove') _clearRmabSettings();
-                              },
-                              itemBuilder: (_) => [
-                                PopupMenuItem(value: 'edit', child: Text(l.edit)),
-                                PopupMenuItem(value: 'remove', child: Text(l.remove)),
-                              ],
-                            )
-                          : Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
-                      onTap: () {
-                        if ((_rmabUrl ?? '').isNotEmpty) {
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => AdminRmabScreen(url: _rmabUrl!)));
-                        } else {
-                          _showRmabSettingsDialog();
-                        }
-                      },
+                      trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                      onTap: _openRmabSheetFromSettings,
                     ),
                   ],
                 ),
@@ -2828,70 +3048,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _showRmabSettingsDialog() async {
+  Future<void> _openRmabSheetFromSettings() async {
     final l = AppLocalizations.of(context)!;
-    final controller = TextEditingController(text: _rmabUrl ?? '');
-    String? err;
-
-    final saved = await showDialog<String?>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setLocal) => AlertDialog(
-        title: Text(l.adminRmabUrlTitle),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(l.adminRmabUrlHelpUser, style: Theme.of(ctx).textTheme.bodySmall),
-          const SizedBox(height: 12),
-          TextField(
-            controller: controller,
-            autofocus: true,
-            keyboardType: TextInputType.url,
-            autocorrect: false,
-            decoration: InputDecoration(
-              hintText: l.adminRmabUrlHint,
-              errorText: err,
-              border: const OutlineInputBorder(),
-            ),
-          ),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, null), child: Text(l.cancel)),
-          TextButton(
-            onPressed: () {
-              final v = controller.text.trim();
-              if (v.isEmpty) { setLocal(() => err = l.adminRmabInvalidUrl); return; }
-              final u = Uri.tryParse(v);
-              if (u == null || !(u.scheme == 'http' || u.scheme == 'https') || u.host.isEmpty) {
-                setLocal(() => err = l.adminRmabInvalidUrl);
-                return;
-              }
-              Navigator.pop(ctx, v);
-            },
-            child: Text(l.save),
-          ),
-        ],
-      )),
-    );
-
-    if (saved == null) return;
-    await ScopedPrefs.setString('rmab_url', saved);
-    if (!mounted) return;
-    setState(() => _rmabUrl = saved);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(l.adminRmabSaved),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
-  }
-
-  Future<void> _clearRmabSettings() async {
-    final l = AppLocalizations.of(context)!;
-    await ScopedPrefs.remove('rmab_url');
-    if (!mounted) return;
-    setState(() => _rmabUrl = null);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(l.adminRmabRemoved),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+    final isAdmin = context.read<AuthProvider>().isAdmin;
+    final result =
+        await showRmabConfigSheet(context, isAdminContext: isAdmin);
+    if (!mounted || result == null) return;
+    if (result.changed || result.disconnected) {
+      final base = await ScopedPrefs.getString(kRmabBaseUrlKey);
+      final token = await ScopedPrefs.getString(kRmabApiTokenKey);
+      if (!mounted) return;
+      setState(() {
+        _rmabBaseUrl = base;
+        _rmabApiToken = token;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(result.disconnected
+            ? l.rmabConfigDisconnectedSnackbar
+            : l.rmabConfigSavedSnackbar),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    }
   }
 
   void _confirmLogout(BuildContext context) {

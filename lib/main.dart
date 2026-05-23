@@ -1,5 +1,11 @@
 import 'dart:io';
 import 'dart:ui';
+// Flutter 3.44 moved CupertinoPageTransitionsBuilder from material.dart to
+// cupertino.dart. Older SDKs (incl. local) still re-export it from material,
+// so the lint flags this as unnecessary, but Codemagic's stable channel
+// needs the explicit cupertino import to compile.
+// ignore: unnecessary_import
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -26,6 +32,7 @@ import 'services/chromecast_service.dart';
 import 'services/home_widget_service.dart';
 import 'services/log_service.dart';
 import 'services/quick_actions_service.dart';
+import 'services/wording.dart';
 import 'screens/login_screen.dart';
 import 'screens/app_shell.dart';
 import 'widgets/absorb_wave_icon.dart';
@@ -38,6 +45,9 @@ final ValueNotifier<bool> oledNotifier = ValueNotifier(false);
 
 /// Whether to disable the fade animation when switching bottom nav tabs.
 final ValueNotifier<bool> snappyTransitionsNotifier = ValueNotifier(false);
+
+/// User-selected language override. null means follow the system language.
+final ValueNotifier<Locale?> localeNotifier = ValueNotifier(null);
 
 
 /// Cover-art-derived ColorScheme for the currently playing item.
@@ -110,6 +120,8 @@ void main() async {
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
     ]).timeout(const Duration(seconds: 2));
   } catch (_) {}
 
@@ -117,7 +129,10 @@ void main() async {
   try {
     final savedTheme = await PlayerSettings.getThemeMode();
     applyThemeMode(savedTheme);
+    final savedLang = await PlayerSettings.getLanguage();
+    if (savedLang.isNotEmpty) localeNotifier.value = Locale(savedLang);
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
+    classicWordingNotifier.value = await PlayerSettings.getClassicWording();
     PlayerSettings.showExplicitBadge = await PlayerSettings.getShowExplicitBadge();
     // Restore last cover seed color so the theme doesn't flash on startup
     {
@@ -180,9 +195,15 @@ class AbsorbApp extends StatelessWidget {
         return ValueListenableBuilder<bool>(
           valueListenable: oledNotifier,
           builder: (context, isOled, _) {
+        return ValueListenableBuilder<Locale?>(
+          valueListenable: localeNotifier,
+          builder: (context, overrideLocale, _) {
         return ValueListenableBuilder<ColorScheme?>(
           valueListenable: coverSchemeNotifier,
           builder: (context, coverScheme, _) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: classicWordingNotifier,
+          builder: (context, _, __) {
         // Set system chrome to match active theme
         final isDark = currentMode == ThemeMode.dark ||
             (currentMode == ThemeMode.system &&
@@ -220,18 +241,31 @@ class AbsorbApp extends StatelessWidget {
           brightness: Brightness.light,
         );
 
-            const pageTransition = PageTransitionsTheme(builders: {
-                    TargetPlatform.android: CupertinoPageTransitionsBuilder(),
-                    TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-                  });
+            const pageTransition = PageTransitionsTheme(
+              builders: {
+                TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+              },
+            );
 
             return MaterialApp(
               scaffoldMessengerKey: scaffoldMessengerKey,
               navigatorKey: rootNavigatorKey,
               title: 'Absorb',
               debugShowCheckedModeBanner: false,
+              locale: overrideLocale,
               localizationsDelegates: AppLocalizations.localizationsDelegates,
               supportedLocales: AppLocalizations.supportedLocales,
+              localeResolutionCallback: (locale, supportedLocales) {
+                if (locale != null) {
+                  for (final supported in supportedLocales) {
+                    if (supported.languageCode == locale.languageCode) {
+                      return supported;
+                    }
+                  }
+                }
+                return const Locale('en');
+              },
               themeMode: currentMode,
               theme: ThemeData(
                 useMaterial3: true,
@@ -349,6 +383,10 @@ class AbsorbApp extends StatelessWidget {
         );
         },
         );
+        },
+        );
+        },
+        );
       },
     );
   }
@@ -408,6 +446,7 @@ class _AuthGateState extends State<AuthGate> {
     final scopedTheme = await PlayerSettings.getThemeMode();
     applyThemeMode(scopedTheme);
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
+    classicWordingNotifier.value = await PlayerSettings.getClassicWording();
     PlayerSettings.showExplicitBadge = await PlayerSettings.getShowExplicitBadge();
     // Restore cover seed color
     {

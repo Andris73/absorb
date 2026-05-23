@@ -66,3 +66,15 @@ android/key.properties
 
 # Battery profiling output
 /battery-reports/
+
+# Flutter example build artifacts (vendored packages under packages/)
+**/android/app/src/main/java/io/
+**/android/local.properties
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral/
+**/ios/Runner/GeneratedPluginRegistrant.h
+**/ios/Runner/GeneratedPluginRegistrant.m
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/macos/Flutter/ephemeral/
+packages/audio_service/pubspec.lock
+packages/audio_service/example/pubspec.lock

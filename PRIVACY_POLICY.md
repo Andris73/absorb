@@ -2,7 +2,7 @@
 
 **Absorb** — Audiobookshelf Client
 
-Last updated: February 23, 2026
+Last updated: May 13, 2026
 
 ## Overview
 
@@ -29,6 +29,11 @@ Absorb communicates only with:
 
 - Your self-hosted Audiobookshelf server (for library data, playback sync, and streaming)
 - Audnexus (for fetching audiobook ratings and metadata)
+- Audible's public catalog API (for series, release dates, and book details; no account or login is involved)
+- GitHub (for checking for app updates; GitHub release builds only)
+- Apple iTunes Search API (used by admin users when browsing or searching the public podcast directory)
+- Google Cast devices on your local network (only if you initiate casting)
+- Your configured OIDC/SSO identity provider (only if you choose to log in via SSO)
 
 No analytics, crash reporting, or tracking services are used.
 
@@ -48,4 +53,4 @@ Any updates to this privacy policy will be reflected on this page with an update
 
 If you have questions about this privacy policy, you can reach the developer through the GitHub repository:
 
-https://github.com/npoulson/absorb
+https://github.com/pounat/absorb

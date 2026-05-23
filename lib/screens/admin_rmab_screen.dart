@@ -12,6 +12,7 @@ class AdminRmabScreen extends StatefulWidget {
 
 class _AdminRmabScreenState extends State<AdminRmabScreen> {
   late final WebViewController _controller;
+  bool _bgApplied = false;
   int _progress = 0;
   bool _failed = false;
 
@@ -20,7 +21,6 @@ class _AdminRmabScreenState extends State<AdminRmabScreen> {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Theme.of(context).colorScheme.surface)
       ..setNavigationDelegate(NavigationDelegate(
         onProgress: (p) => mounted ? setState(() => _progress = p) : null,
         onPageStarted: (_) => mounted ? setState(() => _failed = false) : null,
@@ -31,6 +31,15 @@ class _AdminRmabScreenState extends State<AdminRmabScreen> {
         },
       ))
       ..loadRequest(Uri.parse(widget.url));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_bgApplied) {
+      _bgApplied = true;
+      _controller.setBackgroundColor(Theme.of(context).colorScheme.surface);
+    }
   }
 
   @override

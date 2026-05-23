@@ -148,7 +148,7 @@ class PlayerSettings {
   static Future<void> setMaxConcurrentDownloads(int value) => _set('maxConcurrentDownloads', value);
 
   // ── Queue mode (replaces autoPlayNextBook + autoPlayNextPodcast) ──
-  // Values: 'off', 'manual', 'auto_next'
+  // Values: 'off', 'manual', 'auto_next', 'playlist'
   static Future<String> getQueueMode() => _get('queueMode', 'off');
   static Future<void> setQueueMode(String value) => _set('queueMode', value);
 
@@ -156,13 +156,49 @@ class PlayerSettings {
     final value = await ScopedPrefs.getString('bookQueueMode');
     return value ?? await getQueueMode();
   }
-  static Future<void> setBookQueueMode(String value) => _set('bookQueueMode', value);
+  static Future<void> setBookQueueMode(String value) => _set('bookQueueMode', value, notify: true);
+
+  static Future<bool> getShowUpNextLabel() => _get('showUpNextLabel', true);
+  static Future<void> setShowUpNextLabel(bool value) =>
+      _set('showUpNextLabel', value, notify: true);
 
   static Future<String> getPodcastQueueMode() async {
     final value = await ScopedPrefs.getString('podcastQueueMode');
     return value ?? await getQueueMode();
   }
-  static Future<void> setPodcastQueueMode(String value) => _set('podcastQueueMode', value);
+  static Future<void> setPodcastQueueMode(String value) => _set('podcastQueueMode', value, notify: true);
+
+  /// Active playlist ID for playlist queue mode. Null when no playlist is selected.
+  static Future<String?> getQueuePlaylistId() async {
+    final s = await ScopedPrefs.getString('queuePlaylistId');
+    return (s == null || s.isEmpty) ? null : s;
+  }
+  static Future<void> setQueuePlaylistId(String? id) async {
+    if (id == null || id.isEmpty) {
+      await ScopedPrefs.remove('queuePlaylistId');
+    } else {
+      await ScopedPrefs.setString('queuePlaylistId', id);
+    }
+    _notify();
+  }
+
+  /// Enter playlist queue mode atomically: both book and podcast modes flip to
+  /// 'playlist' and the active playlist is set. Playlists can mix book and
+  /// podcast items, so the two modes always agree when in playlist mode.
+  static Future<void> setQueueModePlaylist(String playlistId) async {
+    await ScopedPrefs.setString('bookQueueMode', 'playlist');
+    await ScopedPrefs.setString('podcastQueueMode', 'playlist');
+    await ScopedPrefs.setString('queuePlaylistId', playlistId);
+    _notify();
+  }
+
+  /// Exit playlist queue mode: both modes back to 'off' and active playlist cleared.
+  static Future<void> clearQueueModePlaylist() async {
+    await ScopedPrefs.setString('bookQueueMode', 'off');
+    await ScopedPrefs.setString('podcastQueueMode', 'off');
+    await ScopedPrefs.remove('queuePlaylistId');
+    _notify();
+  }
 
   /// One-time migration from the old boolean auto-play settings to queueMode.
   static Future<void> migrateQueueMode() async {
@@ -309,6 +345,12 @@ class PlayerSettings {
   static Future<String> getLibraryGenreFilter() => _get('libraryGenreFilter', '');
   static Future<void> setLibraryGenreFilter(String? value) => _set('libraryGenreFilter', value ?? '');
 
+  static Future<String> getLibraryTagFilter() => _get('libraryTagFilter', '');
+  static Future<void> setLibraryTagFilter(String? value) => _set('libraryTagFilter', value ?? '');
+
+  static Future<String> getLibrarySeriesFilter() => _get('librarySeriesFilter', 'none');
+  static Future<void> setLibrarySeriesFilter(String value) => _set('librarySeriesFilter', value);
+
   static Future<int> getLibraryTab() => _get('libraryTab', 0);
   static Future<void> setLibraryTab(int value) => _set('libraryTab', value);
 
@@ -332,6 +374,12 @@ class PlayerSettings {
   static Future<bool> getAuthorSortAsc() => _get('authorSortAsc', true);
   static Future<void> setAuthorSortAsc(bool value) => _set('authorSortAsc', value);
 
+  static Future<String> getNarratorSort() => _get('narratorSort', 'alphabetical');
+  static Future<void> setNarratorSort(String value) => _set('narratorSort', value);
+
+  static Future<bool> getNarratorSortAsc() => _get('narratorSortAsc', true);
+  static Future<void> setNarratorSortAsc(bool value) => _set('narratorSortAsc', value);
+
   static Future<bool> getShowGoodreadsButton() => _get('showGoodreadsButton', false);
   static Future<void> setShowGoodreadsButton(bool value) => _set('showGoodreadsButton', value);
 
@@ -349,6 +397,9 @@ class PlayerSettings {
 
   static Future<bool> getSnappyTransitions() => _get('snappyTransitions', false);
   static Future<void> setSnappyTransitions(bool value) => _set('snappyTransitions', value);
+
+  static Future<bool> getClassicWording() => _get('classicWording', false);
+  static Future<void> setClassicWording(bool value) => _set('classicWording', value);
 
   static Future<bool> getRectangleCovers() => _get('rectangleCovers', false);
   static Future<void> setRectangleCovers(bool value) => _set('rectangleCovers', value, notify: true);
@@ -460,6 +511,19 @@ class PlayerSettings {
 
   static Future<String> getThemeMode() => _get('themeMode', 'dark');
   static Future<void> setThemeMode(String value) => _set('themeMode', value);
+
+  /// Language override. Empty string means follow the system language.
+  /// Otherwise an ISO 639-1 code matching a supported locale (e.g. 'en', 'de', 'zh').
+  /// Stored globally (not per-user) so it persists across cold start before any
+  /// account scope is active — and so all profiles on the device share one UI language.
+  static Future<String> getLanguage() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('language') ?? '';
+  }
+  static Future<void> setLanguage(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('language', value);
+  }
 
   static Future<String> getColorSource() => _get('colorSource', 'default');
   static Future<void> setColorSource(String value) => _set('colorSource', value);

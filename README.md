@@ -4,6 +4,8 @@
 
 A modern audiobookshelf client with a card-based player experience.
 
+> **A note on AI:** Absorb is developed by a human with AI assistance (mostly Claude Code) helping write, refactor, and review code. It's not "vibe coded" or auto-generated, every change is reviewed, tested, and shipped intentionally. That said, I'm all in on AI as a development tool. It massively speeds up the work and lets a solo developer ship features and fixes at a pace that wouldn't be possible otherwise. I'm sharing this openly so you know what's behind the app.
+
 ## Screenshots
 
 <p align="center">
@@ -36,12 +38,21 @@ A modern audiobookshelf client with a card-based player experience.
 - **Search & filtering** — full-text search, filter by progress/genre/series, multiple sort modes
 - **Audible ratings** — see star ratings from Audible on your books
 - **Auto-play next** — automatically continue to the next book in a series or next podcast episode
-- **Android Auto** — browse and listen from your car
+- **Android Auto & Apple CarPlay** — browse and listen from your car
 - **Chromecast** — cast playback to Google Cast devices (Android only)
 - **Custom headers** — add custom HTTP headers for reverse proxy setups
 - **OIDC/SSO login** — OpenID Connect support alongside standard auth
 - **Server admin** — manage users, backups, and podcasts from the app
 - **Listening stats** — track your listening history
+- **Audnexus metadata** — enriched book covers, descriptions, and series info
+- **Find missing future books** — discovers upcoming books in a series via Audible's catalog, so you know what's coming next
+- **Notes** — per book or episode
+- **Playlists & collections** — create, manage, and play from custom groupings
+- **Recently played** — quick access to your listening history
+- **Real-time sync** — progress, library changes, and series updates via socket.io
+- **Homescreen widgets** — now-playing widget on Android and iOS
+- **Car mode** — large-button driving UI for use without Android Auto
+- **Localization** — community translations via Crowdin
 
 ## Install
 
@@ -83,35 +94,6 @@ Absorb supports Android Auto for browsing and listening from your car. If you ar
 > 4. Enable **Unknown sources**
 >
 > This is required because Absorb from Github is not distributed through Google Play's production track.
-
-## iOS
-
-### Working
-If any of these aren't working as expected, please [open an issue](../../issues).
-
-- [x] Library browsing, search, filtering, sorting
-- [x] Streaming and offline playback
-- [x] Downloads
-- [x] Podcast support
-- [x] Sleep timer, bookmarks, chapter navigation
-- [x] Playback speed with per-book memory
-- [x] Auto-rewind after pause
-- [x] Bluetooth media controls (play/pause, skip, rewind)
-- [x] Background audio
-- [x] Lock screen / Control Center controls
-- [x] Multi-account and server switching
-- [x] Backup & restore
-- [x] Dynamic theming
-- [x] OIDC/SSO login
-- [x] Custom headers
-- [x] Listening stats
-- [x] Auto-pause on Bluetooth disconnect
-- [x]  Equalizer
-
-### Not yet available on iOS
-- [ ] Chromecast
-- [ ] CarPlay (Android Auto equivalent)
-- [ ] Home screen / Lock Screen widgets
 
 ## Requirements
 

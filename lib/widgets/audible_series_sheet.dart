@@ -5,7 +5,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/player_settings.dart';
+import '../services/rmab_service.dart';
+import '../services/scoped_prefs.dart';
 import 'overlay_toast.dart';
+import 'rmab_book_detail_sheet.dart';
+import 'rmab_config_sheet.dart' show kRmabBaseUrlKey, kRmabApiTokenKey;
 import 'stackable_sheet.dart';
 
 /// Show a bottom sheet with Audible series discovery results.
@@ -55,12 +59,26 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
   String? _error;
   int _filter = 0; // 0 = missing, 1 = upcoming, 2 = all
   late String _region;
+  bool _rmabConfigured = false;
 
   @override
   void initState() {
     super.initState();
     _region = ApiService.debugRegion;
     _loadRegionAndFetch();
+    _loadRmabConfigured();
+  }
+
+  Future<void> _loadRmabConfigured() async {
+    final base = await ScopedPrefs.getString(kRmabBaseUrlKey);
+    final token = await ScopedPrefs.getString(kRmabApiTokenKey);
+    if (!mounted) return;
+    final next =
+        (base ?? '').isNotEmpty && (token ?? '').isNotEmpty;
+    debugPrint('[RMAB] audible-series: _rmabConfigured=$next');
+    if (next != _rmabConfigured) {
+      setState(() => _rmabConfigured = next);
+    }
   }
 
   Future<void> _loadRegionAndFetch() async {
@@ -135,6 +153,47 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
     // Ignore bogus far-future dates (placeholder data from Audible)
     if (date.year > now.year + 5) return false;
     return date.isAfter(now);
+  }
+
+  void _openBookMenu(
+    Map<String, dynamic> book, {
+    required bool owned,
+    required bool upcoming,
+  }) {
+    final l = AppLocalizations.of(context)!;
+    final cs = Theme.of(context).colorScheme;
+    // Surface the RMAB Request action only for missing-but-released books,
+    // and only when the user has RMAB configured.
+    final showRequest = _rmabConfigured && !owned && !upcoming;
+    showAudibleBookMenu(
+      context,
+      book: book,
+      seriesName: widget.seriesName,
+      region: _region,
+      extraActions: [
+        if (showRequest)
+          ListTile(
+            leading: Icon(Icons.menu_book_rounded,
+                color: cs.primary, size: 22),
+            title: Text(l.rmabRequestCta,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w500)),
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            onTap: () {
+              Navigator.pop(context);
+              final asin = book['asin'] as String? ?? '';
+              final title = book['title'] as String? ?? '';
+              debugPrint(
+                  '[RMAB] audible-series Request tapped (asin=$asin title="$title")');
+              showRmabBookDetailSheet(
+                context,
+                book: RmabSearchResult.fromUpcomingBookMap(book),
+              );
+            },
+          ),
+      ],
+    );
   }
 
   String _formatRuntime(dynamic minutes) {
@@ -304,8 +363,7 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
-        onTap: () => showAudibleBookMenu(context,
-          book: book, seriesName: widget.seriesName, region: _region),
+        onTap: () => _openBookMenu(book, owned: owned, upcoming: upcoming),
         child: Card(
         elevation: 0,
         color: upcoming

@@ -27,6 +27,11 @@ class SyncLogic {
     return raw > maxRetryDelay ? maxRetryDelay : raw;
   }
 
+  /// Position-gap threshold (seconds) above which local always wins. A larger
+  /// gap can't be explained by save/sync race or clock drift - it indicates
+  /// real unsynced listening progress that must not be discarded.
+  static const double localAheadSafetySeconds = 30.0;
+
   /// Decide whether to pull server progress or push local progress when
   /// flushing a pending sync.
   ///
@@ -35,6 +40,10 @@ class SyncLogic {
   ///
   /// Rules:
   ///   - If local timestamp is newer or equal, always push local.
+  ///   - If local position is more than [localAheadSafetySeconds] ahead of
+  ///     server, push local. A multi-minute gap is real listening progress,
+  ///     not a save race - timestamps lie when another device touched the
+  ///     server with its own (older) cached position.
   ///   - If server timestamp is newer:
   ///       - If server position is at or ahead of local position, pull server.
   ///       - Else if there is offline listening time accumulated locally,
@@ -48,6 +57,8 @@ class SyncLogic {
     required bool hasOfflineListening,
   }) {
     if (serverTimestamp <= localTimestamp) return false;
+    if (localTime == serverTime) return false;
+    if (localTime - serverTime > localAheadSafetySeconds) return false;
     return serverTime >= localTime || !hasOfflineListening;
   }
 }

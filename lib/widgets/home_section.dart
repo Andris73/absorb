@@ -291,23 +291,23 @@ class _EpisodeCard extends StatelessWidget {
                   if (coverUrl != null)
                     coverUrl.startsWith('/')
                         ? BlurPaddedCover(
+                            blurChild: Image.file(File(coverUrl), fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const SizedBox.shrink()),
                             child: Image.file(File(coverUrl), fit: BoxFit.contain,
                                 errorBuilder: (_, __, ___) => Container(
                                   color: cs.surfaceContainerHigh,
                                   child: Icon(Icons.podcasts_rounded, size: 32,
-                                    color: cs.onSurfaceVariant.withValues(alpha: 0.3)))),
-                            blurChild: Image.file(File(coverUrl), fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const SizedBox.shrink()))
+                                    color: cs.onSurfaceVariant.withValues(alpha: 0.3)))))
                         : BlurPaddedCover(
+                            blurChild: Image.network(coverUrl, fit: BoxFit.cover,
+                                headers: lib.mediaHeaders,
+                                errorBuilder: (_, __, ___) => const SizedBox.shrink()),
                             child: Image.network(coverUrl, fit: BoxFit.contain,
                                 headers: lib.mediaHeaders,
                                 errorBuilder: (_, __, ___) => Container(
                                   color: cs.surfaceContainerHigh,
                                   child: Icon(Icons.podcasts_rounded, size: 32,
-                                    color: cs.onSurfaceVariant.withValues(alpha: 0.3)))),
-                            blurChild: Image.network(coverUrl, fit: BoxFit.cover,
-                                headers: lib.mediaHeaders,
-                                errorBuilder: (_, __, ___) => const SizedBox.shrink()))
+                                    color: cs.onSurfaceVariant.withValues(alpha: 0.3)))))
                   else
                     Container(
                       color: cs.surfaceContainerHigh,

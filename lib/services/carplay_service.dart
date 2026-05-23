@@ -444,15 +444,13 @@ class CarPlayService {
   /// drills into the show's episodes.
   CPListItem _playableListItem(AutoBookEntry entry, ApiService? api) {
     final coverItemId = entry.showId ?? entry.id;
-    // Prefer the entry's own coverUrl when it's a local file:// path so
-    // downloaded books still show artwork in the CarPlay browse list when
-    // the server is unreachable. AndroidAutoService.refresh() populates
-    // file:// for downloads on iOS; the server URL from api.getCoverUrl is
-    // only useful when we can actually reach the server.
+    // Downloaded books: file:// URL (already mtime-busted in _refreshDownloaded).
+    // Streaming: ?ts= the server updatedAt so iOS refetches after a cover change.
     final entryUrl = entry.coverUrl;
+    final ts = AndroidAutoService.coverTsFor(coverItemId);
     final coverUrl = (entryUrl != null && entryUrl.startsWith('file://'))
         ? entryUrl
-        : api?.getCoverUrl(coverItemId);
+        : api?.getCoverUrl(coverItemId, updatedAt: ts);
 
     final isPodcastShow = entry.mediaType == 'podcast' &&
         entry.episodeId == null &&

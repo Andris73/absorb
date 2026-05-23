@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../l10n/app_localizations.dart';
+import '../services/wording.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
@@ -183,11 +184,11 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: Text(l.markAsFullyAbsorbedQuestion),
+            title: Text(Wording.of(context).markAsFullyAbsorbedQuestion),
             content: Text(l.episodeDetailMarkAbsorbedContent),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
-              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.fullyAbsorbAction)),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(Wording.of(context).fullyAbsorbAction)),
             ],
           ),
         );
@@ -441,7 +442,7 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      isFinished ? l.fullyAbsorbed : l.fullyAbsorbAction,
+                      isFinished ? Wording.of(context).fullyAbsorbed : Wording.of(context).fullyAbsorbAction,
                       style: TextStyle(
                         color: isFinished ? Colors.green : cs.onSurfaceVariant,
                         fontSize: 12, fontWeight: FontWeight.w500,
@@ -550,7 +551,7 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
                 decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
               _moreItem(cs, lib.isOnAbsorbingList(dlKey)
                   ? Icons.remove_circle_outline_rounded : Icons.add_circle_outline_rounded,
-                lib.isOnAbsorbingList(dlKey) ? l.removeFromAbsorbing : l.addToAbsorbing,
+                lib.isOnAbsorbingList(dlKey) ? Wording.of(context).removeFromAbsorbing : Wording.of(context).addToAbsorbing,
                 onTap: () async {
                   Navigator.pop(ctx);
                   if (lib.isOnAbsorbingList(dlKey)) {
@@ -558,7 +559,7 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                         duration: const Duration(seconds: 3),
-                        content: Text(l.removedFromAbsorbing),
+                        content: Text(Wording.of(context).removedFromAbsorbing),
                         behavior: SnackBarBehavior.floating,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
                     }
@@ -571,7 +572,7 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                         duration: const Duration(seconds: 3),
-                        content: Text(l.addedToAbsorbing),
+                        content: Text(Wording.of(context).addedToAbsorbing),
                         behavior: SnackBarBehavior.floating,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
                     }

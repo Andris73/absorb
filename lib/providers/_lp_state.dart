@@ -293,26 +293,6 @@ mixin _StateMixin on ChangeNotifier {
     return cached;
   }
 
-  static bool _isLocalUrl(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null || uri.host.isEmpty) return false;
-    final host = uri.host.toLowerCase();
-    if (host == 'localhost' || host == '127.0.0.1' || host == '::1') {
-      return true;
-    }
-    final parts = host.split('.');
-    if (parts.length == 4) {
-      final a = int.tryParse(parts[0]);
-      final b = int.tryParse(parts[1]);
-      if (a == 10) return true;
-      if (a == 172 && b != null && b >= 16 && b <= 31) return true;
-      if (a == 192 && b == 168) return true;
-    }
-    if (host.endsWith('.local')) return true;
-    if (host.endsWith('.ts.net')) return true;
-    return false;
-  }
-
   void _showRollingSnackBar(String message) {
     scaffoldMessengerKey.currentState
       ?..clearSnackBars()

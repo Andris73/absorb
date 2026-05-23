@@ -617,10 +617,11 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
           builder: (context, cardConstraints) {
           final textScale = MediaQuery.textScalerOf(context).scale(1.0).clamp(1.0, 1.5);
           final compact = cardConstraints.maxHeight < 600 * textScale;
-          return Column(
-            children: [
-              // ── Stats row (fades when edge bar expands) ──
-              ValueListenableBuilder<bool>(
+          // In landscape the card is wider than tall — switch to a two-pane
+          // layout with the cover on the left and everything else on the right.
+          final wide = cardConstraints.maxWidth > cardConstraints.maxHeight;
+
+          final statsRow = ValueListenableBuilder<bool>(
                 valueListenable: _edgeBarExpanded,
                 builder: (_, expanded, child) => AnimatedOpacity(
                   opacity: expanded ? 0.0 : 1.0,
@@ -681,9 +682,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                     },
                   ),
                 ),
-              ),
-                // ── Cover with title/author/chapter overlaid ──
-                Expanded(child: Padding(
+              );
+
+          final coverArea = Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: ListenableBuilder(
                     listenable: Listenable.merge([ChromecastService(), widget.player]),
@@ -764,19 +765,17 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                                 // Cover image
                                 _coverUrl != null
                                     ? _isLocalCover
-                                        ? BlurPaddedCover(child: Image.file(File(_coverUrl!), fit: _rectangleCovers ? BoxFit.cover : BoxFit.contain,
-                                            errorBuilder: (_, __, ___) => CoverPlaceholder(title: _title, author: _author)),
-                                            blurChild: Image.file(File(_coverUrl!), fit: BoxFit.cover,
+                                        ? BlurPaddedCover(blurChild: Image.file(File(_coverUrl!), fit: BoxFit.cover,
                                             errorBuilder: (_, __, ___) => const SizedBox.shrink()),
-                                            enabled: !_rectangleCovers)
-                                        : BlurPaddedCover(child: CachedNetworkImage(imageUrl: _coverUrl!, fit: _rectangleCovers ? BoxFit.cover : BoxFit.contain,
-                                              httpHeaders: mediaHeaders,
-                                              placeholder: (_, __) => CoverPlaceholder(title: _title, author: _author),
-                                              errorWidget: (_, __, ___) => CoverPlaceholder(title: _title, author: _author)),
-                                            blurChild: CachedNetworkImage(imageUrl: _coverUrl!, fit: BoxFit.cover,
+                                            enabled: !_rectangleCovers, child: Image.file(File(_coverUrl!), fit: _rectangleCovers ? BoxFit.cover : BoxFit.contain,
+                                            errorBuilder: (_, __, ___) => CoverPlaceholder(title: _title, author: _author)))
+                                        : BlurPaddedCover(blurChild: CachedNetworkImage(imageUrl: _coverUrl!, fit: BoxFit.cover,
                                               httpHeaders: mediaHeaders,
                                               errorWidget: (_, __, ___) => const SizedBox.shrink()),
-                                            enabled: !_rectangleCovers)
+                                            enabled: !_rectangleCovers, child: CachedNetworkImage(imageUrl: _coverUrl!, fit: _rectangleCovers ? BoxFit.cover : BoxFit.contain,
+                                              httpHeaders: mediaHeaders,
+                                              placeholder: (_, __) => CoverPlaceholder(title: _title, author: _author),
+                                              errorWidget: (_, __, ___) => CoverPlaceholder(title: _title, author: _author)))
                                     : CoverPlaceholder(title: _title, author: _author),
                                                 // Casting overlay
                                 if (isCastingThis) ...[
@@ -883,17 +882,14 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                     },
                   ),
                   ),
-                ),
-                ),
-                // ── Chapter pill-scrubber ──
-                SizedBox(height: compact ? 6 : 10),
-                Padding(
+              );
+
+          final scrubberBar = Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: (_isPodcastEpisode && _chapters.isEmpty) ? 0.0 : progress, staticDuration: (_isPodcastEpisode && _chapters.isEmpty) ? widget.player.totalDuration : _effectiveDuration, chapters: _chapters, showBookBar: false, showChapterBar: true, chapterName: (_isPodcastEpisode && _chapters.isEmpty) ? (widget.player.currentEpisodeTitle ?? widget.player.currentTitle ?? _title) : (_episodeId != null && !_isActive ? (_recentEpisode?['title'] as String? ?? _title) : _chapterName(chapterIdx)), chapterIndex: chapterIdx, totalChapters: totalChapters, itemId: _itemId, compact: compact),
-                ),
-                // ── Controls ──
-                SizedBox(height: compact ? 6 : 10),
-                Padding(
+                );
+
+          final controlsRow = Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   child: CardPlaybackControls(
                     player: widget.player,
@@ -904,19 +900,19 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                     itemId: _itemId,
                     showPlayButton: !_coverPlayButton,
                   ),
-                ),
-                SizedBox(height: compact ? 6 : 12),
-                // ── Button grid + more menu ──
-                MediaQuery(
+                );
+
+          final buttonGrid = MediaQuery(
                   data: MediaQuery.of(context).copyWith(
                     textScaler: TextScaler.noScaling,
                   ),
                   child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: FittedBox(
+                  child: LayoutBuilder(
+                    builder: (context, buttonsConstraints) => FittedBox(
                     fit: BoxFit.scaleDown,
                     child: SizedBox(
-                      width: cardConstraints.maxWidth - 40,
+                      width: buttonsConstraints.maxWidth - 40,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -962,9 +958,42 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                       ),
                     ),
                   ),
+                  ),
                 ),
-                ),
+                );
+
+          if (wide) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: coverArea),
+                Expanded(child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    statsRow,
+                    SizedBox(height: compact ? 6 : 10),
+                    scrubberBar,
+                    SizedBox(height: compact ? 6 : 10),
+                    controlsRow,
+                    SizedBox(height: compact ? 6 : 12),
+                    buttonGrid,
+                  ],
+                )),
               ],
+            );
+          }
+
+          return Column(
+            children: [
+              statsRow,
+              Expanded(child: coverArea),
+              SizedBox(height: compact ? 6 : 10),
+              scrubberBar,
+              SizedBox(height: compact ? 6 : 10),
+              controlsRow,
+              SizedBox(height: compact ? 6 : 12),
+              buttonGrid,
+            ],
           );
           }),
           // Edge progress bar (thin strip at top of card)

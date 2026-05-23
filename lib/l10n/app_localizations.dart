@@ -571,7 +571,7 @@ abstract class AppLocalizations {
   /// No description provided for @librarySearchBooksHint.
   ///
   /// In en, this message translates to:
-  /// **'Search books, series, and authors...'**
+  /// **'Search books, series, authors, narrators...'**
   String get librarySearchBooksHint;
 
   /// No description provided for @librarySearchShowsHint.
@@ -597,6 +597,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Authors'**
   String get libraryTabAuthors;
+
+  /// No description provided for @libraryTabNarrators.
+  ///
+  /// In en, this message translates to:
+  /// **'Narrators'**
+  String get libraryTabNarrators;
 
   /// No description provided for @libraryNoBooks.
   ///
@@ -646,6 +652,12 @@ abstract class AppLocalizations {
   /// **'No books in \"{genre}\"'**
   String libraryNoBooksInGenre(String genre);
 
+  /// No description provided for @libraryNoBooksWithTag.
+  ///
+  /// In en, this message translates to:
+  /// **'No books tagged \"{tag}\"'**
+  String libraryNoBooksWithTag(String tag);
+
   /// No description provided for @libraryClearFilter.
   ///
   /// In en, this message translates to:
@@ -657,6 +669,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No authors found'**
   String get libraryNoAuthorsFound;
+
+  /// No description provided for @libraryNoNarratorsFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No narrators found'**
+  String get libraryNoNarratorsFound;
 
   /// No description provided for @libraryNoResults.
   ///
@@ -694,6 +712,18 @@ abstract class AppLocalizations {
   /// **'Authors'**
   String get librarySearchAuthors;
 
+  /// No description provided for @librarySearchTags.
+  ///
+  /// In en, this message translates to:
+  /// **'Tags'**
+  String get librarySearchTags;
+
+  /// No description provided for @librarySearchGenres.
+  ///
+  /// In en, this message translates to:
+  /// **'Genres'**
+  String get librarySearchGenres;
+
   /// No description provided for @librarySeriesCount.
   ///
   /// In en, this message translates to:
@@ -705,6 +735,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count} authors'**
   String libraryAuthorsCount(int count);
+
+  /// No description provided for @libraryNarratorsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} narrators'**
+  String libraryNarratorsCount(int count);
 
   /// No description provided for @libraryBooksCount.
   ///
@@ -820,6 +856,12 @@ abstract class AppLocalizations {
   /// **'Genre'**
   String get genre;
 
+  /// No description provided for @tag.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag'**
+  String get tag;
+
   /// No description provided for @clearFilter.
   ///
   /// In en, this message translates to:
@@ -831,6 +873,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No genres found'**
   String get noGenresFound;
+
+  /// No description provided for @noTagsFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No tags found'**
+  String get noTagsFound;
 
   /// No description provided for @asc.
   ///
@@ -1312,6 +1360,18 @@ abstract class AppLocalizations {
   /// **'Settings'**
   String get appShellSettingsTab;
 
+  /// No description provided for @appShellDiscoverTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Discover'**
+  String get appShellDiscoverTab;
+
+  /// No description provided for @appShellShowsTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Shows'**
+  String get appShellShowsTab;
+
   /// No description provided for @appShellPressBackToExit.
   ///
   /// In en, this message translates to:
@@ -1329,6 +1389,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Appearance'**
   String get sectionAppearance;
+
+  /// No description provided for @languageLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Language'**
+  String get languageLabel;
+
+  /// No description provided for @languageSystemDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'System default'**
+  String get languageSystemDefault;
+
+  /// No description provided for @languageHelpTranslateInvite.
+  ///
+  /// In en, this message translates to:
+  /// **'Want to help translate Absorb into your language?'**
+  String get languageHelpTranslateInvite;
 
   /// No description provided for @themeLabel.
   ///
@@ -1573,13 +1651,13 @@ abstract class AppLocalizations {
   /// No description provided for @mergeLibraries.
   ///
   /// In en, this message translates to:
-  /// **'Merge libraries'**
+  /// **'Unified Absorbing page'**
   String get mergeLibraries;
 
   /// No description provided for @mergeLibrariesInfoTitle.
   ///
   /// In en, this message translates to:
-  /// **'Merge Libraries'**
+  /// **'Unified Absorbing Page'**
   String get mergeLibrariesInfoTitle;
 
   /// No description provided for @mergeLibrariesInfoContent.
@@ -1665,6 +1743,96 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Auto'**
   String get queueModeAuto;
+
+  /// No description provided for @queueModePlaylist.
+  ///
+  /// In en, this message translates to:
+  /// **'Playlist'**
+  String get queueModePlaylist;
+
+  /// No description provided for @queueModeInfoPlaylist.
+  ///
+  /// In en, this message translates to:
+  /// **'Playlist Queue'**
+  String get queueModeInfoPlaylist;
+
+  /// No description provided for @queueModeInfoPlaylistDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Plays items in order from a chosen playlist, skipping anything already finished. Stops at the end of the list.'**
+  String get queueModeInfoPlaylistDesc;
+
+  /// No description provided for @queuePlaylistPickerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a playlist'**
+  String get queuePlaylistPickerTitle;
+
+  /// No description provided for @queuePlaylistNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No playlist selected'**
+  String get queuePlaylistNone;
+
+  /// No description provided for @queuePlaylistActiveLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Playlist: {name}'**
+  String queuePlaylistActiveLabel(String name);
+
+  /// No description provided for @queueModePlaylistHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Start a playlist queue by opening a playlist on the home page.'**
+  String get queueModePlaylistHint;
+
+  /// No description provided for @exit.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit'**
+  String get exit;
+
+  /// No description provided for @upNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Up next: {label}'**
+  String upNext(String label);
+
+  /// No description provided for @nothingUpNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing up next'**
+  String get nothingUpNext;
+
+  /// No description provided for @showUpNextLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Show Up next on the absorbing page'**
+  String get showUpNextLabel;
+
+  /// No description provided for @openSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Open series'**
+  String get openSeries;
+
+  /// No description provided for @openPlaylist.
+  ///
+  /// In en, this message translates to:
+  /// **'Open playlist'**
+  String get openPlaylist;
+
+  /// No description provided for @playlistPlayAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Play playlist'**
+  String get playlistPlayAction;
+
+  /// No description provided for @playlistAllFinished.
+  ///
+  /// In en, this message translates to:
+  /// **'All finished'**
+  String get playlistAllFinished;
 
   /// No description provided for @queueModeBooks.
   ///
@@ -3088,6 +3256,378 @@ abstract class AppLocalizations {
   /// **'ReadMeABook is a self-hosted service for requesting and downloading audiobooks. It must be installed and set up by your server admin.'**
   String get adminRmabSettingsInfo;
 
+  /// No description provided for @rmabConfigTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect ReadMeABook'**
+  String get rmabConfigTitle;
+
+  /// No description provided for @rmabConfigExplainerAdmin.
+  ///
+  /// In en, this message translates to:
+  /// **'ReadMeABook is a self-hosted service for requesting audiobooks. Generate an API token in RMAB under Admin Dashboard > Settings > API, then paste the server URL and token below. Absorb doesn\'t host or download any content, it just sends requests to your server.'**
+  String get rmabConfigExplainerAdmin;
+
+  /// No description provided for @rmabConfigExplainerUser.
+  ///
+  /// In en, this message translates to:
+  /// **'ReadMeABook is a self-hosted service for requesting audiobooks. Ask your server admin for the RMAB URL and an API token. Absorb doesn\'t host or download any content, it just sends requests to your server.'**
+  String get rmabConfigExplainerUser;
+
+  /// No description provided for @rmabConfigLearnMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Learn more about ReadMeABook'**
+  String get rmabConfigLearnMore;
+
+  /// No description provided for @rmabConfigBaseUrlLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'RMAB server URL'**
+  String get rmabConfigBaseUrlLabel;
+
+  /// No description provided for @rmabConfigBaseUrlHint.
+  ///
+  /// In en, this message translates to:
+  /// **'https://rmab.example.com'**
+  String get rmabConfigBaseUrlHint;
+
+  /// No description provided for @rmabConfigTokenLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'API token'**
+  String get rmabConfigTokenLabel;
+
+  /// No description provided for @rmabConfigTokenHint.
+  ///
+  /// In en, this message translates to:
+  /// **'rmab_...'**
+  String get rmabConfigTokenHint;
+
+  /// No description provided for @rmabConfigLegacyUrlLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Web UI login URL (optional)'**
+  String get rmabConfigLegacyUrlLabel;
+
+  /// No description provided for @rmabConfigLegacyUrlHint.
+  ///
+  /// In en, this message translates to:
+  /// **'https://rmab.example.com/?token=...'**
+  String get rmabConfigLegacyUrlHint;
+
+  /// No description provided for @rmabConfigLegacyUrlHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste your auto-login URL so \'Open in browser view\' lands you signed in. Leave blank to use a regular login.'**
+  String get rmabConfigLegacyUrlHelp;
+
+  /// No description provided for @rmabConfigConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect'**
+  String get rmabConfigConnect;
+
+  /// No description provided for @rmabConfigDisconnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnect'**
+  String get rmabConfigDisconnect;
+
+  /// No description provided for @rmabConfigOpenWebView.
+  ///
+  /// In en, this message translates to:
+  /// **'Open in browser view'**
+  String get rmabConfigOpenWebView;
+
+  /// No description provided for @rmabConfigConnectedAs.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected as {name}'**
+  String rmabConfigConnectedAs(String name);
+
+  /// No description provided for @rmabConfigErrorInvalidUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid http(s) URL'**
+  String get rmabConfigErrorInvalidUrl;
+
+  /// No description provided for @rmabConfigErrorMissingToken.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your API token'**
+  String get rmabConfigErrorMissingToken;
+
+  /// No description provided for @rmabConfigErrorUnauthorized.
+  ///
+  /// In en, this message translates to:
+  /// **'Token rejected by server'**
+  String get rmabConfigErrorUnauthorized;
+
+  /// No description provided for @rmabConfigErrorForbidden.
+  ///
+  /// In en, this message translates to:
+  /// **'This token isn\'t allowed for that action'**
+  String get rmabConfigErrorForbidden;
+
+  /// No description provided for @rmabConfigErrorNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reach RMAB. Check the URL.'**
+  String get rmabConfigErrorNetwork;
+
+  /// No description provided for @rmabConfigErrorGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t connect'**
+  String get rmabConfigErrorGeneric;
+
+  /// No description provided for @rmabConfigSavedSnackbar.
+  ///
+  /// In en, this message translates to:
+  /// **'ReadMeABook connected'**
+  String get rmabConfigSavedSnackbar;
+
+  /// No description provided for @rmabConfigDisconnectedSnackbar.
+  ///
+  /// In en, this message translates to:
+  /// **'ReadMeABook disconnected'**
+  String get rmabConfigDisconnectedSnackbar;
+
+  /// No description provided for @rmabRequestCta.
+  ///
+  /// In en, this message translates to:
+  /// **'Request via ReadMeABook'**
+  String get rmabRequestCta;
+
+  /// No description provided for @rmabSearchHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'Request via ReadMeABook'**
+  String get rmabSearchHeader;
+
+  /// No description provided for @rmabSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search by title or author'**
+  String get rmabSearchHint;
+
+  /// No description provided for @rmabSearchEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No matches on your ReadMeABook server'**
+  String get rmabSearchEmpty;
+
+  /// No description provided for @rmabSearchError.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t search ReadMeABook'**
+  String get rmabSearchError;
+
+  /// No description provided for @rmabSearchPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Type a title or author to search'**
+  String get rmabSearchPrompt;
+
+  /// No description provided for @rmabSearchFooterPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Looking for something else?'**
+  String get rmabSearchFooterPrompt;
+
+  /// No description provided for @rmabSearchFooterCta.
+  ///
+  /// In en, this message translates to:
+  /// **'Search ReadMeABook for \"{query}\"'**
+  String rmabSearchFooterCta(String query);
+
+  /// No description provided for @rmabBookDetailExplainer.
+  ///
+  /// In en, this message translates to:
+  /// **'This request will be sent through your ReadMeABook server. The admin will review and process it. You can track it under My Requests on the ReadMeABook tile.'**
+  String get rmabBookDetailExplainer;
+
+  /// No description provided for @rmabBookAlreadyAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Already in your library'**
+  String get rmabBookAlreadyAvailable;
+
+  /// No description provided for @rmabBookAlreadyRequested.
+  ///
+  /// In en, this message translates to:
+  /// **'Already requested'**
+  String get rmabBookAlreadyRequested;
+
+  /// No description provided for @rmabRequestSubmitting.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting…'**
+  String get rmabRequestSubmitting;
+
+  /// No description provided for @rmabRequestSent.
+  ///
+  /// In en, this message translates to:
+  /// **'Request sent'**
+  String get rmabRequestSent;
+
+  /// No description provided for @rmabRequestErrorAlreadyAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Already in your library'**
+  String get rmabRequestErrorAlreadyAvailable;
+
+  /// No description provided for @rmabRequestErrorBeingProcessed.
+  ///
+  /// In en, this message translates to:
+  /// **'Already being processed'**
+  String get rmabRequestErrorBeingProcessed;
+
+  /// No description provided for @rmabRequestErrorDuplicate.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve already requested this'**
+  String get rmabRequestErrorDuplicate;
+
+  /// No description provided for @rmabRequestErrorValidation.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t send the request'**
+  String get rmabRequestErrorValidation;
+
+  /// No description provided for @rmabRequestErrorUserNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Token user no longer exists. Reconnect ReadMeABook.'**
+  String get rmabRequestErrorUserNotFound;
+
+  /// No description provided for @rmabRequestErrorIgnored.
+  ///
+  /// In en, this message translates to:
+  /// **'This book is on your ignore list'**
+  String get rmabRequestErrorIgnored;
+
+  /// No description provided for @rmabRequestErrorGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t send the request'**
+  String get rmabRequestErrorGeneric;
+
+  /// No description provided for @rmabRequestErrorTokenRejected.
+  ///
+  /// In en, this message translates to:
+  /// **'Token rejected by server. Reconnect ReadMeABook.'**
+  String get rmabRequestErrorTokenRejected;
+
+  /// No description provided for @rmabMyRequestsTab.
+  ///
+  /// In en, this message translates to:
+  /// **'My Requests'**
+  String get rmabMyRequestsTab;
+
+  /// No description provided for @rmabSetupTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Setup'**
+  String get rmabSetupTab;
+
+  /// No description provided for @rmabMyRequestsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'You haven\'t requested any books yet'**
+  String get rmabMyRequestsEmpty;
+
+  /// No description provided for @rmabMyRequestsError.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load requests'**
+  String get rmabMyRequestsError;
+
+  /// No description provided for @rmabMyRequestsRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh'**
+  String get rmabMyRequestsRefresh;
+
+  /// No description provided for @rmabRequestDetailTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Request details'**
+  String get rmabRequestDetailTitle;
+
+  /// No description provided for @rmabRequestDetailStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get rmabRequestDetailStatus;
+
+  /// No description provided for @rmabRequestDetailRequestedOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Requested on'**
+  String get rmabRequestDetailRequestedOn;
+
+  /// No description provided for @rmabRequestDetailCompletedOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed on'**
+  String get rmabRequestDetailCompletedOn;
+
+  /// No description provided for @rmabRequestDetailProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Progress'**
+  String get rmabRequestDetailProgress;
+
+  /// No description provided for @rmabStatusActive.
+  ///
+  /// In en, this message translates to:
+  /// **'In progress'**
+  String get rmabStatusActive;
+
+  /// No description provided for @rmabStatusWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting'**
+  String get rmabStatusWaiting;
+
+  /// No description provided for @rmabStatusAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Available'**
+  String get rmabStatusAvailable;
+
+  /// No description provided for @rmabStatusDownloaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded'**
+  String get rmabStatusDownloaded;
+
+  /// No description provided for @rmabStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get rmabStatusFailed;
+
+  /// No description provided for @rmabStatusCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get rmabStatusCancelled;
+
+  /// No description provided for @rmabStatusDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Denied'**
+  String get rmabStatusDenied;
+
+  /// No description provided for @rmabStatusUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get rmabStatusUnknown;
+
   /// No description provided for @narratedBy.
   ///
   /// In en, this message translates to:
@@ -3225,6 +3765,96 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Edit Server Details'**
   String get editServerDetails;
+
+  /// No description provided for @encodeTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Encode'**
+  String get encodeTab;
+
+  /// No description provided for @codec.
+  ///
+  /// In en, this message translates to:
+  /// **'Codec'**
+  String get codec;
+
+  /// No description provided for @bitrate.
+  ///
+  /// In en, this message translates to:
+  /// **'Bitrate'**
+  String get bitrate;
+
+  /// No description provided for @channels.
+  ///
+  /// In en, this message translates to:
+  /// **'Channels'**
+  String get channels;
+
+  /// No description provided for @mono.
+  ///
+  /// In en, this message translates to:
+  /// **'Mono'**
+  String get mono;
+
+  /// No description provided for @stereo.
+  ///
+  /// In en, this message translates to:
+  /// **'Stereo'**
+  String get stereo;
+
+  /// No description provided for @startM4bEncode.
+  ///
+  /// In en, this message translates to:
+  /// **'Start M4B Encode'**
+  String get startM4bEncode;
+
+  /// No description provided for @encodeStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'M4B encode started'**
+  String get encodeStarted;
+
+  /// No description provided for @encodeFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to start encode'**
+  String get encodeFailed;
+
+  /// No description provided for @encodeFinished.
+  ///
+  /// In en, this message translates to:
+  /// **'M4B encode finished'**
+  String get encodeFinished;
+
+  /// No description provided for @currentlyLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Currently:'**
+  String get currentlyLabel;
+
+  /// No description provided for @encodeOutputPathNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Finished M4B will be put into your audiobook folder at: {path}/'**
+  String encodeOutputPathNote(String path);
+
+  /// No description provided for @encodeBackupNote.
+  ///
+  /// In en, this message translates to:
+  /// **'A backup of your original audio files will be stored in: /metadata/cache/items/{itemId}/. Make sure to periodically purge items cache.'**
+  String encodeBackupNote(String itemId);
+
+  /// No description provided for @encodeTimeNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Encoding can take up to 30 minutes.'**
+  String get encodeTimeNote;
+
+  /// No description provided for @encodeRescanNote.
+  ///
+  /// In en, this message translates to:
+  /// **'If you have the watcher disabled you will need to re-scan this audiobook afterwards.'**
+  String get encodeRescanNote;
 
   /// No description provided for @aboutSection.
   ///
@@ -3754,17 +4384,17 @@ abstract class AppLocalizations {
   /// **'Year'**
   String get yearLabel;
 
-  /// No description provided for @languageLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Language'**
-  String get languageLabel;
-
   /// No description provided for @genresLabel.
   ///
   /// In en, this message translates to:
   /// **'Genres'**
   String get genresLabel;
+
+  /// No description provided for @tagsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Tags'**
+  String get tagsLabel;
 
   /// No description provided for @commaSeparated.
   ///
@@ -6089,6 +6719,12 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{1 episode} other{{count} episodes}}'**
   String episodeListEpisodeCount(int count);
 
+  /// No description provided for @episodeListUnfinishedCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 unfinished} other{{count} unfinished}}'**
+  String episodeListUnfinishedCount(int count);
+
   /// No description provided for @episodeListAutoDownloadChip.
   ///
   /// In en, this message translates to:
@@ -8159,6 +8795,96 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Speed presets reset'**
   String get speedPresetsReset;
+
+  /// No description provided for @editAuthor.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit author'**
+  String get editAuthor;
+
+  /// No description provided for @authorName.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get authorName;
+
+  /// No description provided for @authorImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Author image'**
+  String get authorImage;
+
+  /// No description provided for @authorRemoveImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove image'**
+  String get authorRemoveImage;
+
+  /// No description provided for @authorRemoveImageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove author image?'**
+  String get authorRemoveImageTitle;
+
+  /// No description provided for @authorRemoveImageConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'This deletes the image on the server.'**
+  String get authorRemoveImageConfirm;
+
+  /// No description provided for @authorImageRemoved.
+  ///
+  /// In en, this message translates to:
+  /// **'Image removed'**
+  String get authorImageRemoved;
+
+  /// No description provided for @authorImageFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update author image'**
+  String get authorImageFailed;
+
+  /// No description provided for @authorUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Author updated'**
+  String get authorUpdated;
+
+  /// No description provided for @authorUpdateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update author'**
+  String get authorUpdateFailed;
+
+  /// No description provided for @authorMatched.
+  ///
+  /// In en, this message translates to:
+  /// **'Author updated from match'**
+  String get authorMatched;
+
+  /// No description provided for @authorNoMatchFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No match found'**
+  String get authorNoMatchFound;
+
+  /// No description provided for @authorMergedInto.
+  ///
+  /// In en, this message translates to:
+  /// **'Merged into {name}'**
+  String authorMergedInto(String name);
+
+  /// No description provided for @authorQuickMatchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Pull name, ASIN, description and image from Audible for the chosen region.'**
+  String get authorQuickMatchHint;
+
+  /// No description provided for @region.
+  ///
+  /// In en, this message translates to:
+  /// **'Region'**
+  String get region;
 }
 
 class _AppLocalizationsDelegate

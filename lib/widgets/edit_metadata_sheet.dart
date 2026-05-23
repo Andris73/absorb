@@ -12,6 +12,9 @@ void showEditMetadataSheet(
   BuildContext context, {
   required String itemId,
   required Map<String, dynamic> metadata,
+  List<String> tags = const [],
+  List<dynamic> audioFiles = const [],
+  String relPath = '',
 }) {
   showModalBottomSheet(
     context: context,
@@ -27,6 +30,9 @@ void showEditMetadataSheet(
       builder: (ctx, sc) => _EditMetadataContent(
         itemId: itemId,
         metadata: metadata,
+        tags: tags,
+        audioFiles: audioFiles,
+        relPath: relPath,
         scrollController: sc,
       ),
     ),
@@ -36,11 +42,17 @@ void showEditMetadataSheet(
 class _EditMetadataContent extends StatefulWidget {
   final String itemId;
   final Map<String, dynamic> metadata;
+  final List<String> tags;
+  final List<dynamic> audioFiles;
+  final String relPath;
   final ScrollController scrollController;
 
   const _EditMetadataContent({
     required this.itemId,
     required this.metadata,
+    this.tags = const [],
+    this.audioFiles = const [],
+    this.relPath = '',
     required this.scrollController,
   });
 
@@ -62,6 +74,7 @@ class _EditMetadataContentState extends State<_EditMetadataContent>
   late final TextEditingController _publisherCtrl;
   late final TextEditingController _yearCtrl;
   late final TextEditingController _genresCtrl;
+  late final TextEditingController _tagsCtrl;
   late final TextEditingController _asinCtrl;
   late final TextEditingController _isbnCtrl;
   late final TextEditingController _languageCtrl;
@@ -88,10 +101,16 @@ class _EditMetadataContentState extends State<_EditMetadataContent>
   String? _coverFilePath;
   bool _saving = false;
 
+  // Encode tab
+  String _encodeCodec = 'aac';
+  String _encodeBitrate = '128k';
+  int _encodeChannels = 2;
+  bool _encoding = false;
+
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(length: 3, vsync: this);
     final m = widget.metadata;
     _titleCtrl = TextEditingController(text: m['title'] as String? ?? '');
     _subtitleCtrl = TextEditingController(text: m['subtitle'] as String? ?? '');
@@ -120,6 +139,7 @@ class _EditMetadataContentState extends State<_EditMetadataContent>
 
     final genres = (m['genres'] as List<dynamic>?)?.cast<String>() ?? [];
     _genresCtrl = TextEditingController(text: genres.join(', '));
+    _tagsCtrl = TextEditingController(text: widget.tags.join(', '));
 
     // Search fields default to current title/author
     _searchTitleCtrl = TextEditingController(text: m['title'] as String? ?? '');
@@ -141,6 +161,7 @@ class _EditMetadataContentState extends State<_EditMetadataContent>
     _publisherCtrl.dispose();
     _yearCtrl.dispose();
     _genresCtrl.dispose();
+    _tagsCtrl.dispose();
     _asinCtrl.dispose();
     _isbnCtrl.dispose();
     _languageCtrl.dispose();
@@ -333,7 +354,12 @@ class _EditMetadataContentState extends State<_EditMetadataContent>
     }
     update['series'] = seriesList;
 
-    bool ok = await api.updateItemMedia(widget.itemId, update);
+    final tagsText = _tagsCtrl.text.trim();
+    final tags = tagsText.isNotEmpty
+        ? tagsText.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).toList()
+        : <String>[];
+
+    bool ok = await api.updateItemMedia(widget.itemId, update, tags: tags);
 
     if (ok && _coverFilePath != null) {
       ok = await api.uploadItemCover(widget.itemId, _coverFilePath!);
@@ -388,6 +414,193 @@ class _EditMetadataContentState extends State<_EditMetadataContent>
     return value.toString();
   }
 
+  // ─── Encode Tab ─────────────────────────────────────────────
+
+  Map<String, dynamic>? get _firstAudioFile {
+    if (widget.audioFiles.isEmpty) return null;
+    final f = widget.audioFiles.first;
+    return f is Map<String, dynamic> ? f : null;
+  }
+
+  String? get _currentCodec {
+    final c = _firstAudioFile?['codec'] as String?;
+    if (c == null || c.isEmpty) return null;
+    return c.toUpperCase();
+  }
+
+  int? get _currentBitrateKbps {
+    final b = (_firstAudioFile?['bitRate'] as num?)?.toInt();
+    if (b == null || b <= 0) return null;
+    return (b / 1000).round();
+  }
+
+  String? _currentChannelText(AppLocalizations l) {
+    final ch = (_firstAudioFile?['channels'] as num?)?.toInt();
+    if (ch == null) return null;
+    final layout = (_firstAudioFile?['channelLayout'] as String?)?.trim();
+    final name = layout != null && layout.isNotEmpty
+        ? layout
+        : (ch == 1 ? l.mono : l.stereo);
+    return '$ch ($name)';
+  }
+
+  Widget _buildEncodeTab(ColorScheme cs, TextTheme tt, AppLocalizations l) {
+    final codecText = _currentCodec;
+    final bitrateText = _currentBitrateKbps;
+    final channelText = _currentChannelText(l);
+
+    return SingleChildScrollView(
+      controller: widget.scrollController,
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 24 + MediaQuery.of(context).viewPadding.bottom),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _encodeLabel(l.codec, tt, cs),
+        _encodeToggleRow<String>(
+          values: const ['copy', 'aac', 'opus'],
+          labels: const ['Copy', 'AAC', 'OPUS'],
+          selected: _encodeCodec,
+          onTap: (v) => setState(() => _encodeCodec = v),
+          cs: cs, tt: tt,
+        ),
+        if (codecText != null) _currentLine(codecText, cs, tt, l),
+        const SizedBox(height: 20),
+        _encodeLabel(l.bitrate, tt, cs),
+        _encodeToggleRow<String>(
+          values: const ['32k', '64k', '128k', '192k'],
+          labels: const ['32k', '64k', '128k', '192k'],
+          selected: _encodeBitrate,
+          onTap: (v) => setState(() => _encodeBitrate = v),
+          cs: cs, tt: tt,
+        ),
+        if (bitrateText != null) _currentLine(l.kbpsValue(bitrateText), cs, tt, l),
+        const SizedBox(height: 20),
+        _encodeLabel(l.channels, tt, cs),
+        _encodeToggleRow<int>(
+          values: const [1, 2],
+          labels: [l.mono, l.stereo],
+          selected: _encodeChannels,
+          onTap: (v) => setState(() => _encodeChannels = v),
+          cs: cs, tt: tt,
+        ),
+        if (channelText != null) _currentLine(channelText, cs, tt, l),
+        const SizedBox(height: 24),
+        if (widget.relPath.isNotEmpty)
+          _encodeNote(l.encodeOutputPathNote('.../${widget.relPath}'), cs, tt),
+        _encodeNote(l.encodeBackupNote(widget.itemId), cs, tt),
+        _encodeNote(l.encodeTimeNote, cs, tt),
+        _encodeNote(l.encodeRescanNote, cs, tt),
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: FilledButton.icon(
+            onPressed: _encoding ? null : _startEncode,
+            icon: _encoding
+                ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: cs.onPrimary))
+                : const Icon(Icons.transform_rounded, size: 18),
+            label: Text(l.startM4bEncode),
+            style: FilledButton.styleFrom(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _encodeNote(String text, ColorScheme cs, TextTheme tt) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(Icons.star_rounded, size: 14, color: cs.tertiary),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant, height: 1.35),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _encodeLabel(String text, TextTheme tt, ColorScheme cs) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(text, style: tt.labelLarge?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+    );
+  }
+
+  Widget _currentLine(String value, ColorScheme cs, TextTheme tt, AppLocalizations l) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Text.rich(
+        TextSpan(
+          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
+          children: [
+            TextSpan(text: '${l.currentlyLabel} '),
+            TextSpan(text: value, style: TextStyle(color: cs.onSurface, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _encodeToggleRow<T>({
+    required List<T> values,
+    required List<String> labels,
+    required T selected,
+    required void Function(T) onTap,
+    required ColorScheme cs,
+    required TextTheme tt,
+  }) {
+    return Wrap(spacing: 8, runSpacing: 8, children: List.generate(values.length, (i) {
+      final isSel = values[i] == selected;
+      return InkWell(
+        onTap: () => onTap(values[i]),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSel ? cs.primaryContainer : cs.onSurface.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: isSel ? cs.primary : cs.onSurface.withValues(alpha: 0.1)),
+          ),
+          child: Text(
+            labels[i],
+            style: tt.bodyMedium?.copyWith(
+              color: isSel ? cs.onPrimaryContainer : cs.onSurfaceVariant,
+              fontWeight: isSel ? FontWeight.w600 : FontWeight.w500,
+            ),
+          ),
+        ),
+      );
+    }));
+  }
+
+  Future<void> _startEncode() async {
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) return;
+    setState(() => _encoding = true);
+    final ok = await api.startM4bEncode(
+      widget.itemId,
+      codec: _encodeCodec,
+      bitrate: _encodeBitrate,
+      channels: _encodeChannels,
+    );
+    if (!mounted) return;
+    setState(() => _encoding = false);
+    final l = AppLocalizations.of(context)!;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? l.encodeStarted : l.encodeFailed)),
+    );
+    if (ok) Navigator.pop(context);
+  }
+
   // ─── Build ──────────────────────────────────────────────────
 
   @override
@@ -425,6 +638,7 @@ class _EditMetadataContentState extends State<_EditMetadataContent>
           tabs: [
             Tab(text: l.quickMatch),
             Tab(text: l.custom),
+            Tab(text: l.encodeTab),
           ],
         ),
 
@@ -435,6 +649,7 @@ class _EditMetadataContentState extends State<_EditMetadataContent>
             children: [
               _buildQuickMatchTab(cs, tt, l),
               _buildCustomTab(cs, tt, l),
+              _buildEncodeTab(cs, tt, l),
             ],
           ),
         ),
@@ -707,6 +922,7 @@ class _EditMetadataContentState extends State<_EditMetadataContent>
               Expanded(child: _field(l.languageLabel, _languageCtrl, tt)),
             ]),
             _field(l.genresLabel, _genresCtrl, tt, hint: l.commaSeparated),
+            _field(l.tagsLabel, _tagsCtrl, tt, hint: l.commaSeparated),
             Row(children: [
               Expanded(child: _field(l.asinLabel, _asinCtrl, tt)),
               const SizedBox(width: 12),

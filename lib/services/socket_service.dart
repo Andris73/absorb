@@ -52,6 +52,10 @@ class SocketService {
   /// Called when socket.io exhausts all reconnection attempts.
   VoidCallback? onReconnectFailed;
 
+  /// Called when an M4B encode task finishes on the server.
+  /// Payload: serialized Task object including action and data.libraryItemId.
+  void Function(Map<String, dynamic> data)? onEncodeFinished;
+
   /// Update the stored token (e.g. after a JWT refresh) and re-auth if connected.
   void updateToken(String newToken) {
     _token = newToken;
@@ -145,6 +149,14 @@ class SocketService {
         if (data is Map<String, dynamic>) onUserUpdated?.call(data);
       });
 
+      // M4B encode task finished (fires once for the whole task, not per track)
+      _socket!.on('task_finished', (data) {
+        if (data is Map<String, dynamic> && data['action'] == 'encode-m4b') {
+          debugPrint('[Socket] Encode finished');
+          onEncodeFinished?.call(data);
+        }
+      });
+
       _socket!.onDisconnect((reason) {
         final duration = _connectedAt != null
             ? DateTime.now().difference(_connectedAt!).inSeconds
@@ -184,6 +196,7 @@ class SocketService {
     onCollectionUpdated = null;
     onUserUpdated = null;
     onReconnectFailed = null;
+    onEncodeFinished = null;
   }
 
   /// Disconnect the socket but keep callbacks and credentials so we can
@@ -261,6 +274,12 @@ class SocketService {
 
       _socket!.on('user_updated', (data) {
         if (data is Map<String, dynamic>) onUserUpdated?.call(data);
+      });
+
+      _socket!.on('task_finished', (data) {
+        if (data is Map<String, dynamic> && data['action'] == 'encode-m4b') {
+          onEncodeFinished?.call(data);
+        }
       });
 
       _socket!.onDisconnect((reason) {
