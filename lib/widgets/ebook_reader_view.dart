@@ -84,6 +84,15 @@ class EbookReaderViewState extends State<EbookReaderView> {
   bool _hasBookmarkAtCurrent = false;
   String? _currentCfi;
 
+  // Search state — persisted across screen opens so the user keeps their results
+  String _searchQuery = '';
+  List<EpubSearchResult> _searchResults = [];
+  List<String?> _resultChapters = []; // parallel to _searchResults
+  String _lastSearchedQuery = '';
+
+  // cfiBase ("/6/12") → chapter title, built once after the book loads.
+  Map<String, String> _cfiBaseToChapter = {};
+
   // Selection state for highlight menu
   String? _selectionText;
   String? _selectionCfi;
@@ -733,6 +742,153 @@ class EbookReaderViewState extends State<EbookReaderView> {
     );
   }
 
+  /// Look up the chapter title for each result via the precomputed
+  /// [_cfiBaseToChapter] map. No JS roundtrip — we extract the spine prefix
+  /// from the result CFI in Dart and use it as a map key. Returns a list
+  /// parallel to [results].
+  List<String?> _resolveResultChapters(List<EpubSearchResult> results) {
+    if (results.isEmpty || _cfiBaseToChapter.isEmpty) {
+      debugPrint('[Search] _resolveResultChapters: results=${results.length} map=${_cfiBaseToChapter.length}');
+      return List<String?>.filled(results.length, null);
+    }
+    final out = <String?>[];
+    for (final r in results) {
+      final base = _cfiBaseFromResult(r.cfi);
+      final title = base != null ? _cfiBaseToChapter[base] : null;
+      if (title == null) {
+        debugPrint('[Search] no chapter for cfi=${r.cfi} extracted base=$base');
+      }
+      out.add(title);
+    }
+    return out;
+  }
+
+  /// Extracts the spine prefix from a CFI string. A CFI looks like
+  /// "epubcfi(/6/12!/4/2/4,/1:42,/1:50)"; we want "/6/12" so we can match it
+  /// against `section.cfiBase` values.
+  String? _cfiBaseFromResult(String cfi) {
+    var s = cfi;
+    if (s.startsWith('epubcfi(')) s = s.substring('epubcfi('.length);
+    final bang = s.indexOf('!');
+    if (bang == -1) return null;
+    return s.substring(0, bang);
+  }
+
+  /// Walks the spine once after the book loads and builds the
+  /// `cfiBase → chapter title` map. The match heuristic: for each spine
+  /// section, find the first TOC entry whose href is contained in the
+  /// section's href (or vice versa). Good enough for v1; chapters that point
+  /// at sub-fragments of the same spine item all map to the same label.
+  Future<void> _buildChapterMap() async {
+    final wc = _epubController?.webViewController;
+    if (wc == null || _chapters.isEmpty) {
+      debugPrint('[Search] _buildChapterMap skipped: wc=$wc chapters=${_chapters.length}');
+      return;
+    }
+    final raw = await wc.evaluateJavascript(
+      source: '''
+        (function() {
+          try {
+            var items = (book && book.spine && book.spine.spineItems) ? book.spine.spineItems : [];
+            var out = [];
+            for (var i = 0; i < items.length; i++) {
+              var it = items[i];
+              // cfiBase fallback: epub.js stores it on the section, but compute
+              // from index just in case ("/6/{(idx+1)*2}").
+              var base = it.cfiBase;
+              if (!base && typeof it.index === 'number') base = '/6/' + ((it.index + 1) * 2);
+              out.push({ base: base || null, href: it.href || it.url || null, idx: it.index });
+            }
+            return JSON.stringify(out);
+          } catch (e) { return '[]'; }
+        })();
+      ''',
+    );
+    debugPrint('[Search] spine JS returned: $raw');
+    List<dynamic> list;
+    try {
+      list = jsonDecode(raw?.toString() ?? '[]') as List<dynamic>;
+    } catch (e) {
+      debugPrint('[Search] spine JSON parse failed: $e');
+      return;
+    }
+    debugPrint('[Search] TOC chapters (${_chapters.length}): ${_chapters.map((c) => '${c.title} @ ${c.href}').take(5).toList()}');
+    final map = <String, String>{};
+    for (final entry in list) {
+      final m = entry as Map<String, dynamic>;
+      final base = m['base'] as String?;
+      final href = m['href'] as String?;
+      if (base == null || href == null) continue;
+      final sectionPath = href.split('#').first;
+      String? matchedTitle;
+      for (final ch in _chapters) {
+        final tocPath = ch.href.split('#').first;
+        if (tocPath.isEmpty) continue;
+        if (sectionPath.endsWith(tocPath) || tocPath.endsWith(sectionPath)) {
+          matchedTitle = ch.title;
+          break;
+        }
+      }
+      if (matchedTitle != null) {
+        map[base] = matchedTitle;
+      } else {
+        debugPrint('[Search] no TOC match for spine href=$href base=$base');
+      }
+    }
+    debugPrint('[Search] built cfiBase→chapter map with ${map.length} entries: $map');
+    if (mounted) setState(() => _cfiBaseToChapter = map);
+  }
+
+  void _jumpToSearchResult(EpubSearchResult result) {
+    _epubController?.display(cfi: result.cfi);
+    // Brief highlight so the user can spot the match on the page.
+    _epubController?.addHighlight(
+      cfi: result.cfi,
+      color: const Color(0xFFFFEB3B),
+      opacity: 0.55,
+    );
+    Future.delayed(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      _epubController?.removeHighlight(cfi: result.cfi);
+    });
+  }
+
+  Future<void> _openSearchScreen() async {
+    // Fullscreen route — opaque so the WebView is fully covered. Bottom-sheet
+    // approach had soft-keyboard taps leaking through to the reader's JS
+    // swipe-to-turn handlers underneath.
+    final selected = await Navigator.of(context, rootNavigator: true).push<EpubSearchResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _EbookSearchScreen(
+          initialQuery: _searchQuery,
+          initialResults: _searchResults,
+          initialChapters: _resultChapters,
+          initialLastQuery: _lastSearchedQuery,
+          runSearch: (q) async {
+            if (_epubController == null) return _SearchPayload(query: q, results: const [], chapters: const []);
+            final results = await _epubController!.search(query: q);
+            final chapters = _resolveResultChapters(results);
+            // Persist back on the parent state so reopening the search screen
+            // restores the same list.
+            if (mounted) {
+              setState(() {
+                _searchQuery = q;
+                _searchResults = results;
+                _resultChapters = chapters;
+                _lastSearchedQuery = q;
+              });
+            }
+            return _SearchPayload(query: q, results: results, chapters: chapters);
+          },
+        ),
+      ),
+    );
+    if (selected != null && mounted) {
+      _jumpToSearchResult(selected);
+    }
+  }
+
   void _showAnnotationsSheet() {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
@@ -970,6 +1126,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
               ),
               onChaptersLoaded: (chapters) {
                 if (mounted) setState(() => _chapters = _flattenChapters(chapters));
+                _buildChapterMap();
               },
               suppressNativeContextMenu: true,
               onSelection: _onSelection,
@@ -995,6 +1152,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 _loadAnnotations().then((_) => _restoreHighlights());
                 _setupPageInfoHandler();
                 _setupLocations();
+                _buildChapterMap();
               },
               onRelocated: (value) {
                 if (mounted) {
@@ -1079,6 +1237,11 @@ class EbookReaderViewState extends State<EbookReaderView> {
                             color: _hasBookmarkAtCurrent ? cs.primary : cs.onSurface,
                           ),
                           onPressed: _toggleBookmark,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.search_rounded, color: cs.onSurface),
+                          tooltip: 'Search',
+                          onPressed: _openSearchScreen,
                         ),
                         IconButton(
                           icon: Icon(Icons.sticky_note_2_outlined, color: cs.onSurface),
@@ -1214,6 +1377,227 @@ class EbookReaderViewState extends State<EbookReaderView> {
         ],
       );
     return _wrap(viewerBody, bg);
+  }
+}
+
+/// Payload returned from [_EbookSearchScreen]'s runSearch callback.
+class _SearchPayload {
+  final String query;
+  final List<EpubSearchResult> results;
+  final List<String?> chapters;
+  const _SearchPayload({required this.query, required this.results, required this.chapters});
+}
+
+/// Fullscreen search screen. Opaque route — covers the reader entirely so
+/// soft-keyboard taps can't reach the underlying WebView's JS swipe/tap
+/// handlers. Pop with a result to ask the reader to jump there.
+class _EbookSearchScreen extends StatefulWidget {
+  final String initialQuery;
+  final List<EpubSearchResult> initialResults;
+  final List<String?> initialChapters;
+  final String initialLastQuery;
+  final Future<_SearchPayload> Function(String) runSearch;
+
+  const _EbookSearchScreen({
+    required this.initialQuery,
+    required this.initialResults,
+    required this.initialChapters,
+    required this.initialLastQuery,
+    required this.runSearch,
+  });
+
+  @override
+  State<_EbookSearchScreen> createState() => _EbookSearchScreenState();
+}
+
+class _EbookSearchScreenState extends State<_EbookSearchScreen> {
+  late final TextEditingController _controller;
+  late String _lastQuery;
+  late List<EpubSearchResult> _results;
+  late List<String?> _chapters;
+  bool _searching = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialQuery);
+    _lastQuery = widget.initialLastQuery;
+    _results = widget.initialResults;
+    _chapters = widget.initialChapters;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _run() async {
+    final q = _controller.text.trim();
+    if (q.isEmpty) return;
+    setState(() => _searching = true);
+    try {
+      final payload = await widget.runSearch(q);
+      if (!mounted) return;
+      setState(() {
+        _results = payload.results;
+        _chapters = payload.chapters;
+        _lastQuery = payload.query;
+        _searching = false;
+      });
+    } catch (e) {
+      debugPrint('[Search] runSearch error: $e');
+      if (!mounted) return;
+      setState(() {
+        _results = [];
+        _chapters = [];
+        _searching = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Scaffold(
+      backgroundColor: cs.surface,
+      appBar: AppBar(
+        backgroundColor: cs.surface,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        titleSpacing: 0,
+        title: TextField(
+          controller: _controller,
+          autofocus: true,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: 'Search this book…',
+            border: InputBorder.none,
+          ),
+          onSubmitted: (_) => _run(),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search_rounded),
+            onPressed: _searching ? null : _run,
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          if (_searching)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else if (_results.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Row(
+                children: [
+                  Text(
+                    '${_results.length} ${_results.length == 1 ? 'match' : 'matches'} for "$_lastQuery"',
+                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: _searching
+                ? const SizedBox.shrink()
+                : _results.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            _lastQuery.isEmpty
+                                ? 'Type a word or phrase and tap search.'
+                                : 'No matches for "$_lastQuery".',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: cs.onSurfaceVariant),
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        itemCount: _results.length,
+                        separatorBuilder: (_, __) => Divider(
+                          height: 1,
+                          color: cs.onSurface.withValues(alpha: 0.06),
+                        ),
+                        itemBuilder: (ctx, i) {
+                          final r = _results[i];
+                          final chapter = i < _chapters.length ? _chapters[i] : null;
+                          return ListTile(
+                            title: _SearchExcerpt(excerpt: r.excerpt, query: _lastQuery),
+                            subtitle: chapter == null
+                                ? null
+                                : Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      chapter,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: tt.bodySmall?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                            dense: true,
+                            onTap: () => Navigator.of(context).pop(r),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Renders a search excerpt with the matched query bold + tinted so the user
+/// can spot which word the hit was on.
+class _SearchExcerpt extends StatelessWidget {
+  final String excerpt;
+  final String query;
+
+  const _SearchExcerpt({required this.excerpt, required this.query});
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    final base = tt.bodyMedium ?? const TextStyle();
+    if (query.isEmpty) {
+      return Text(excerpt, maxLines: 3, overflow: TextOverflow.ellipsis, style: base);
+    }
+    final lower = excerpt.toLowerCase();
+    final q = query.toLowerCase();
+    final spans = <TextSpan>[];
+    var i = 0;
+    while (i < excerpt.length) {
+      final hit = lower.indexOf(q, i);
+      if (hit == -1) {
+        spans.add(TextSpan(text: excerpt.substring(i)));
+        break;
+      }
+      if (hit > i) spans.add(TextSpan(text: excerpt.substring(i, hit)));
+      spans.add(TextSpan(
+        text: excerpt.substring(hit, hit + q.length),
+        style: TextStyle(fontWeight: FontWeight.w700, color: cs.primary),
+      ));
+      i = hit + q.length;
+    }
+    return Text.rich(
+      TextSpan(style: base, children: spans),
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+    );
   }
 }
 
