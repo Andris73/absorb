@@ -97,8 +97,6 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     if (fn == null || !fn.contains('.')) return null;
     return fn.substring(fn.lastIndexOf('.') + 1).toLowerCase();
   }
-  String get _ebookLabel => _ebookExt == 'pdf' ? 'PDF' : 'EBook';
-  IconData get _ebookIcon => _ebookExt == 'pdf' ? Icons.picture_as_pdf_rounded : Icons.menu_book_rounded;
   List<dynamic> get _chapters {
     // Prefer fetched chapters (from full item or episode), fall back to inline data
     if (_fetchedChapters != null && _fetchedChapters!.isNotEmpty) return _fetchedChapters!;
@@ -853,31 +851,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                         ),
                       ),
                       ),
-                      if (_ebookFile != null) ...[
-                        const Spacer(flex: 1),
-                        GestureDetector(
-                          onTap: _toggleFlip,
-                          behavior: HitTestBehavior.opaque,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: accent.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: accent.withValues(alpha: 0.3), width: 1),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(_ebookIcon, size: 14, color: accent),
-                                const SizedBox(width: 6),
-                                Text(_ebookLabel, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: accent)),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const Spacer(flex: 1),
-                      ] else
-                        const Spacer(flex: 2),
+                      const Spacer(flex: 2),
                       ]);
                     },
                   ),
@@ -1220,6 +1194,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       PlayerSettings.setCardButtonOrder(newOrder);
       PlayerSettings.setCardButtonVisibleCount(newCount);
     },
+    hasEbook: _ebookFile != null,
+    isEbookPdf: _ebookExt == 'pdf',
+    onEbookTap: _toggleFlip,
   );
 
   int get _visibleButtonCount => _buttonVisibleCount;
