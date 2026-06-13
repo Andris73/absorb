@@ -388,6 +388,25 @@ class ApiService {
     return url;
   }
 
+  /// POST /api/authorize - validates the current token and returns the same
+  /// payload shape as /login: { user, userDefaultLibraryId, serverSettings,
+  /// ereaderDevices, Source }. Use on cold-start restore when you need the
+  /// top-level extras (especially ereaderDevices, since /api/me drops them).
+  Future<Map<String, dynamic>?> authorize() async {
+    try {
+      final response = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/authorize'),
+        timeout: const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      debugPrint('[API] authorize failed: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('[API] authorize error: $e');
+    }
+    return null;
+  }
+
   /// Get current user info including all mediaProgress.
   Future<Map<String, dynamic>?> getMe() async {
     try {
@@ -792,13 +811,22 @@ class ApiService {
     final baseUri = Uri.parse(_cleanBaseUrl);
     final basePath = baseUri.path;
     if (basePath.isNotEmpty && contentUrl.startsWith('$basePath/')) {
-      final url = '${baseUri.origin}$contentUrl?token=$token';
-      debugPrint('[ABS] Track URL: $url');
-      return url;
+      return '${baseUri.origin}$contentUrl?token=$token';
     }
-    final url = '$_cleanBaseUrl$contentUrl?token=$token';
-    debugPrint('[ABS] Track URL: $url');
-    return url;
+    // No per-track logging here: this runs in a hot loop over every track, and
+    // books with thousands of files would flood (and roll over) the log buffer.
+    // The session's "First track contentUrl" line already gives a sample.
+    return '$_cleanBaseUrl$contentUrl?token=$token';
+  }
+
+  /// Build a durable, session-independent file download URL for [ino] within
+  /// [itemId]. Unlike a playback-session track URL, this survives session close
+  /// and app suspension, so it is safe for background downloads that outlive the
+  /// session/app. Auth travels as `?token=` (the Authorization header can be
+  /// dropped across reverse-proxy redirects); custom proxy headers still ride
+  /// along via [mediaHeaders] when the downloader sets them.
+  String buildFileUrl(String itemId, String ino) {
+    return '$_cleanBaseUrl/api/items/$itemId/file/$ino?token=$token';
   }
 
   /// Sync playback progress. Returns true if sync succeeded.
@@ -936,23 +964,6 @@ class ApiService {
     );
   }
 
-  /// DELETE /api/me/progress/:id — fully remove progress entry
-  Future<bool> deleteProgress(String itemId) async {
-    try {
-      final progressPath = itemId.length > 36
-          ? '${itemId.substring(0, 36)}/${itemId.substring(37)}'
-          : itemId;
-      final resp = await _authDelete(
-        Uri.parse('$_cleanBaseUrl/api/me/progress/$progressPath'),
-        timeout: const Duration(seconds: 10));
-      debugPrint('[API] deleteProgress response: ${resp.statusCode} ${resp.body}');
-      return resp.statusCode >= 200 && resp.statusCode < 300;
-    } catch (e) {
-      debugPrint('[API] deleteProgress error: $e');
-      return false;
-    }
-  }
-
   /// Reset progress to zero.
   Future<bool> resetProgress(String itemId, double duration) async {
     try {
@@ -993,6 +1004,35 @@ class ApiService {
       return true;
     } catch (e) {
       debugPrint('[API] resetProgress error: $e');
+      return false;
+    }
+  }
+
+  /// Hide an entire series from the "Continue Series" home shelf.
+  /// GET /api/me/series/:seriesId/remove-from-continue-listening
+  Future<bool> removeSeriesFromContinueListening(String seriesId) async {
+    try {
+      final resp = await _authGet(
+        Uri.parse('$_cleanBaseUrl/api/me/series/$seriesId/remove-from-continue-listening'),
+        timeout: const Duration(seconds: 10));
+      return resp.statusCode == 200;
+    } catch (e) {
+      debugPrint('[API] removeSeriesFromContinueListening error: $e');
+      return false;
+    }
+  }
+
+  /// Hide a single item from the "Continue Listening" home shelf.
+  /// GET /api/me/progress/:mediaProgressId/remove-from-continue-listening
+  /// The path id is the media-progress record id (not the libraryItemId).
+  Future<bool> removeItemFromContinueListening(String mediaProgressId) async {
+    try {
+      final resp = await _authGet(
+        Uri.parse('$_cleanBaseUrl/api/me/progress/$mediaProgressId/remove-from-continue-listening'),
+        timeout: const Duration(seconds: 10));
+      return resp.statusCode == 200;
+    } catch (e) {
+      debugPrint('[API] removeItemFromContinueListening error: $e');
       return false;
     }
   }
@@ -1202,6 +1242,75 @@ class ApiService {
       );
       return r.statusCode == 200;
     } catch (e) { debugPrint('deleteBookmark error: $e'); }
+    return false;
+  }
+
+  // ─── Email / E-Reader ──────────────────────────────────────────────
+
+  /// Send the ebook file for [libraryItemId] to a configured ereader.
+  /// POST /api/emails/send-ebook-to-device  body: { libraryItemId, deviceName }
+  Future<bool> sendEBookToDevice({
+    required String libraryItemId,
+    required String deviceName,
+  }) async {
+    try {
+      final r = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/emails/send-ebook-to-device'),
+        body: jsonEncode({'libraryItemId': libraryItemId, 'deviceName': deviceName}),
+      );
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('[API] sendEBookToDevice error: $e'); }
+    return false;
+  }
+
+  /// GET /api/emails/settings (admin only)
+  Future<Map<String, dynamic>?> getEmailSettings() async {
+    try {
+      final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/emails/settings'));
+      if (r.statusCode != 200) return null;
+      final body = jsonDecode(r.body);
+      if (body is Map<String, dynamic>) {
+        // ABS wraps the settings in `settings` on this endpoint.
+        final settings = body['settings'];
+        if (settings is Map<String, dynamic>) return settings;
+        return body;
+      }
+      return null;
+    } catch (e) { debugPrint('[API] getEmailSettings error: $e'); }
+    return null;
+  }
+
+  /// PATCH /api/emails/settings (admin only)
+  Future<bool> updateEmailSettings(Map<String, dynamic> patch) async {
+    try {
+      final r = await _authPatch(
+        Uri.parse('$_cleanBaseUrl/api/emails/settings'),
+        body: jsonEncode(patch),
+      );
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('[API] updateEmailSettings error: $e'); }
+    return false;
+  }
+
+  /// POST /api/emails/test (admin only)
+  Future<bool> sendTestEmail() async {
+    try {
+      final r = await _authPost(Uri.parse('$_cleanBaseUrl/api/emails/test'));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('[API] sendTestEmail error: $e'); }
+    return false;
+  }
+
+  /// Replace the full ereader devices list (admin only).
+  /// POST /api/emails/ereader-devices  body: { ereaderDevices: [{name, email, availabilityOption, users}, ...] }
+  Future<bool> updateEReaderDevices(List<Map<String, dynamic>> devices) async {
+    try {
+      final r = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/emails/ereader-devices'),
+        body: jsonEncode({'ereaderDevices': devices}),
+      );
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('[API] updateEReaderDevices error: $e'); }
     return false;
   }
 
@@ -1834,6 +1943,83 @@ class ApiService {
     return false;
   }
 
+  /// Unlink a user from their OpenID/SSO connection (admin only). Clears the
+  /// server's stored authOpenIDSub so the user can re-enroll. The server
+  /// returns 200 even if there was no link to begin with.
+  Future<bool> unlinkOpenID(String userId) async {
+    try {
+      final r = await _authPatch(
+        Uri.parse('$_cleanBaseUrl/api/users/$userId/openid-unlink'),
+      );
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('unlinkOpenID error: $e'); }
+    return false;
+  }
+
+  /// List all API keys (admin only). Each entry includes the expanded `user`
+  /// ({id, username, type}) plus name, isActive, expiresAt, lastUsedAt, createdAt.
+  /// The actual key string is never returned here, only on creation.
+  Future<List<dynamic>> getApiKeys() async {
+    try {
+      final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/api-keys'));
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        if (data is Map && data['apiKeys'] is List) return data['apiKeys'] as List<dynamic>;
+        if (data is List) return data;
+      }
+    } catch (e) { debugPrint('getApiKeys error: $e'); }
+    return [];
+  }
+
+  /// Create an API key (admin only). [expiresIn] is in seconds; pass null for
+  /// no expiration. Returns the created key map which — only on creation —
+  /// includes the actual token under `apiKey`.
+  Future<Map<String, dynamic>?> createApiKey({
+    required String name,
+    required String userId,
+    int? expiresIn,
+    bool isActive = true,
+  }) async {
+    try {
+      final body = <String, dynamic>{'name': name, 'userId': userId, 'isActive': isActive};
+      if (expiresIn != null) body['expiresIn'] = expiresIn;
+      final r = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/api-keys'),
+        body: jsonEncode(body),
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        if (data is Map && data['apiKey'] is Map) return Map<String, dynamic>.from(data['apiKey'] as Map);
+      }
+    } catch (e) { debugPrint('createApiKey error: $e'); }
+    return null;
+  }
+
+  /// Update an API key (admin only). Only `isActive` and `userId` are mutable
+  /// server-side (name and expiry are baked into the JWT).
+  Future<bool> updateApiKey(String keyId, {bool? isActive, String? userId}) async {
+    try {
+      final body = <String, dynamic>{};
+      if (isActive != null) body['isActive'] = isActive;
+      if (userId != null) body['userId'] = userId;
+      final r = await _authPatch(
+        Uri.parse('$_cleanBaseUrl/api/api-keys/$keyId'),
+        body: jsonEncode(body),
+      );
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('updateApiKey error: $e'); }
+    return false;
+  }
+
+  /// Delete (revoke) an API key (admin only).
+  Future<bool> deleteApiKey(String keyId) async {
+    try {
+      final r = await _authDelete(Uri.parse('$_cleanBaseUrl/api/api-keys/$keyId'));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('deleteApiKey error: $e'); }
+    return false;
+  }
+
   /// Update a library item's media metadata (admin/root only).
   /// PATCH /api/items/:id/media. Tags live on `media`, not `metadata`, so
   /// pass them via the [tags] arg to be included at the top level of the
@@ -1882,6 +2068,39 @@ class ApiService {
       return res.statusCode == 200;
     } catch (e) { debugPrint('uploadItemCover error: $e'); }
     return false;
+  }
+
+  /// Search provider cover images for a book.
+  /// GET /api/search/covers?title=&author=&provider=  ->  { results: [url, ...] }
+  Future<List<String>> searchCovers(String title,
+      {String? author, String provider = 'google'}) async {
+    try {
+      final uri = Uri.parse('$_cleanBaseUrl/api/search/covers').replace(queryParameters: {
+        'title': title,
+        if (author != null && author.trim().isNotEmpty) 'author': author.trim(),
+        'provider': provider,
+      });
+      final r = await _authGet(uri, timeout: const Duration(seconds: 25));
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        final results = data is Map<String, dynamic> ? data['results'] : data;
+        if (results is List) {
+          final urls = <String>[];
+          for (final e in results) {
+            if (e is String && e.isNotEmpty) {
+              urls.add(e);
+            } else if (e is Map<String, dynamic>) {
+              final u = (e['cover'] ?? e['url'] ?? e['image']) as String?;
+              if (u != null && u.isNotEmpty) urls.add(u);
+            }
+          }
+          return urls;
+        }
+      }
+    } catch (e) {
+      debugPrint('[API] searchCovers error: $e');
+    }
+    return [];
   }
 
   // ─── Podcast Endpoints ────────────────────────────────────
@@ -2075,6 +2294,62 @@ class ApiService {
     return null;
   }
 
+  /// Update a book's chapters. POST /api/items/:id/chapters
+  /// [chapters] is the full ordered list of {id, start, end, title}. Pass an
+  /// empty list to clear all chapters. Returns true on a 200 response.
+  Future<bool> updateChapters(
+      String itemId, List<Map<String, dynamic>> chapters) async {
+    try {
+      final r = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/items/$itemId/chapters'),
+        body: jsonEncode({'chapters': chapters}),
+        timeout: const Duration(seconds: 20),
+      );
+      if (r.statusCode != 200) {
+        debugPrint('[API] updateChapters failed: ${r.statusCode}');
+      }
+      return r.statusCode == 200;
+    } catch (e) {
+      debugPrint('[API] updateChapters error: $e');
+      return false;
+    }
+  }
+
+  /// Look up chapters for an ASIN. The server proxies this to Audnexus.
+  /// GET /api/search/chapters?asin=&region=
+  /// Returns the raw result map on 200 (chapters + runtime + brand-intro/outro
+  /// durations, or {error, stringKey} when the lookup fails), else null.
+  Future<Map<String, dynamic>?> searchChapters(String asin, String region) async {
+    try {
+      final uri = Uri.parse('$_cleanBaseUrl/api/search/chapters')
+          .replace(queryParameters: {'asin': asin, 'region': region});
+      final r = await _authGet(uri, timeout: const Duration(seconds: 20));
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        if (data is Map<String, dynamic>) return data;
+      }
+      debugPrint('[API] searchChapters failed: ${r.statusCode}');
+      return null;
+    } catch (e) {
+      debugPrint('[API] searchChapters error: $e');
+      return null;
+    }
+  }
+
+  /// Start an embed-metadata task: writes tags/chapters/cover into the audio
+  /// files. POST /api/tools/item/:id/embed-metadata?backup=0|1  (admin)
+  Future<bool> embedMetadata(String itemId, {bool backup = true}) async {
+    try {
+      final uri = Uri.parse('$_cleanBaseUrl/api/tools/item/$itemId/embed-metadata')
+          .replace(queryParameters: {'backup': backup ? '1' : '0'});
+      final r = await _authPost(uri);
+      return r.statusCode == 200;
+    } catch (e) {
+      debugPrint('embedMetadata error: $e');
+    }
+    return false;
+  }
+
   /// Start an M4B encode task on the server.
   /// POST /api/tools/item/:id/encode-m4b?codec=&bitrate=&channels=
   Future<bool> startM4bEncode(
@@ -2112,25 +2387,28 @@ class ApiService {
   }
 
   /// Delete a podcast episode
-  Future<bool> deletePodcastEpisode(String podcastId, String episodeId) async {
+  /// Returns the HTTP status code (0 on exception). 200 = success;
+  /// 403 = caller lacks the `delete` permission flag on the server. Callers
+  /// should surface 403 with a "needs delete permission" message.
+  Future<int> deletePodcastEpisode(String podcastId, String episodeId) async {
     try {
       final r = await _authDelete(
         Uri.parse('$_cleanBaseUrl/api/podcasts/$podcastId/episode/$episodeId'),
       );
-      return r.statusCode == 200;
+      return r.statusCode;
     } catch (e) { debugPrint('deletePodcastEpisode error: $e'); }
-    return false;
+    return 0;
   }
 
-  /// Delete a library item (e.g. remove a podcast show)
-  Future<bool> deleteLibraryItem(String itemId) async {
+  /// Delete a library item (e.g. remove a podcast show). See [deletePodcastEpisode] for status semantics.
+  Future<int> deleteLibraryItem(String itemId) async {
     try {
       final r = await _authDelete(
         Uri.parse('$_cleanBaseUrl/api/items/$itemId'),
       );
-      return r.statusCode == 200;
+      return r.statusCode;
     } catch (e) { debugPrint('deleteLibraryItem error: $e'); }
-    return false;
+    return 0;
   }
 
   // ── Playlists ──────────────────────────────────────────────────────────
@@ -2332,15 +2610,17 @@ class ApiService {
     return null;
   }
 
-  /// DELETE /api/collections/:id
-  Future<bool> deleteCollection(String collectionId) async {
+  /// DELETE /api/collections/:id. Returns the HTTP status code
+  /// (0 on exception). 200 = success; 403 = caller lacks the `delete`
+  /// permission flag on the server.
+  Future<int> deleteCollection(String collectionId) async {
     try {
       final resp = await _authDelete(
         Uri.parse('$_cleanBaseUrl/api/collections/$collectionId'),
         timeout: const Duration(seconds: 10));
-      return resp.statusCode == 200;
+      return resp.statusCode;
     } catch (_) {}
-    return false;
+    return 0;
   }
 
   /// POST /api/collections/:id/books

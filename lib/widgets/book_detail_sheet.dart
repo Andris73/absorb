@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'overlay_toast.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:palette_generator/palette_generator.dart';
+import '../utils/cover_accent.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
@@ -29,6 +30,7 @@ import '../services/metadata_override_service.dart';
 import '../services/scoped_prefs.dart';
 import '../main.dart' show rootNavigatorKey;
 import '../screens/app_shell.dart';
+import '../screens/book_edit_screen.dart';
 import 'author_books_sheet.dart';
 import 'narrator_books_sheet.dart';
 import 'series_books_sheet.dart';
@@ -38,9 +40,9 @@ import 'metadata_lookup_sheet.dart';
 import 'playlist_picker_sheet.dart';
 import 'collection_picker_sheet.dart';
 import 'absorb_wave_icon.dart';
-import 'edit_metadata_sheet.dart';
 import 'stackable_sheet.dart';
 import 'ebook_reader_view.dart';
+import '../utils/duration_format.dart';
 
 // ─── BOOK DETAIL BOTTOM SHEET ───────────────────────────────
 
@@ -54,10 +56,35 @@ void showBookDetailSheet(BuildContext context, String itemId) {
   );
 }
 
+/// Long-press shortcut: a compact sheet with Absorb + Download up top and the
+/// full set of book actions as pills, skipping the trip into the detail sheet.
+/// Pass [initialItem] (the tile's library-item map) so it renders instantly.
+void showQuickActionsSheet(BuildContext context, String itemId, {Map<String, dynamic>? initialItem}) {
+  showStackableSheet(
+    context: context,
+    useSafeArea: true,
+    initialChildSize: 0.6,
+    maxChildSize: 0.92,
+    builder: (ctx, sc) => _BookDetailSheetContent(
+      itemId: itemId,
+      scrollController: sc,
+      quick: true,
+      initialItem: initialItem,
+    ),
+  );
+}
+
 class _BookDetailSheetContent extends StatefulWidget {
   final String itemId;
   final ScrollController scrollController;
-  const _BookDetailSheetContent({required this.itemId, required this.scrollController});
+  final bool quick;
+  final Map<String, dynamic>? initialItem;
+  const _BookDetailSheetContent({
+    required this.itemId,
+    required this.scrollController,
+    this.quick = false,
+    this.initialItem,
+  });
   @override State<_BookDetailSheetContent> createState() => _BookDetailSheetContentState();
 }
 
@@ -81,6 +108,15 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
 
   @override void initState() {
     super.initState();
+    // Quick-actions sheet seeds from the tile's item map so it paints instantly
+    // instead of flashing a spinner; _loadItem still runs to refine overrides.
+    if (widget.initialItem != null) {
+      _item = widget.initialItem;
+      _isLoading = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _deriveCoverScheme();
+      });
+    }
     _loadItem();
     _loadBookmarks();
     PlayerSettings.getRectangleCovers().then((v) { if (mounted) setState(() => _squareCovers = !v); });
@@ -248,9 +284,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     PaletteGenerator.fromImageProvider(provider, maximumColorCount: 16)
         .then((palette) {
       debugPrint('[BookDetail] PaletteGenerator ok in ${DateTime.now().difference(t0).inMilliseconds}ms');
-      final seedColor = palette.vibrantColor?.color
-          ?? palette.dominantColor?.color
-          ?? palette.colors.firstOrNull;
+      final seedColor = accentFromCoverPalette(palette);
       if (seedColor == null || !mounted) return;
       setState(() => _coverScheme = ColorScheme.fromSeed(
         seedColor: seedColor, brightness: brightness));
@@ -331,7 +365,9 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                   )
                 : AnimatedOpacity(
                     opacity: 1.0, duration: const Duration(milliseconds: 300),
-                    child: _buildContent(context, cs, tt, l)),
+                    child: widget.quick
+                        ? _buildQuickContent(context, cs, tt, l)
+                        : _buildContent(context, cs, tt, l)),
       ]),
     );
   }
@@ -577,7 +613,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       const SizedBox(height: 16),
       Wrap(spacing: 8, runSpacing: 8, children: [
         if (year.isNotEmpty) _chip(Icons.calendar_today_rounded, year),
-        _chip(Icons.schedule_rounded, _fmtDur(duration)),
+        _chip(Icons.schedule_rounded, formatHm(duration)),
         if (chapters.isNotEmpty) _chip(Icons.list_rounded, l.chaptersChip(chapters.length)),
         ..._audioInfoChips(media),
         if (publisher.isNotEmpty) _chip(Icons.business_rounded, publisher),
@@ -648,7 +684,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
               child: Row(children: [
                 SizedBox(width: 28, child: Text('${e.key + 1}', style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.3)))),
                 Expanded(child: Text(ch['title'] as String? ?? l.chapterNumber(e.key + 1), maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.6)))),
-                Text(_fmtDur(((ch['end'] as num?)?.toDouble() ?? 0) - ((ch['start'] as num?)?.toDouble() ?? 0)), style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.3))),
+                Text(formatHm(((ch['end'] as num?)?.toDouble() ?? 0) - ((ch['start'] as num?)?.toDouble() ?? 0)), style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.3))),
               ]));
           })]],
       if (_bookmarks.isNotEmpty) ...[const SizedBox(height: 16),
@@ -672,13 +708,336 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     ]);
   }
 
+  // ─── QUICK ACTIONS (long-press) ─────────────────────────────
+  // Compact long-press layout: cover + title, an Absorb/Download grid, then
+  // the same actions as the detail sheet's "more" menu rendered as pills.
+  // Actions run on this (live) sheet context just like the detail sheet, so we
+  // never pop-then-touch a defunct context; navigation actions dismiss us.
+  Widget _buildQuickContent(BuildContext context, ColorScheme cs, TextTheme tt, AppLocalizations l) {
+    final accent = _coverScheme?.primary ?? cs.primary;
+    final onAccent = _coverScheme?.onPrimary ?? cs.onPrimary;
+    final media = _item!['media'] as Map<String, dynamic>? ?? {};
+    final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+    final chapters = media['chapters'] as List<dynamic>? ?? [];
+    final title = metadata['title'] as String? ?? l.unknown;
+    final authorName = metadata['authorName'] as String? ?? '';
+    final duration = (media['duration'] as num?)?.toDouble() ?? 0;
+    final serverPath = _item!['path'] as String? ?? _item!['relPath'] as String? ?? '';
+    final ebookFile = media['ebookFile'] as Map<String, dynamic>?;
+    final isEbookOnly = PlayerSettings.isEbookOnly(_item!);
+
+    final lib = context.watch<LibraryProvider>();
+    final auth = context.read<AuthProvider>();
+    final progress = lib.getProgress(widget.itemId);
+    final progressData = lib.getProgressData(widget.itemId);
+    final isFinished = progressData?['isFinished'] == true;
+    final currentTime = (progressData?['currentTime'] as num?)?.toDouble() ?? 0;
+
+    // Continue-shelf actions (mirror the detail sheet's more menu).
+    final inContinueListening = lib.isInContinueListeningShelf(widget.itemId);
+    final rawSeries = ((_item?['media'] as Map<String, dynamic>?)?['metadata']
+        as Map<String, dynamic>?)?['series'];
+    final bookSeriesIds = <String>[];
+    if (rawSeries is List) {
+      for (final s in rawSeries.whereType<Map<String, dynamic>>()) {
+        final id = (s['id'] as String? ?? '').trim();
+        if (id.isNotEmpty) bookSeriesIds.add(id);
+      }
+    } else if (rawSeries is Map<String, dynamic>) {
+      final id = (rawSeries['id'] as String? ?? '').trim();
+      if (id.isNotEmpty) bookSeriesIds.add(id);
+    }
+    final continueSeriesId = lib.continueSeriesShelfMatch(bookSeriesIds);
+
+    return ListView(
+      controller: widget.scrollController,
+      padding: EdgeInsets.fromLTRB(20, 8, 20, 24 + MediaQuery.of(context).viewPadding.bottom),
+      children: [
+        Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+        // Header: cover thumb + title/author
+        Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          _quickThumb(56, lib.mediaHeaders, cs),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text(title, maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
+            if (authorName.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(authorName, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+            ],
+          ])),
+        ]),
+        const SizedBox(height: 18),
+        // Primary actions: Absorb | Download side by side
+        if (!isEbookOnly)
+          Row(children: [
+            Expanded(child: _quickAbsorbButton(context, cs, tt, auth, accent, onAccent, title, authorName, duration, chapters, isFinished)),
+            const SizedBox(width: 10),
+            Expanded(child: DownloadWideButton(itemId: widget.itemId, coverUrl: _coverUrl, title: title, author: authorName, accent: accent)),
+          ])
+        else
+          SizedBox(height: 44, child: Center(child: Text(l.ebookOnlyNoAudio,
+            style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)))),
+        const SizedBox(height: 10),
+        // Mark finished toggle
+        _quickFinishedPill(context, cs, auth, isFinished, currentTime, duration),
+        const SizedBox(height: 18),
+        // Secondary actions as the shared responsive pill grid. The quick sheet
+        // stays open behind navigation actions, so dismiss is a no-op here.
+        _actionPillGrid(context, cs, tt, l, auth, lib, title, authorName, progress,
+          isFinished, duration, ebookFile, isEbookOnly, serverPath, inContinueListening,
+          continueSeriesId, dismiss: () {}, includeOpenDetails: true),
+      ],
+    );
+  }
+
+  /// The book's secondary actions as a responsive pill grid (admin-Users-page
+  /// style). Shared by the long-press quick sheet and the detail sheet's
+  /// overflow menu. [dismiss] closes the surrounding sheet before an action
+  /// runs (the overflow menu pops itself; the quick sheet passes a no-op and
+  /// stays open). [includeOpenDetails] adds a "Book Details" pill (quick sheet
+  /// only — pointless when you're already in the detail sheet).
+  Widget _actionPillGrid(BuildContext context, ColorScheme cs, TextTheme tt, AppLocalizations l,
+      AuthProvider auth, LibraryProvider lib, String title, String authorName, double progress,
+      bool isFinished, double duration, Map<String, dynamic>? ebookFile, bool isEbookOnly,
+      String serverPath, bool inContinueListening, String? continueSeriesId,
+      {required VoidCallback dismiss, bool includeOpenDetails = false}) {
+    final onAbsorbing = lib.isOnAbsorbingList(widget.itemId);
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      LayoutBuilder(builder: (ctx, constraints) {
+        const gap = 10.0;
+        // Responsive grid: 3 pills across normally, but drop to 2 on a narrow
+        // screen or when the system font is scaled up, so labels keep room to
+        // show in full. Cell height tracks the text scale so 2-line labels at a
+        // large zoom don't get clipped.
+        final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+        final cols = (constraints.maxWidth < 340 || textScale >= 1.3) ? 2 : 3;
+        final cellW = (constraints.maxWidth - gap * (cols - 1)) / cols;
+        final cellH = (cols == 2 ? 72.0 : 80.0) * textScale.clamp(1.0, 1.7) + 8;
+        final pills = <Widget>[];
+        void add(IconData icon, String label, VoidCallback onTap, {Color? tint}) {
+          pills.add(SizedBox(width: cellW, height: cellH,
+            child: _quickPill(cs, tt, icon, label, () { dismiss(); onTap(); }, tint: tint)));
+        }
+        add(onAbsorbing ? Icons.remove_circle_outline_rounded : Icons.add_circle_outline_rounded,
+          onAbsorbing ? Wording.of(context).removeFromAbsorbing : Wording.of(context).addToAbsorbing, () async {
+            if (onAbsorbing) {
+              await lib.removeFromAbsorbing(widget.itemId);
+              HapticFeedback.mediumImpact();
+              if (context.mounted) showOverlayToast(context, Wording.of(context).removedFromAbsorbing, icon: Icons.remove_circle_outline_rounded);
+            } else {
+              await lib.addToAbsorbingQueue(widget.itemId);
+              if (_item != null) {
+                final cached = Map<String, dynamic>.from(_item!);
+                cached['_absorbingKey'] = widget.itemId;
+                lib.absorbingItemCache[widget.itemId] = cached;
+              }
+              HapticFeedback.mediumImpact();
+              if (context.mounted) showOverlayToast(context, Wording.of(context).addedToAbsorbing, icon: Icons.add_circle_outline_rounded);
+            }
+          });
+        if (!lib.isOffline) {
+          add(Icons.playlist_add_rounded, l.addToPlaylist, () => PlaylistPickerSheet.show(context, widget.itemId));
+        }
+        if (!lib.isOffline && !lib.isPodcastLibrary && auth.isAdmin) {
+          add(Icons.collections_bookmark_rounded, l.addToCollection, () => CollectionPickerSheet.show(context, widget.itemId));
+        }
+        if (ebookFile != null) {
+          add(Icons.menu_book_rounded, 'Read eBook', () => _openEbookReader(context, auth, ebookFile, title));
+        }
+        if (ebookFile != null) {
+          add(_ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded,
+            _ebookSaved ? l.downloadEbookAgain : l.downloadEbook, () => _saveEbook(context, auth, ebookFile, title));
+        }
+        if (ebookFile != null && auth.ereaderDevices.isNotEmpty) {
+          add(Icons.send_to_mobile_rounded, l.sendToEreader, () => _sendToEreader(context, auth));
+        }
+        if (progress > 0 || isFinished) {
+          add(Icons.restart_alt_rounded, l.resetProgress, () => _resetProgress(context, auth, duration));
+        }
+        if (inContinueListening && !lib.isOffline) {
+          add(Icons.playlist_remove_rounded, l.removeFromContinueListening, () => _removeFromContinueListening(context, auth, lib));
+        }
+        if (continueSeriesId != null && !lib.isOffline) {
+          add(Icons.bookmark_remove_rounded, l.removeSeriesFromContinueSeries, () => _removeSeriesFromContinueSeries(context, auth, lib, continueSeriesId));
+        }
+        if (auth.apiService != null && !lib.isOffline) {
+          add(Icons.manage_search_rounded, _hasLocalOverride ? l.reLookupLocalMetadata : l.lookupLocalMetadata,
+            () => _openMetadataLookup(context, auth, title, authorName));
+        }
+        if (_hasLocalOverride) {
+          add(Icons.layers_clear_rounded, l.clearLocalMetadata, () => _clearOverride(context));
+        }
+        if (_showGoodreads) {
+          add(Icons.local_library_rounded, l.searchOnGoodreads, () => _openGoodreads(title, authorName));
+        }
+        if (auth.canUpdateMetadata && !lib.isOffline) {
+          add(Icons.edit_rounded, l.edit, () => _openEditPage(auth, title, isEbookOnly));
+        }
+        if (includeOpenDetails) {
+          add(Icons.open_in_full_rounded, l.bookDetailsLabel, () {
+            final rc = rootNavigatorKey.currentContext;
+            Navigator.of(context).pop();
+            if (rc != null) showBookDetailSheet(rc, widget.itemId);
+          });
+        }
+        return Wrap(spacing: gap, runSpacing: gap, children: pills);
+      }),
+      if (auth.isAdmin && serverPath.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        GestureDetector(
+          onTap: () {
+            dismiss();
+            Clipboard.setData(ClipboardData(text: serverPath));
+            HapticFeedback.lightImpact();
+          },
+          child: Text(serverPath, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+            style: TextStyle(color: cs.onSurface.withValues(alpha: 0.25), fontSize: 11)),
+        ),
+      ],
+    ]);
+  }
+
+  Widget _quickThumb(double size, Map<String, String> headers, ColorScheme cs) {
+    final url = _coverUrl;
+    Widget img;
+    if (url == null) {
+      img = Container(color: cs.surfaceContainerHighest,
+        child: Icon(Icons.headphones_rounded, size: 24, color: cs.onSurfaceVariant.withValues(alpha: 0.4)));
+    } else if (url.startsWith('/')) {
+      img = Image.file(File(url), fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(color: cs.surfaceContainerHighest));
+    } else {
+      img = CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, httpHeaders: headers,
+        placeholder: (_, __) => Container(color: cs.surfaceContainerHighest),
+        errorWidget: (_, __, ___) => Container(color: cs.surfaceContainerHighest));
+    }
+    return ClipRRect(borderRadius: BorderRadius.circular(10),
+      child: SizedBox(width: size, height: size, child: img));
+  }
+
+  Widget _quickAbsorbButton(BuildContext context, ColorScheme cs, TextTheme tt, AuthProvider auth,
+      Color accent, Color onAccent, String title, String author, double duration, List<dynamic> chapters, bool isFinished) {
+    return ListenableBuilder(
+      listenable: AudioPlayerService(),
+      builder: (_, __) {
+        final player = AudioPlayerService();
+        final isCurrentPlaying = player.currentItemId == widget.itemId && player.isPlaying;
+        final showAbsorbingState = _isAbsorbing || isCurrentPlaying;
+        return GestureDetector(
+          onTap: showAbsorbingState
+              ? () {
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                  AppShell.goToAbsorbingGlobal();
+                }
+              : () {
+                  setState(() => _isAbsorbing = true);
+                  _startAbsorb(context, auth: auth, title: title, author: author,
+                    coverUrl: _coverUrl, duration: duration, chapters: chapters);
+                },
+          child: Container(
+            height: 36,
+            decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(14)),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              showAbsorbingState
+                  ? SizedBox(width: 16, height: 16, child: AbsorbingWave(color: onAccent))
+                  : isFinished
+                      ? AbsorbReplayIcon(size: 16, color: onAccent)
+                      : Icon(Icons.waves_rounded, size: 16, color: onAccent),
+              const SizedBox(width: 8),
+              Flexible(child: Text(
+                showAbsorbingState
+                    ? Wording.of(context).absorbing
+                    : isFinished
+                        ? Wording.of(context).absorbAgain
+                        : Wording.of(context).absorb,
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: onAccent),
+              )),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _quickFinishedPill(BuildContext context, ColorScheme cs, AuthProvider auth,
+      bool isFinished, double currentTime, double duration) {
+    return GestureDetector(
+      onTap: () => isFinished
+          ? _markNotFinished(context, auth, currentTime, duration)
+          : _markFinished(context, auth, duration),
+      child: Container(
+        height: 36,
+        decoration: BoxDecoration(
+          color: isFinished ? Colors.green.withValues(alpha: 0.06) : cs.onSurface.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: isFinished ? Colors.green.withValues(alpha: 0.15) : cs.onSurface.withValues(alpha: 0.08)),
+        ),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(isFinished ? Icons.check_circle_rounded : Icons.check_circle_outline_rounded,
+            size: 16, color: isFinished ? Colors.green : cs.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Flexible(child: Text(isFinished ? Wording.of(context).fullyAbsorbed : Wording.of(context).fullyAbsorbAction,
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: isFinished ? Colors.green : cs.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w500))),
+        ]),
+      ),
+    );
+  }
+
+  // Grid pill styled like the admin Users page cells: rounded card, centered
+  // icon over a short label, fixed height so the Wrap rows line up.
+  Widget _quickPill(ColorScheme cs, TextTheme tt, IconData icon, String label, VoidCallback onTap, {Color? tint}) {
+    final iconColor = tint ?? cs.onSurfaceVariant;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+        ),
+        child: Column(mainAxisSize: MainAxisSize.max, mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, size: 22, color: iconColor),
+          const SizedBox(height: 7),
+          // Loose Flexible so an extra-long label ellipsises inside the cell at
+          // big font scales rather than overflowing the fixed cell height.
+          Flexible(child: Text(label, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis,
+            style: tt.labelSmall?.copyWith(color: cs.onSurface, fontWeight: FontWeight.w500, height: 1.15, fontSize: 11))),
+        ]),
+      ),
+    );
+  }
+
   void _showMoreSheet(BuildContext context, AuthProvider auth, LibraryProvider lib,
       String title, String authorName, double progress, bool isFinished,
       double duration, Map<String, dynamic>? ebookFile, bool isEbookOnly, String serverPath) {
     final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     final l = AppLocalizations.of(context)!;
+    // Continue-shelf actions only make sense when this book is actually shown
+    // in the relevant home shelf right now.
+    final inContinueListening = lib.isInContinueListeningShelf(widget.itemId);
+    final rawSeries = ((_item?['media'] as Map<String, dynamic>?)?['metadata']
+        as Map<String, dynamic>?)?['series'];
+    final bookSeriesIds = <String>[];
+    if (rawSeries is List) {
+      for (final s in rawSeries.whereType<Map<String, dynamic>>()) {
+        final id = (s['id'] as String? ?? '').trim();
+        if (id.isNotEmpty) bookSeriesIds.add(id);
+      }
+    } else if (rawSeries is Map<String, dynamic>) {
+      final id = (rawSeries['id'] as String? ?? '').trim();
+      if (id.isNotEmpty) bookSeriesIds.add(id);
+    }
+    final continueSeriesId = lib.continueSeriesShelfMatch(bookSeriesIds);
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -690,94 +1049,13 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
-              _moreItem(cs, lib.isOnAbsorbingList(widget.itemId)
-                  ? Icons.remove_circle_outline_rounded : Icons.add_circle_outline_rounded,
-                lib.isOnAbsorbingList(widget.itemId) ? Wording.of(context).removeFromAbsorbing : Wording.of(context).addToAbsorbing,
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  if (lib.isOnAbsorbingList(widget.itemId)) {
-                    await lib.removeFromAbsorbing(widget.itemId);
-                    HapticFeedback.mediumImpact();
-                    if (context.mounted) {
-                      showOverlayToast(context, Wording.of(context).removedFromAbsorbing, icon: Icons.remove_circle_outline_rounded);
-                    }
-                  } else {
-                    await lib.addToAbsorbingQueue(widget.itemId);
-                    if (_item != null) {
-                      final cached = Map<String, dynamic>.from(_item!);
-                      cached['_absorbingKey'] = widget.itemId;
-                      lib.absorbingItemCache[widget.itemId] = cached;
-                    }
-                    HapticFeedback.mediumImpact();
-                    if (context.mounted) {
-                      showOverlayToast(context, Wording.of(context).addedToAbsorbing, icon: Icons.add_circle_outline_rounded);
-                    }
-                  }
-                }),
-              if (!lib.isOffline)
-                _moreItem(cs, Icons.playlist_add_rounded, l.addToPlaylist,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    PlaylistPickerSheet.show(context, widget.itemId);
-                  }),
-              if (!lib.isOffline && !lib.isPodcastLibrary && auth.isRoot)
-                _moreItem(cs, Icons.collections_bookmark_rounded, l.addToCollection,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    CollectionPickerSheet.show(context, widget.itemId);
-                  }),
-              if (ebookFile != null)
-                _moreItem(cs, Icons.menu_book_rounded, 'Read eBook',
-                  onTap: () { Navigator.pop(ctx); _openEbookReader(context, auth, ebookFile, title); }),
-              if (ebookFile != null)
-                _moreItem(cs, _ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded,
-                  _ebookSaved ? l.downloadEbookAgain : l.downloadEbook,
-                  onTap: () { Navigator.pop(ctx); _saveEbook(context, auth, ebookFile, title); }),
-              if (progress > 0 || isFinished)
-                _moreItem(cs, Icons.restart_alt_rounded, l.resetProgress,
-                  onTap: () { Navigator.pop(ctx); _resetProgress(context, auth, duration); }),
-              if (auth.apiService != null && !lib.isOffline)
-                _moreItem(cs, Icons.manage_search_rounded,
-                  _hasLocalOverride ? l.reLookupLocalMetadata : l.lookupLocalMetadata,
-                  onTap: () { Navigator.pop(ctx); _openMetadataLookup(context, auth, title, authorName); }),
-              if (_hasLocalOverride)
-                _moreItem(cs, Icons.layers_clear_rounded, l.clearLocalMetadata,
-                  onTap: () { Navigator.pop(ctx); _clearOverride(context); }),
-
-              if (_showGoodreads)
-                _moreItem(cs, Icons.local_library_rounded, l.searchOnGoodreads,
-                  onTap: () { Navigator.pop(ctx); _openGoodreads(title, authorName); }),
-              if (auth.canUpdateMetadata && !lib.isOffline)
-                _moreItem(cs, Icons.edit_rounded, l.editServerDetails,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    final media = _item!['media'] as Map<String, dynamic>? ?? {};
-                    final meta = media['metadata'] as Map<String, dynamic>? ?? {};
-                    final mediaTags =
-                        ((media['tags'] as List<dynamic>?) ?? const [])
-                            .cast<String>();
-                    final audioFiles =
-                        (media['audioFiles'] as List<dynamic>?) ?? const [];
-                    final rel = _item!['relPath'] as String? ?? '';
-                    showEditMetadataSheet(context,
-                        itemId: widget.itemId,
-                        metadata: meta,
-                        tags: mediaTags,
-                        audioFiles: audioFiles,
-                        relPath: rel);
-                  }),
-              if (auth.isAdmin && serverPath.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                GestureDetector(
-                  onTap: () {
-                    Clipboard.setData(ClipboardData(text: serverPath));
-                    HapticFeedback.lightImpact();
-                    Navigator.pop(ctx);
-                  },
-                  child: Text(serverPath, maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: cs.onSurface.withValues(alpha: 0.25), fontSize: 11)),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: _actionPillGrid(context, cs, tt, l, auth, lib, title, authorName,
+                    progress, isFinished, duration, ebookFile, isEbookOnly, serverPath,
+                    inContinueListening, continueSeriesId, dismiss: () => Navigator.pop(ctx)),
                 ),
-              ],
+              ),
             ]),
           ),
         );
@@ -785,16 +1063,69 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     );
   }
 
-  Widget _moreItem(ColorScheme cs, IconData icon, String label, {required VoidCallback onTap}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: GestureDetector(onTap: onTap, child: Container(height: 44,
-        decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: cs.onSurface.withValues(alpha: 0.1))),
-        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(icon, size: 16, color: cs.onSurfaceVariant), const SizedBox(width: 8),
-          Text(label, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w500))]))),
-    );
+  Future<void> _removeFromContinueListening(
+      BuildContext context, AuthProvider auth, LibraryProvider lib) async {
+    final l = AppLocalizations.of(context)!;
+    final api = auth.apiService;
+    final progressId = lib.getProgressData(widget.itemId)?['id'] as String?;
+    if (api == null || progressId == null) {
+      if (context.mounted) {
+        showOverlayToast(context, l.couldNotUpdate, icon: Icons.error_outline_rounded);
+      }
+      return;
+    }
+    final ok = await api.removeItemFromContinueListening(progressId);
+    if (ok) {
+      await lib.refreshProgressShelves(force: true, reason: 'remove-continue-listening');
+    }
+    if (!context.mounted) return;
+    HapticFeedback.mediumImpact();
+    showOverlayToast(context,
+        ok ? l.removedFromContinueListening : l.couldNotUpdate,
+        icon: ok ? Icons.playlist_remove_rounded : Icons.error_outline_rounded);
+  }
+
+  Future<void> _removeSeriesFromContinueSeries(
+      BuildContext context, AuthProvider auth, LibraryProvider lib, String seriesId) async {
+    final l = AppLocalizations.of(context)!;
+    final api = auth.apiService;
+    if (api == null) {
+      if (context.mounted) {
+        showOverlayToast(context, l.couldNotUpdate, icon: Icons.error_outline_rounded);
+      }
+      return;
+    }
+    final ok = await api.removeSeriesFromContinueListening(seriesId);
+    if (ok) {
+      await lib.refreshProgressShelves(force: true, reason: 'remove-continue-series');
+    }
+    if (!context.mounted) return;
+    HapticFeedback.mediumImpact();
+    showOverlayToast(context,
+        ok ? l.removedSeriesFromContinueSeries : l.couldNotUpdate,
+        icon: ok ? Icons.bookmark_remove_rounded : Icons.error_outline_rounded);
+  }
+
+  /// Opens the unified per-book edit page (Chapters / Details / Match / Encode)
+  /// from the "..." menu.
+  void _openEditPage(AuthProvider auth, String title, bool isEbookOnly) {
+    final media = _item!['media'] as Map<String, dynamic>? ?? {};
+    final meta = media['metadata'] as Map<String, dynamic>? ?? {};
+    final mediaTags = ((media['tags'] as List<dynamic>?) ?? const []).cast<String>();
+    final audioFiles = (media['audioFiles'] as List<dynamic>?) ?? const [];
+    final rel = _item!['relPath'] as String? ?? '';
+    Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
+      builder: (_) => BookEditScreen(
+        itemId: widget.itemId,
+        bookTitle: title,
+        metadata: meta,
+        tags: mediaTags,
+        audioFiles: audioFiles,
+        relPath: rel,
+        isEbookOnly: isEbookOnly,
+        isAdmin: auth.isAdmin,
+      ),
+    ));
   }
 
   List<Widget> _audioInfoChips(Map<String, dynamic> media) {
@@ -869,11 +1200,6 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     return '${months[d.month - 1]} ${d.day}, ${d.year}';
   }
 
-  String _fmtDur(double s) {
-    final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor();
-    if (h > 0) return '${h}h ${m}m';
-    return '${m}m';
-  }
 
   List<Widget> _buildStars(double rating, Color accent) {
     final cs = Theme.of(context).colorScheme;
@@ -1241,6 +1567,82 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     }
   }
 
+  Future<void> _sendToEreader(BuildContext context, AuthProvider auth) async {
+    final api = auth.apiService;
+    final devices = auth.ereaderDevices;
+    if (api == null || devices.isEmpty) return;
+    final l = AppLocalizations.of(context)!;
+
+    String? deviceName;
+    if (devices.length == 1) {
+      deviceName = devices.first['name'] as String?;
+    } else {
+      deviceName = await _pickEreaderDevice(context, devices);
+    }
+    if (deviceName == null || !context.mounted) return;
+
+    showOverlayToast(context, l.sendingToEreader(deviceName),
+        icon: Icons.send_to_mobile_rounded);
+
+    final ok = await api.sendEBookToDevice(
+      libraryItemId: widget.itemId,
+      deviceName: deviceName,
+    );
+    if (!context.mounted) return;
+    if (ok) {
+      showOverlayToast(context, l.sendToEreaderSuccess(deviceName),
+          icon: Icons.check_circle_outline_rounded);
+    } else {
+      showOverlayToast(context, l.sendToEreaderFailed,
+          icon: Icons.error_outline_rounded);
+    }
+  }
+
+  Future<String?> _pickEreaderDevice(
+      BuildContext context, List<Map<String, dynamic>> devices) {
+    final cs = Theme.of(context).colorScheme;
+    final l = AppLocalizations.of(context)!;
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(l.pickEreaderDevice,
+                  style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                    color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: devices.map((d) {
+                    final name = d['name'] as String? ?? '';
+                    final email = d['email'] as String? ?? '';
+                    return ListTile(
+                      leading: Icon(Icons.send_to_mobile_rounded, color: cs.onSurfaceVariant),
+                      title: Text(name),
+                      subtitle: Text(email, style: TextStyle(color: cs.onSurface.withValues(alpha: 0.5))),
+                      onTap: () => Navigator.pop(ctx, name),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _startAbsorb(BuildContext context, {required AuthProvider auth, required String title, required String author, required String? coverUrl, required double duration, required List<dynamic> chapters}) async {
     final player = AudioPlayerService();
     // Grab the root navigator before we pop the sheet
@@ -1441,8 +1843,12 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           initialAuthor: author,
           currentMetadata: (_item?['media'] as Map<String, dynamic>?)?['metadata'] as Map<String, dynamic>?,
           onApplied: () {
-            // Reload the item to show the new override
+            // Reload the item to show the new override, and repaint the
+            // library so the grid/absorbing card pick up the override cover.
             _loadItem();
+            if (mounted) {
+              context.read<LibraryProvider>().notifyCoverOverridesChanged();
+            }
           },
         ),
       ),
@@ -1472,6 +1878,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       setState(() => _hasLocalOverride = false);
       await _loadItem();
       if (context.mounted) {
+        // Repaint the library so the grid/card drop the override cover too.
+        context.read<LibraryProvider>().notifyCoverOverridesChanged();
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(l.localMetadataCleared),
           behavior: SnackBarBehavior.floating,

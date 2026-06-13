@@ -90,6 +90,30 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         'subscribed_podcasts', _subscribedPodcasts.toList());
   }
 
+  // ── "Finished this year" local hide list ──
+
+  Future<void> _loadYearHidden() async {
+    _yearHiddenIds =
+        (await ScopedPrefs.getStringList('year_hidden_ids')).toSet();
+  }
+
+  /// Hide a finished book from Absorb's local "finished this year" count and
+  /// list. The server's finished date is untouched; this only affects Absorb.
+  Future<void> hideFromThisYear(String itemId) async {
+    if (itemId.isEmpty || !_yearHiddenIds.add(itemId)) return;
+    await ScopedPrefs.setStringList('year_hidden_ids', _yearHiddenIds.toList());
+    notifyListeners();
+    HomeWidgetService().refreshStats(force: true);
+  }
+
+  /// Undo a local hide so the book counts toward this year again.
+  Future<void> unhideFromThisYear(String itemId) async {
+    if (!_yearHiddenIds.remove(itemId)) return;
+    await ScopedPrefs.setStringList('year_hidden_ids', _yearHiddenIds.toList());
+    notifyListeners();
+    HomeWidgetService().refreshStats(force: true);
+  }
+
   // ── Offline mode ──
 
   Future<void> setManualOffline(bool value) async {
@@ -99,11 +123,8 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     await prefs.setBool('manual_offline_mode', value);
     if (!value) {
       _stopServerPingTimer();
-      final serverUrl = _auth?.activeServerUrl ?? _auth?.serverUrl ?? '';
-      final reachable = serverUrl.isNotEmpty
-          ? await ApiService.pingServer(serverUrl, customHeaders: _auth?.customHeaders ?? {})
-              .timeout(const Duration(seconds: 5), onTimeout: () => false)
-          : false;
+      final reachable =
+          await _pingActiveServerWithFallback(const Duration(seconds: 5)) != null;
       if (!reachable) {
         debugPrint('[Library] Manual offline off but server unreachable — staying offline');
         _networkOffline = true;
@@ -437,6 +458,58 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     return data;
   }
 
+  /// True if [itemId] currently appears in the personalized "Continue Listening"
+  /// shelf. Gates the "Remove from Continue Listening" book action.
+  bool isInContinueListeningShelf(String itemId) {
+    for (final section in _personalizedSections) {
+      if (section is! Map<String, dynamic>) continue;
+      if (section['id'] != 'continue-listening') continue;
+      for (final e in (section['entities'] as List<dynamic>? ?? const [])) {
+        if (e is Map<String, dynamic> && e['id'] == itemId) return true;
+      }
+    }
+    return false;
+  }
+
+  /// If one of [seriesIds] (the opened book's series) is currently shown in the
+  /// "Continue Series" shelf, returns that series id (needed for the remove
+  /// call); otherwise null. Gates the "Remove Series from Continue Series".
+  ///
+  /// The shelf entities are the *next book* in each continued series. The server
+  /// clears the book's own series list and re-attaches the continued series as a
+  /// single {id, name, sequence} object at `media.metadata.series` (see
+  /// libraryFilters.getLibraryItemsContinueSeries) - so we read the id from
+  /// there, not from the entity (book) id.
+  String? continueSeriesShelfMatch(Iterable<String> seriesIds) {
+    final wanted = {for (final s in seriesIds) if (s.isNotEmpty) s};
+    if (wanted.isEmpty) return null;
+    String? idFrom(dynamic raw) {
+      if (raw is Map<String, dynamic>) {
+        final id = raw['id'] as String?;
+        if (id != null && wanted.contains(id)) return id;
+      } else if (raw is List) {
+        for (final s in raw) {
+          final id = s is Map<String, dynamic> ? s['id'] as String? : null;
+          if (id != null && wanted.contains(id)) return id;
+        }
+      }
+      return null;
+    }
+
+    for (final section in _personalizedSections) {
+      if (section is! Map<String, dynamic>) continue;
+      if (section['id'] != 'continue-series') continue;
+      for (final e in (section['entities'] as List<dynamic>? ?? const [])) {
+        if (e is! Map<String, dynamic>) continue;
+        final metadata =
+            (e['media'] as Map<String, dynamic>?)?['metadata'] as Map<String, dynamic>?;
+        final match = idFrom(metadata?['series']) ?? idFrom(e['series']);
+        if (match != null) return match;
+      }
+    }
+    return null;
+  }
+
   Map<String, dynamic>? getEpisodeProgressData(
       String itemId, String episodeId) {
     final key = '$itemId-$episodeId';
@@ -460,14 +533,16 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   int getUnfinishedEpisodeCount(Map<String, dynamic>? show) {
     if (show == null) return 0;
     final media = show['media'] as Map<String, dynamic>? ?? const {};
+    final itemId = show['id'] as String? ?? '';
     // Try the server-provided count first.
     final serverCount = show['numEpisodesIncomplete'] as int? ??
         media['numEpisodesIncomplete'] as int?;
-    if (serverCount != null) return serverCount;
+    if (serverCount != null) {
+      return _adjustedUnfinishedCount(itemId, serverCount);
+    }
 
     // Fallback: count from the loaded episodes array. Match server semantics
     // — count any episode the user hasn't marked finished.
-    final itemId = show['id'] as String? ?? '';
     if (itemId.isEmpty) return 0;
     final episodes = media['episodes'] as List<dynamic>? ?? const [];
     if (episodes.isEmpty) return 0;
@@ -481,6 +556,33 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       if (!isFinished) count++;
     }
     return count;
+  }
+
+  /// Apply (and fold pending) local badge nudges onto the server's count.
+  /// The cached items showing badges aren't all owned by the provider, so the
+  /// correction lives here instead of in the item maps. Self-discards when
+  /// the server count moves off the base it was recorded against.
+  int _adjustedUnfinishedCount(String showId, int serverCount) {
+    if (showId.isEmpty) return serverCount;
+    final pending = _pendingUnfinishedDeltas.remove(showId);
+    if (pending != null) {
+      final prior = _unfinishedCountAdjustments[showId];
+      final from = (prior != null && prior.$1 == serverCount) ? prior.$2 : serverCount;
+      _unfinishedCountAdjustments[showId] =
+          (serverCount, (from + pending).clamp(0, 1 << 30));
+    }
+    final adj = _unfinishedCountAdjustments[showId];
+    if (adj == null) return serverCount;
+    if (adj.$1 == serverCount) return adj.$2;
+    _unfinishedCountAdjustments.remove(showId);
+    return serverCount;
+  }
+
+  /// Record a local +/- nudge for a show's unfinished-episode badge.
+  void nudgeUnfinishedEpisodeCount(String showId, int delta) {
+    if (showId.isEmpty) return;
+    _pendingUnfinishedDeltas[showId] =
+        (_pendingUnfinishedDeltas[showId] ?? 0) + delta;
   }
 
   Future<void> refreshLocalProgress() async {
@@ -516,6 +618,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   }
 
   void resetProgressFor(String itemId) {
+    if (itemId.length > 36 && _progressMap[itemId]?['isFinished'] == true) {
+      nudgeUnfinishedEpisodeCount(itemId.substring(0, 36), 1);
+    }
     _progressMap.remove(itemId);
     _localProgressOverrides.remove(itemId);
     _locallyFinishedItems.remove(itemId);
@@ -648,11 +753,8 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       // Got connectivity back - re-probe and potentially come online.
       // We pick the active server based on actual reachability, not on
       // whether the connectivity list happens to contain wifi this tick.
-      final activeUrl = _auth?.activeServerUrl ?? _auth?.serverUrl ?? '';
-      final reachable = activeUrl.isNotEmpty
-          ? await ApiService.pingServer(activeUrl, customHeaders: _auth?.customHeaders ?? {})
-              .timeout(const Duration(seconds: 5), onTimeout: () => false)
-          : false;
+      final reachable =
+          await _pingActiveServerWithFallback(const Duration(seconds: 5)) != null;
       if (reachable) {
         setNetworkOffline(false);
         if (_rollingDownloadSeries.isNotEmpty) _catchUpRollingDownloads();
@@ -668,6 +770,29 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       }
       _startLocalProbeTimer();
     });
+  }
+
+  /// Ping the active server and return the URL that answered, or null if
+  /// nothing did. When the local override is active but its ip:port has gone
+  /// stale, fall back to the remote URL before giving up - otherwise a dead
+  /// local address flags the app offline while the domain still answers
+  /// (same local-then-remote order tryReconnect uses).
+  Future<String?> _pingActiveServerWithFallback(Duration timeout) async {
+    final auth = _auth;
+    if (auth == null) return null;
+    final activeUrl = auth.activeServerUrl ?? auth.serverUrl ?? '';
+    if (activeUrl.isEmpty) return null;
+    final reachable = await ApiService.pingServer(activeUrl, customHeaders: auth.customHeaders)
+        .timeout(timeout, onTimeout: () => false);
+    if (reachable) return activeUrl;
+    final remoteUrl = auth.serverUrl ?? '';
+    if (remoteUrl.isEmpty || remoteUrl == activeUrl) return null;
+    final remoteReachable = await ApiService.pingServer(remoteUrl, customHeaders: auth.customHeaders)
+        .timeout(timeout, onTimeout: () => false);
+    if (!remoteReachable) return null;
+    debugPrint('[Library] Local server unreachable but remote responds - switching to remote');
+    auth.clearLocalOverride();
+    return remoteUrl;
   }
 
   void _startServerPingTimer() {
@@ -815,17 +940,14 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     debugPrint('[Library] Health check timer started (60s ping while online)');
     _healthCheckTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
       if (_networkOffline || _manualOffline || !_deviceHasConnectivity) return;
-      final serverUrl = _auth?.activeServerUrl ?? _auth?.serverUrl ?? '';
-      if (serverUrl.isEmpty) return;
-      final reachable = await ApiService.pingServer(
-        serverUrl,
-        customHeaders: _auth?.customHeaders ?? {},
-      ).timeout(const Duration(seconds: 10), onTimeout: () => false);
-      if (!reachable) {
+      if ((_auth?.activeServerUrl ?? _auth?.serverUrl ?? '').isEmpty) return;
+      final reachableUrl =
+          await _pingActiveServerWithFallback(const Duration(seconds: 10));
+      if (reachableUrl == null) {
         debugPrint('[Library] Health check failed — server unreachable, going offline');
         setNetworkOffline(true);
       } else {
-        notifyServerReachable(serverUrl);
+        notifyServerReachable(reachableUrl);
       }
     });
   }
@@ -1450,17 +1572,19 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     return false;
   }
 
-  Future<bool> deleteCollection(String collectionId) async {
-    if (_api == null) return false;
-    final ok = await _api!.deleteCollection(collectionId);
-    if (ok) {
+  /// Returns HTTP status code from the server (0 on exception, 200 on
+  /// success, 403 when caller lacks the `delete` permission flag).
+  Future<int> deleteCollection(String collectionId) async {
+    if (_api == null) return 0;
+    final status = await _api!.deleteCollection(collectionId);
+    if (status == 200) {
       _collections = _collections.where((c) => (c as Map)['id'] != collectionId).toList();
       _hiddenSectionIds.remove('collection:$collectionId');
       _sectionOrder.remove('collection:$collectionId');
       await _saveSectionPrefs();
       notifyListeners();
     }
-    return ok;
+    return status;
   }
 
   // ── Section customization ──
@@ -2011,19 +2135,22 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       return;
     }
 
-    final connectivity = await Connectivity().checkConnectivity();
-    if (!connectivity.contains(ConnectivityResult.wifi)) return;
-
+    // Network policy (Wi-Fi only vs Wi-Fi & mobile) is enforced centrally by
+    // downloadItem(), so this honors the user's Download network setting rather
+    // than forcing Wi-Fi.
     final dl = DownloadService();
     if (dl.isDownloaded(playingKey) || dl.isDownloading(playingKey)) return;
 
     final player = AudioPlayerService();
-    final itemId = player.currentItemId;
-    if (itemId == null) return;
+    if (player.currentItemId == null) return;
 
+    // playingKey is the composite 'itemId-episodeId' for podcast episodes (plain
+    // itemId for books), which is exactly what downloadItem expects - it slices
+    // the episode part back off to reach the library item. Passing the plain
+    // podcast id here would corrupt that id and silently fail the download.
     dl.downloadItem(
       api: _api!,
-      itemId: itemId,
+      itemId: playingKey,
       title: player.currentTitle ?? '',
       author: player.currentAuthor ?? '',
       coverUrl: player.currentCoverUrl,

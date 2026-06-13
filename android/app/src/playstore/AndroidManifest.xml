@@ -4,4 +4,7 @@
     <!-- Remove MANAGE_EXTERNAL_STORAGE for Play Store compliance -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove"/>
 
+    <!-- Remove APK installer permission: Play Store flavor never sideloads -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" tools:node="remove"/>
+
 </manifest>

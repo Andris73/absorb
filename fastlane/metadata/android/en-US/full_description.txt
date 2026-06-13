@@ -1,0 +1,3 @@
+Absorb is an open-source client for Audiobookshelf servers. Stream and download your audiobooks and podcasts, with chapter navigation, sleep timer, equalizer, Android Auto, and home-screen widgets.
+
+This F-Droid build has no Google Play Services, so Chromecast and the Wear OS companion login are not available here. Everything else works normally.

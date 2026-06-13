@@ -1,5 +1,8 @@
 # Flutter
--keep class io.flutter.** { *; }
+# NOTE: the broad `-keep class io.flutter.** { *; }` lives in
+# proguard-flutter-keep.pro and is applied only to the github + playstore
+# flavors. The fdroid flavor deliberately omits it so R8 strips Flutter's
+# unused deferred-components manager (which references proprietary Play Core).
 -keep class io.flutter.plugins.** { *; }
 
 # just_audio

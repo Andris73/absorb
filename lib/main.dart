@@ -20,7 +20,6 @@ import 'providers/library_provider.dart';
 import 'services/audio_player_service.dart';
 import 'services/api_service.dart';
 import 'services/download_service.dart';
-import 'services/download_notification_service.dart';
 import 'services/progress_sync_service.dart';
 import 'services/equalizer_service.dart';
 import 'services/sleep_timer_service.dart';
@@ -501,12 +500,6 @@ class _AuthGateState extends State<AuthGate> {
     AudioPlayerService.onColdStartPlayRequested =
         HomeWidgetService().resumeLastPlayedIfAvailable;
     debugPrint('[Init] AudioPlayerService done (${sw.elapsedMilliseconds}ms)');
-
-    try {
-      await DownloadNotificationService().init();
-    } catch (e) {
-      debugPrint('[Init] DownloadNotificationService failed: $e');
-    }
 
     try {
       await Permission.notification.request();

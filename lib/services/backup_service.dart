@@ -81,6 +81,22 @@ class BackupService {
       'sheetGridView': await PlayerSettings.getSheetGridView(),
       'sheetCollapseSeries': await PlayerSettings.getSheetCollapseSeries(),
       'skipChapterBarrier': await PlayerSettings.getSkipChapterBarrier(),
+      'audibleRegion': await PlayerSettings.getAudibleRegion(),
+      'upcomingReleasesSortByDate': await PlayerSettings.getUpcomingReleasesSortByDate(),
+      'libraryTagFilter': await PlayerSettings.getLibraryTagFilter(),
+      'librarySeriesFilter': await PlayerSettings.getLibrarySeriesFilter(),
+      'narratorSort': await PlayerSettings.getNarratorSort(),
+      'narratorSortAsc': await PlayerSettings.getNarratorSortAsc(),
+      'classicWording': await PlayerSettings.getClassicWording(),
+      'sectionGridView': await PlayerSettings.getSectionGridView(),
+      'collapseBookSeries': await PlayerSettings.getCollapseBookSeries(),
+      'showExplicitBadge': await PlayerSettings.getShowExplicitBadge(),
+      'includePreReleases': await PlayerSettings.getIncludePreReleases(),
+      'language': await PlayerSettings.getLanguage(),
+      'showUpNextLabel': await PlayerSettings.getShowUpNextLabel(),
+      'queuePlaylistId': await PlayerSettings.getQueuePlaylistId(),
+      'coverSeedColor': await PlayerSettings.getCoverSeedColor(),
+      'speedPresets': await PlayerSettings.getSpeedPresets(),
     };
 
     // AutoRewind (scoped)
@@ -113,6 +129,9 @@ class BackupService {
       'virtualizer': await ScopedPrefs.getDouble('eq_virtualizer') ?? 0.0,
       'loudnessGain': await ScopedPrefs.getDouble('eq_loudnessGain') ?? 0.0,
       'bands': await ScopedPrefs.getString('eq_bands'),
+      'mono': await ScopedPrefs.getBool('eq_mono') ?? false,
+      'skipSilence': await ScopedPrefs.getBool('eq_skipSilence') ?? false,
+      'perItem': await ScopedPrefs.getBool('eq_perItem') ?? false,
     };
 
     // Per-book speeds (scoped - scan scoped keys)
@@ -158,6 +177,80 @@ class BackupService {
     // Rolling download series (scoped)
     final rollingDownloadSeries = await ScopedPrefs.getStringList('rolling_download_series');
 
+    // Podcast subscriptions + manually-curated Absorbing list (scoped)
+    final subscribedPodcasts = await ScopedPrefs.getStringList('subscribed_podcasts');
+    final absorbingManualAdds = await ScopedPrefs.getStringList('absorbing_manual_adds');
+    final absorbingManualRemoves = await ScopedPrefs.getStringList('absorbing_manual_removes');
+
+    // Pending offline state (scoped) - server hasn't received these yet
+    final pendingSyncs = await ScopedPrefs.getStringList('pending_syncs');
+    final pendingOfflineListening = await ScopedPrefs.getStringList('pending_offline_listening');
+    final bookmarksPendingCreates = await ScopedPrefs.getString('bookmarks_pending_creates');
+    final bookmarksPendingDeletes = await ScopedPrefs.getString('bookmarks_pending_deletes');
+
+    // Offline listening accumulators (scoped) - keyed by itemId
+    final offlineListening = <String, int>{};
+    final offlinePrefix = scope.isNotEmpty ? '$scope:offline_listening_' : 'offline_listening_';
+    for (final key in prefs.getKeys()) {
+      if (key.startsWith(offlinePrefix)) {
+        final itemId = key.substring(offlinePrefix.length);
+        final seconds = prefs.getInt(key);
+        if (seconds != null && seconds > 0) offlineListening[itemId] = seconds;
+      }
+    }
+
+    // RMAB integration config (scoped)
+    final rmab = <String, dynamic>{
+      'baseUrl': await ScopedPrefs.getString('rmab_base_url'),
+      'apiToken': await ScopedPrefs.getString('rmab_api_token'),
+      'legacyUrl': await ScopedPrefs.getString('rmab_url'),
+    };
+
+    // Home screen layout per library (scoped, keyed by libraryId)
+    final homeLayouts = <String, Map<String, List<String>>>{};
+    final scopePrefix = scope.isNotEmpty ? '$scope:' : '';
+    void collectHome(String shortPrefix, String bucket) {
+      final fullPrefix = '$scopePrefix$shortPrefix';
+      for (final key in prefs.getKeys()) {
+        if (!key.startsWith(fullPrefix)) continue;
+        final libId = key.substring(fullPrefix.length);
+        final list = prefs.getStringList(key);
+        if (list == null) continue;
+        homeLayouts.putIfAbsent(libId, () => {})[bucket] = list;
+      }
+    }
+    collectHome('home_section_order_', 'order');
+    collectHome('home_hidden_sections_', 'hidden');
+    collectHome('home_genre_sections_', 'genres');
+
+    // Per-item metadata overrides (scoped, keyed by itemId)
+    final metadataOverrides = <String, String>{};
+    final metaPrefix = '${scopePrefix}metadata_override_';
+    for (final key in prefs.getKeys()) {
+      if (!key.startsWith(metaPrefix)) continue;
+      final itemId = key.substring(metaPrefix.length);
+      final value = prefs.getString(key);
+      if (value != null && value.isNotEmpty) metadataOverrides[itemId] = value;
+    }
+
+    // Per-podcast UI prefs (GLOBAL, not scoped - keyed by itemId)
+    final podcastPrefs = <String, Map<String, dynamic>>{};
+    void collectPodcast(String prefix, String bucket, Object? Function(String) read) {
+      for (final key in prefs.getKeys()) {
+        if (!key.startsWith(prefix)) continue;
+        final itemId = key.substring(prefix.length);
+        final value = read(key);
+        if (value == null) continue;
+        podcastPrefs.putIfAbsent(itemId, () => {})[bucket] = value;
+      }
+    }
+    collectPodcast('podcast_sort_newest_', 'sortNewest', (k) => prefs.getBool(k));
+    collectPodcast('podcast_hide_finished_', 'hideFinished', (k) => prefs.getBool(k));
+    collectPodcast('podcast_advance_dir_', 'advanceDir', (k) => prefs.getString(k));
+
+    // Custom download path (GLOBAL)
+    final customDownloadPath = prefs.getString('custom_download_path');
+
     // Accounts & custom headers (optional - contain auth data)
     List<Map<String, dynamic>>? accounts;
     Map<String, String>? customHeaders;
@@ -175,7 +268,7 @@ class BackupService {
     }
 
     return {
-      'version': 2,
+      'version': 3,
       'createdAt': DateTime.now().toIso8601String(),
       'appVersion': pkgInfo.version,
       'settings': settings,
@@ -188,8 +281,52 @@ class BackupService {
       'notes': notes,
       'savedEbooks': savedEbooks,
       'rollingDownloadSeries': rollingDownloadSeries,
+      'subscribedPodcasts': subscribedPodcasts,
+      'absorbingManualAdds': absorbingManualAdds,
+      'absorbingManualRemoves': absorbingManualRemoves,
+      'pendingSyncs': pendingSyncs,
+      'pendingOfflineListening': pendingOfflineListening,
+      'bookmarksPendingCreates': bookmarksPendingCreates,
+      'bookmarksPendingDeletes': bookmarksPendingDeletes,
+      'offlineListening': offlineListening,
+      'rmab': rmab,
+      'homeLayouts': homeLayouts,
+      'metadataOverrides': metadataOverrides,
+      'podcastPrefs': podcastPrefs,
+      'customDownloadPath': customDownloadPath,
       'accounts': accounts,
       'customHeaders': customHeaders,
+    };
+  }
+
+  /// Build a minimal setup file for provisioning a new user: a single account
+  /// whose token is an API key minted for them, plus any custom headers needed
+  /// to reach the server. Importing it from the login screen signs them in.
+  /// The token has no refresh counterpart, so it is flagged legacy and used as
+  /// a standing bearer key.
+  static Future<Map<String, dynamic>> buildSetupFile({
+    required String serverUrl,
+    required String username,
+    required String token,
+    String? userId,
+    Map<String, String>? customHeaders,
+  }) async {
+    final pkgInfo = await PackageInfo.fromPlatform();
+    return {
+      'version': 3,
+      'setup': true,
+      'createdAt': DateTime.now().toIso8601String(),
+      'appVersion': pkgInfo.version,
+      'accounts': [
+        {
+          'serverUrl': serverUrl,
+          'username': username,
+          'token': token,
+          'userId': userId,
+          'isLegacyToken': true,
+        },
+      ],
+      if (customHeaders != null && customHeaders.isNotEmpty) 'customHeaders': customHeaders,
     };
   }
 
@@ -292,6 +429,24 @@ class BackupService {
     if (s['sheetGridView'] != null) PlayerSettings.setSheetGridView(s['sheetGridView'] as bool);
     if (s['sheetCollapseSeries'] != null) PlayerSettings.setSheetCollapseSeries(s['sheetCollapseSeries'] as bool);
     if (s['skipChapterBarrier'] != null) PlayerSettings.setSkipChapterBarrier(s['skipChapterBarrier'] as bool);
+    if (s['audibleRegion'] != null) await PlayerSettings.setAudibleRegion(s['audibleRegion'] as String);
+    if (s['upcomingReleasesSortByDate'] != null) await PlayerSettings.setUpcomingReleasesSortByDate(s['upcomingReleasesSortByDate'] as bool);
+    if (s['libraryTagFilter'] != null) await PlayerSettings.setLibraryTagFilter(s['libraryTagFilter'] as String);
+    if (s['librarySeriesFilter'] != null) await PlayerSettings.setLibrarySeriesFilter(s['librarySeriesFilter'] as String);
+    if (s['narratorSort'] != null) await PlayerSettings.setNarratorSort(s['narratorSort'] as String);
+    if (s['narratorSortAsc'] != null) await PlayerSettings.setNarratorSortAsc(s['narratorSortAsc'] as bool);
+    if (s['classicWording'] != null) await PlayerSettings.setClassicWording(s['classicWording'] as bool);
+    if (s['sectionGridView'] != null) await PlayerSettings.setSectionGridView(s['sectionGridView'] as bool);
+    if (s['collapseBookSeries'] != null) await PlayerSettings.setCollapseBookSeries(s['collapseBookSeries'] as bool);
+    if (s['showExplicitBadge'] != null) await PlayerSettings.setShowExplicitBadge(s['showExplicitBadge'] as bool);
+    if (s['includePreReleases'] != null) await PlayerSettings.setIncludePreReleases(s['includePreReleases'] as bool);
+    if (s['language'] != null) await PlayerSettings.setLanguage(s['language'] as String);
+    if (s['showUpNextLabel'] != null) await PlayerSettings.setShowUpNextLabel(s['showUpNextLabel'] as bool);
+    if (s['queuePlaylistId'] != null) await PlayerSettings.setQueuePlaylistId(s['queuePlaylistId'] as String?);
+    if (s['coverSeedColor'] != null) await PlayerSettings.setCoverSeedColor(s['coverSeedColor'] as int);
+    if (s['speedPresets'] is List) {
+      await PlayerSettings.setSpeedPresets((s['speedPresets'] as List).map((e) => (e as num).toDouble()).toList());
+    }
 
     // AutoRewind (scoped via save())
     final r = data['autoRewind'] as Map<String, dynamic>?;
@@ -330,6 +485,9 @@ class BackupService {
       if (eq['bands'] != null) {
         await ScopedPrefs.setString('eq_bands', eq['bands'] as String);
       }
+      if (eq['mono'] != null) await ScopedPrefs.setBool('eq_mono', eq['mono'] as bool);
+      if (eq['skipSilence'] != null) await ScopedPrefs.setBool('eq_skipSilence', eq['skipSilence'] as bool);
+      if (eq['perItem'] != null) await ScopedPrefs.setBool('eq_perItem', eq['perItem'] as bool);
     }
 
     // Per-book speeds (scoped)
@@ -377,5 +535,95 @@ class BackupService {
       );
     }
 
+    // Podcast subscriptions + Absorbing manual list (scoped)
+    final subscribedPodcasts = data['subscribedPodcasts'] as List<dynamic>?;
+    if (subscribedPodcasts != null) {
+      await ScopedPrefs.setStringList('subscribed_podcasts', subscribedPodcasts.cast<String>());
+    }
+    final absorbingManualAdds = data['absorbingManualAdds'] as List<dynamic>?;
+    if (absorbingManualAdds != null) {
+      await ScopedPrefs.setStringList('absorbing_manual_adds', absorbingManualAdds.cast<String>());
+    }
+    final absorbingManualRemoves = data['absorbingManualRemoves'] as List<dynamic>?;
+    if (absorbingManualRemoves != null) {
+      await ScopedPrefs.setStringList('absorbing_manual_removes', absorbingManualRemoves.cast<String>());
+    }
+
+    // Pending offline state (scoped) - so offline changes still push after restore
+    final pendingSyncs = data['pendingSyncs'] as List<dynamic>?;
+    if (pendingSyncs != null && pendingSyncs.isNotEmpty) {
+      await ScopedPrefs.setStringList('pending_syncs', pendingSyncs.cast<String>());
+    }
+    final pendingOfflineListening = data['pendingOfflineListening'] as List<dynamic>?;
+    if (pendingOfflineListening != null && pendingOfflineListening.isNotEmpty) {
+      await ScopedPrefs.setStringList('pending_offline_listening', pendingOfflineListening.cast<String>());
+    }
+    final bmpc = data['bookmarksPendingCreates'] as String?;
+    if (bmpc != null) await ScopedPrefs.setString('bookmarks_pending_creates', bmpc);
+    final bmpd = data['bookmarksPendingDeletes'] as String?;
+    if (bmpd != null) await ScopedPrefs.setString('bookmarks_pending_deletes', bmpd);
+
+    // Offline listening accumulators (scoped, per-item) - write through SharedPreferences
+    // directly because ScopedPrefs doesn't expose setInt with scope handling here.
+    final offlineListening = data['offlineListening'] as Map<String, dynamic>?;
+    if (offlineListening != null && offlineListening.isNotEmpty) {
+      final scope = UserAccountService().activeScopeKey;
+      final prefix = scope.isNotEmpty ? '$scope:offline_listening_' : 'offline_listening_';
+      for (final entry in offlineListening.entries) {
+        await prefs.setInt('$prefix${entry.key}', (entry.value as num).toInt());
+      }
+    }
+
+    // RMAB integration config (scoped)
+    final rmab = data['rmab'] as Map<String, dynamic>?;
+    if (rmab != null) {
+      final baseUrl = rmab['baseUrl'] as String?;
+      if (baseUrl != null) await ScopedPrefs.setString('rmab_base_url', baseUrl);
+      final apiToken = rmab['apiToken'] as String?;
+      if (apiToken != null) await ScopedPrefs.setString('rmab_api_token', apiToken);
+      final legacyUrl = rmab['legacyUrl'] as String?;
+      if (legacyUrl != null) await ScopedPrefs.setString('rmab_url', legacyUrl);
+    }
+
+    // Home screen layout per library (scoped)
+    final homeLayouts = data['homeLayouts'] as Map<String, dynamic>?;
+    if (homeLayouts != null) {
+      for (final entry in homeLayouts.entries) {
+        final libId = entry.key;
+        final layout = entry.value as Map<String, dynamic>;
+        final order = layout['order'] as List<dynamic>?;
+        final hidden = layout['hidden'] as List<dynamic>?;
+        final genres = layout['genres'] as List<dynamic>?;
+        if (order != null) await ScopedPrefs.setStringList('home_section_order_$libId', order.cast<String>());
+        if (hidden != null) await ScopedPrefs.setStringList('home_hidden_sections_$libId', hidden.cast<String>());
+        if (genres != null) await ScopedPrefs.setStringList('home_genre_sections_$libId', genres.cast<String>());
+      }
+    }
+
+    // Per-item metadata overrides (scoped)
+    final metadataOverrides = data['metadataOverrides'] as Map<String, dynamic>?;
+    if (metadataOverrides != null) {
+      for (final entry in metadataOverrides.entries) {
+        await ScopedPrefs.setString('metadata_override_${entry.key}', entry.value as String);
+      }
+    }
+
+    // Per-podcast UI prefs (GLOBAL, not scoped)
+    final podcastPrefs = data['podcastPrefs'] as Map<String, dynamic>?;
+    if (podcastPrefs != null) {
+      for (final entry in podcastPrefs.entries) {
+        final itemId = entry.key;
+        final p = entry.value as Map<String, dynamic>;
+        if (p['sortNewest'] != null) await prefs.setBool('podcast_sort_newest_$itemId', p['sortNewest'] as bool);
+        if (p['hideFinished'] != null) await prefs.setBool('podcast_hide_finished_$itemId', p['hideFinished'] as bool);
+        if (p['advanceDir'] != null) await prefs.setString('podcast_advance_dir_$itemId', p['advanceDir'] as String);
+      }
+    }
+
+    // Custom download path (GLOBAL)
+    final customDownloadPath = data['customDownloadPath'] as String?;
+    if (customDownloadPath != null) {
+      await prefs.setString('custom_download_path', customDownloadPath);
+    }
   }
 }

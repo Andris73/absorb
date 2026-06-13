@@ -85,6 +85,7 @@ class _EpisodeRowState extends State<EpisodeRow> {
       onTap: () {
         EpisodeDetailSheet.show(context, widget.podcastItem, ep);
       },
+      onLongPress: () => EpisodeDetailSheet.showQuick(context, widget.podcastItem, ep),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 10, 12, 10),
         child: Column(

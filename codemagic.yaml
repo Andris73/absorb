@@ -1,3 +1,32 @@
+definitions:
+  scripts:
+    - &notify_discord_start
+      name: Notify Discord (build started)
+      script: |
+        if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
+        VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//')
+        curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
+          -H "Content-Type: application/json" \
+          -d "{\"embeds\":[{\"title\":\"Build started\",\"description\":\"**$CM_WORKFLOW_NAME** v$VERSION\\n[Build log]($CM_BUILD_URL)\",\"color\":3447003}]}" \
+          > /dev/null 2>&1 || true
+
+    - &notify_discord_end
+      name: Notify Discord (build finished)
+      script: |
+        if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
+        VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//')
+        if [ "$CM_BUILD_STATUS" = "success" ]; then
+          TITLE="Build successful"
+          COLOR=3066993
+        else
+          TITLE="Build failed"
+          COLOR=15158332
+        fi
+        curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
+          -H "Content-Type: application/json" \
+          -d "{\"embeds\":[{\"title\":\"$TITLE\",\"description\":\"**$CM_WORKFLOW_NAME** v$VERSION\\n[Build log]($CM_BUILD_URL)\",\"color\":$COLOR}]}" \
+          > /dev/null 2>&1 || true
+
 workflows:
   github-release:
     name: GitHub APK Only
@@ -8,9 +37,11 @@ workflows:
         - absorb_keystore
       groups:
         - github_credentials
+        - discord_notifications
       flutter: stable
       java: 17
     scripts:
+      - *notify_discord_start
       - name: Set up key.properties
         script: |
           cat >> $CM_BUILD_DIR/android/key.properties <<EOF
@@ -43,6 +74,9 @@ workflows:
           fi
     artifacts:
       - build/app/outputs/apk/github/release/*.apk
+    publishing:
+      scripts:
+        - *notify_discord_end
 
   android-release:
     name: Android Release (GitHub + Play Store)
@@ -53,9 +87,11 @@ workflows:
         - absorb_keystore
       groups:
         - github_credentials
+        - discord_notifications
       flutter: stable
       java: 17
     scripts:
+      - *notify_discord_start
       - name: Set up key.properties
         script: |
           cat >> $CM_BUILD_DIR/android/key.properties <<EOF
@@ -95,6 +131,9 @@ workflows:
     artifacts:
       - build/app/outputs/apk/github/release/*.apk
       - build/app/outputs/bundle/playstoreRelease/*.aab
+    publishing:
+      scripts:
+        - *notify_discord_end
 
   ios-release:
     name: iOS Release
@@ -108,9 +147,11 @@ workflows:
         bundle_identifier: com.barnabas.absorb
       groups:
         - github_credentials
+        - discord_notifications
       flutter: stable
       xcode: latest
     scripts:
+      - *notify_discord_start
       - name: Set up code signing
         script: xcode-project use-profiles
       - name: Build IPA
@@ -155,6 +196,9 @@ workflows:
           app-store-connect publish "${ARGS[@]}"
     artifacts:
       - build/ios/ipa/*.ipa
+    publishing:
+      scripts:
+        - *notify_discord_end
 
   ios-altstore:
     name: iOS AltStore Build
@@ -166,15 +210,21 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.barnabas.absorb
+      groups:
+        - discord_notifications
       flutter: stable
       xcode: latest
     scripts:
+      - *notify_discord_start
       - name: Set up code signing
         script: xcode-project use-profiles
       - name: Build IPA
         script: flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
+    publishing:
+      scripts:
+        - *notify_discord_end
 
   all-release:
     name: All Platforms Release (APK + AAB + IPA to GitHub + TestFlight)
@@ -190,10 +240,12 @@ workflows:
         bundle_identifier: com.barnabas.absorb
       groups:
         - github_credentials
+        - discord_notifications
       flutter: stable
       java: 17
       xcode: latest
     scripts:
+      - *notify_discord_start
       - name: Set up key.properties
         script: |
           cat >> $CM_BUILD_DIR/android/key.properties <<EOF
@@ -258,3 +310,6 @@ workflows:
       - build/app/outputs/apk/github/release/*.apk
       - build/app/outputs/bundle/playstoreRelease/*.aab
       - build/ios/ipa/*.ipa
+    publishing:
+      scripts:
+        - *notify_discord_end

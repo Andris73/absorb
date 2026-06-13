@@ -47,12 +47,31 @@ android {
 
     flavorDimensions += "distribution"
     productFlavors {
+        // github + playstore keep the broad Flutter proguard keep. fdroid omits
+        // it so R8 can strip Flutter's unused deferred-components manager, which
+        // would otherwise drag proprietary Google Play Core class references into
+        // the APK and fail F-Droid's scanner.
         create("github") {
             dimension = "distribution"
+            proguardFiles("proguard-flutter-keep.pro")
         }
         create("playstore") {
             dimension = "distribution"
+            proguardFiles("proguard-flutter-keep.pro")
         }
+        // GMS-free build for F-Droid: no Chromecast, Wear bridge, or in-app updater.
+        create("fdroid") {
+            dimension = "distribution"
+        }
+    }
+
+    // GMS-touching Kotlin (cast + wear) is shared by github + playstore only.
+    // fdroid gets src/fdroid/kotlin instead, which has no Google Play Services.
+    // Uses java.srcDir (kotlin-android compiles it too) for broad Gradle/Kotlin
+    // plugin compatibility.
+    sourceSets {
+        getByName("github").java.srcDir("src/gms/kotlin")
+        getByName("playstore").java.srcDir("src/gms/kotlin")
     }
 
     buildTypes {
@@ -70,10 +89,21 @@ android {
     }
 }
 
+    // F-Droid builds one APK per ABI. Put the ABI in the lowest digit of the
+    // version code so a newer version always outranks an older one on every
+    // ABI (Flutter's own split scheme puts the ABI in the highest digit, which
+    // breaks F-Droid's update ordering). Universal builds have no ABI filter
+    // and keep the plain version code.
+    val abiCodes = mapOf("armeabi-v7a" to 1, "arm64-v8a" to 2, "x86_64" to 3)
     applicationVariants.all {
+        val variant = this
         outputs.all {
-            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl)
-                .outputFileName = "absorb-${versionName}-${versionCode}.apk"
+            val output = this as com.android.build.gradle.internal.api.ApkVariantOutputImpl
+            val abiCode = abiCodes[output.filters.find { it.filterType == "ABI" }?.identifier]
+            if (abiCode != null) {
+                output.versionCodeOverride = variant.versionCode * 10 + abiCode
+            }
+            output.outputFileName = "absorb-${variant.versionName}-${output.versionCode}.apk"
         }
     }
 }
@@ -84,5 +114,25 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
-    implementation("com.google.android.gms:play-services-cast-framework:21.5.0")
+
+    // Google Play Services — Chromecast + Wearable Data Layer (pushes ABS
+    // session credentials to the paired Wear OS app so the watch can sign in
+    // without typing on the watch keyboard). Scoped to github + playstore so
+    // the fdroid flavor links no GMS.
+    val gmsImpl = listOf(
+        "com.google.android.gms:play-services-cast-framework:21.5.0",
+        "com.google.android.gms:play-services-wearable:19.0.0",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0",
+    )
+    gmsImpl.forEach {
+        add("githubImplementation", it)
+        add("playstoreImplementation", it)
+    }
+}
+
+// F-Droid build must ship no Google Play Core (proprietary; the Flutter engine
+// pulls it in for deferred components, which Absorb doesn't use). Scoped to the
+// fdroid flavor so the github/playstore builds are unchanged.
+configurations.matching { it.name.startsWith("fdroid") }.configureEach {
+    exclude(group = "com.google.android.play")
 }

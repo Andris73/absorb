@@ -119,6 +119,12 @@ class PlayerSettings {
   static Future<String> getAudibleRegion() => _get('audibleRegion', '');
   static Future<void> setAudibleRegion(String value) => _set('audibleRegion', value);
 
+  /// Font-size multiplier for the elapsed/remaining/percent text on the player
+  /// card (GH #230, accessibility). 1.0 = default.
+  static Future<double> getProgressTextScale() => _get('progressTextScale', 1.0);
+  static Future<void> setProgressTextScale(double v) =>
+      _set('progressTextScale', v, notify: true);
+
   static Future<bool> getUpcomingReleasesSortByDate() => _get('upcomingReleasesSortByDate', false);
   static Future<void> setUpcomingReleasesSortByDate(bool value) => _set('upcomingReleasesSortByDate', value);
 
@@ -147,6 +153,44 @@ class PlayerSettings {
   static Future<int> getMaxConcurrentDownloads() => _get('maxConcurrentDownloads', 1);
   static Future<void> setMaxConcurrentDownloads(int value) => _set('maxConcurrentDownloads', value);
 
+  // ── Stats page ──
+  // Goal period shown on the stats page: 'off' | 'daily' | 'weekly' | 'monthly'.
+  static Future<String> getStatsGoalType() => _get('stats_goal_type', 'off');
+  static Future<void> setStatsGoalType(String value) => _set('stats_goal_type', value, notify: true);
+
+  /// Target listening minutes for the active goal period.
+  static Future<int> getStatsGoalMinutes() => _get('stats_goal_minutes', 30);
+  static Future<void> setStatsGoalMinutes(int value) => _set('stats_goal_minutes', value, notify: true);
+
+  /// Yearly book-challenge target. 0 = off.
+  static Future<int> getStatsBookGoal() => _get('stats_book_goal', 0);
+  static Future<void> setStatsBookGoal(int value) => _set('stats_book_goal', value, notify: true);
+
+  /// Wall-clock seconds saved by listening above 1x. Banked live by the
+  /// player as listening time accrues; read-only here.
+  static Future<double> getStatsTimeSaved() => _get('stats_time_saved', 0.0);
+
+  /// Listening chart style on the stats page: 'bar' | 'line' | 'heatmap'.
+  static Future<String> getStatsChartStyle() => _get('stats_chart_style', 'bar');
+  static Future<void> setStatsChartStyle(String value) => _set('stats_chart_style', value, notify: true);
+
+  /// Days covered by the bar/line chart: 7 or 30. The heatmap is always a year.
+  static Future<int> getStatsChartRange() => _get('stats_chart_range', 7);
+  static Future<void> setStatsChartRange(int value) => _set('stats_chart_range', value, notify: true);
+
+  /// Stats page section layout (ids ordered / hidden), per account.
+  static Future<List<String>> getStatsSectionOrder() => ScopedPrefs.getStringList('stats_section_order');
+  static Future<void> setStatsSectionOrder(List<String> order) async {
+    await ScopedPrefs.setStringList('stats_section_order', order);
+    _notify();
+  }
+
+  static Future<List<String>> getStatsHiddenSections() => ScopedPrefs.getStringList('stats_hidden_sections');
+  static Future<void> setStatsHiddenSections(List<String> hidden) async {
+    await ScopedPrefs.setStringList('stats_hidden_sections', hidden);
+    _notify();
+  }
+
   // ── Queue mode (replaces autoPlayNextBook + autoPlayNextPodcast) ──
   // Values: 'off', 'manual', 'auto_next', 'playlist'
   static Future<String> getQueueMode() => _get('queueMode', 'off');
@@ -167,6 +211,19 @@ class PlayerSettings {
     return value ?? await getQueueMode();
   }
   static Future<void> setPodcastQueueMode(String value) => _set('podcastQueueMode', value, notify: true);
+
+  /// Per-show podcast auto-advance direction: 'oldest_first' (default) or
+  /// 'newest_first'. Stored under a raw (un-scoped) key because the advance
+  /// logic in _lp_absorbing reads it straight from SharedPreferences.
+  static Future<String> getPodcastAdvanceDir(String showId) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('podcast_advance_dir_$showId') ?? 'oldest_first';
+  }
+  static Future<void> setPodcastAdvanceDir(String showId, String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('podcast_advance_dir_$showId', value);
+    _notify();
+  }
 
   /// Active playlist ID for playlist queue mode. Null when no playlist is selected.
   static Future<String?> getQueuePlaylistId() async {
@@ -252,6 +309,20 @@ class PlayerSettings {
 
   static Future<bool> getNotificationChapterProgress() => _get('notificationChapterProgress', false);
   static Future<void> setNotificationChapterProgress(bool value) => _set('notificationChapterProgress', value, notify: true);
+
+  // Android only: when true, the phone media controls show speed + bookmark in
+  // the two extra slots instead of chapter skip. Android Auto shows all of them
+  // either way; this just reorders which pair the phone "borrows".
+  static Future<bool> getMediaControlsSpeedBookmark() => _get('mediaControlsSpeedBookmark', false);
+  static Future<void> setMediaControlsSpeedBookmark(bool value) => _set('mediaControlsSpeedBookmark', value, notify: true);
+
+  // When true, the system media scrubber still shows progress but can't be
+  // dragged to seek - stops accidental position jumps from the notification,
+  // lockscreen, Android Auto and CarPlay. Implemented by dropping the seek
+  // action from the playback state (Android ACTION_SEEK_TO / iOS
+  // changePlaybackPositionCommand). Default off.
+  static Future<bool> getLockSeekBar() => _get('lockSeekBar', false);
+  static Future<void> setLockSeekBar(bool value) => _set('lockSeekBar', value, notify: true);
 
   // ── Sleep timer settings ──
 
@@ -410,6 +481,11 @@ class PlayerSettings {
   static Future<bool> getCoverPlayButton() => _get('coverPlayButton', false);
   static Future<void> setCoverPlayButton(bool value) => _set('coverPlayButton', value, notify: true);
 
+  /// Absorbing-card background style: 'blurred' (cover blur, default), 'gradient'
+  /// (gradient from the extracted cover colors), or 'off' (plain theme surface).
+  static Future<String> getCardBackground() => _get('cardBackground', 'blurred');
+  static Future<void> setCardBackground(String value) => _set('cardBackground', value, notify: true);
+
   // ── Self-signed certificates (global, not per-user) ──
 
   static Future<bool> getTrustAllCerts() async {
@@ -563,4 +639,21 @@ class PlayerSettings {
 
   static Future<void> setBookSpeed(String itemId, double speed) =>
       _set('bookSpeed_$itemId', speed);
+
+  // ── Per-book sleep-rewind override (falls back to the global default) ──
+
+  static Future<int?> getBookSleepRewindSeconds(String itemId) =>
+      ScopedPrefs.getInt('sleepRewind_$itemId');
+
+  static Future<void> setBookSleepRewindSeconds(String itemId, int seconds) =>
+      _set('sleepRewind_$itemId', seconds);
+
+  /// Per-book override if one is set for [itemId], otherwise the global default.
+  static Future<int> getEffectiveSleepRewindSeconds(String? itemId) async {
+    if (itemId != null) {
+      final book = await getBookSleepRewindSeconds(itemId);
+      if (book != null) return book;
+    }
+    return getSleepRewindSeconds();
+  }
 }

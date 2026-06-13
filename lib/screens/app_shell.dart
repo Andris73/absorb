@@ -12,6 +12,7 @@ import '../services/sleep_timer_service.dart';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:palette_generator/palette_generator.dart';
+import '../utils/cover_accent.dart';
 import '../main.dart'
     show snappyTransitionsNotifier, coverSchemeNotifier, rootNavigatorKey;
 import '../l10n/app_localizations.dart';
@@ -25,8 +26,9 @@ import 'library_screen.dart';
 import 'stats_screen.dart';
 import 'settings_screen.dart';
 import '../widgets/welcome_sheet.dart';
+import '../services/review_service.dart';
 import '../services/update_checker_service.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../widgets/update_dialog.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -331,34 +333,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     final includePreReleases = await PlayerSettings.getIncludePreReleases();
     final info = await UpdateCheckerService.check(includePreReleases: includePreReleases);
     if (info == null || !mounted) return;
-    final l = AppLocalizations.of(context)!;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(info.isPreRelease ? l.preReleaseAvailable : l.updateAvailable),
-        content: Text(l.updateDialogContent(
-          info.isPreRelease ? l.updateKindPreRelease : l.updateKindVersion,
-          info.latestVersion,
-          info.currentVersion,
-        )),
-        actions: [
-          TextButton(
-            onPressed: () {
-              UpdateCheckerService.dismiss(info.latestVersion);
-              Navigator.pop(ctx);
-            },
-            child: Text(l.later),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              launchUrl(Uri.parse(info.downloadUrl), mode: LaunchMode.externalApplication);
-            },
-            child: Text(l.downloadButton),
-          ),
-        ],
-      ),
-    );
+    await UpdateDialog.show(context, info);
   }
 
   @override
@@ -417,9 +392,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     final brightness = Theme.of(context).brightness;
     PaletteGenerator.fromImageProvider(provider, maximumColorCount: 16)
         .then((palette) {
-      final seedColor = palette.vibrantColor?.color
-          ?? palette.dominantColor?.color
-          ?? palette.colors.firstOrNull;
+      final seedColor = accentFromCoverPalette(palette);
       if (seedColor == null) {
         _lastCoverItemId = null;
         return;
@@ -525,6 +498,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
       SleepTimerService().onAppForegrounded();
       AudioPlayerService.onAppForegrounded();
       HomeWidgetService().onAppForegrounded();
+      ReviewService.onAppForegrounded();
       _refreshDataForTab(_currentIndex);
       // Check auto sleep in case we resumed into the window
       SleepTimerService().checkAutoSleep();

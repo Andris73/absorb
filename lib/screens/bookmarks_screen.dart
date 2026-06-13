@@ -8,7 +8,9 @@ import '../providers/library_provider.dart';
 import '../screens/app_shell.dart';
 import '../services/audio_player_service.dart';
 import '../services/bookmark_service.dart';
+import '../services/chromecast_service.dart';
 import '../services/scoped_prefs.dart';
+import '../widgets/bookmark_detail_dialog.dart';
 import '../widgets/card_buttons.dart';
 import '../services/download_service.dart';
 import '../widgets/absorb_page_header.dart';
@@ -259,96 +261,49 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     return null;
   }
 
-  Future<void> _editBookmark(String itemId, Bookmark bookmark) async {
-    final l = AppLocalizations.of(context)!;
-    final titleC = TextEditingController(text: bookmark.title);
-    final noteC = TextEditingController(text: bookmark.note ?? '');
-    final result = await showDialog<Map<String, String>>(context: context, builder: (ctx) => AlertDialog(
-      title: Text(l.editBookmark),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        TextField(controller: titleC, decoration: InputDecoration(labelText: l.titleLabel, border: const OutlineInputBorder())),
-        const SizedBox(height: 12),
-        TextField(controller: noteC, maxLines: 3, decoration: InputDecoration(labelText: l.noteOptionalLabel, border: const OutlineInputBorder(), alignLabelWithHint: true)),
-      ]),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l.cancel)),
-        FilledButton(onPressed: () => Navigator.pop(ctx, {'title': titleC.text, 'note': noteC.text}), child: Text(l.save)),
-      ],
-    ));
-    if (result != null && result['title']!.isNotEmpty) {
-      await BookmarkService().updateBookmark(
-        itemId: itemId, bookmarkId: bookmark.id,
-        title: result['title']!, note: result['note']?.isNotEmpty == true ? result['note'] : null,
-        api: context.read<AuthProvider>().apiService,
-      );
-      _load();
-    }
-  }
-
   Future<void> _jumpToBookmark(String itemId, Bookmark bookmark, String bookTitle) async {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
     final l = AppLocalizations.of(context)!;
-    final action = await showDialog<String>(
+    final api = context.read<AuthProvider>().apiService;
+    final result = await showDialog<BookmarkDetailResult>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.bookmark_rounded),
-        title: Text(bookmark.title, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (bookmark.note != null && bookmark.note!.isNotEmpty) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: cs.onSurface.withValues(alpha: 0.04),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(bookmark.note!, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant, height: 1.4)),
-            ),
-            const SizedBox(height: 12),
-          ],
-          Text(l.bookmarksScreenPositionInBook(bookmark.formattedPosition, bookTitle),
-            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
-        ]),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(l.bookmarksScreenClose),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 'edit'),
-            child: Text(l.edit),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, 'jump'),
-            child: Text(l.bookmarksJump),
-          ),
-        ],
+      builder: (ctx) => BookmarkDetailDialog(
+        itemId: itemId,
+        bookmark: bookmark,
+        api: api,
       ),
     );
+    if (!mounted) return;
 
-    if (action == 'edit') {
-      await _editBookmark(itemId, bookmark);
+    // Anything other than Jump just reflects saved title/note/time edits.
+    if (result == null || result.action != 'jump') {
+      _load();
       return;
     }
 
-    if (action != 'jump' || !mounted) return;
-
-    // Read providers before async gaps
+    final position = result.position;
     final lib = context.read<LibraryProvider>();
-    final api = context.read<AuthProvider>().apiService;
     final player = AudioPlayerService();
 
-    // If the same book is already loaded, just seek
+    // This book is casting: seek the Chromecast. The local player may hold
+    // nothing while a cast is active, so this has to come first.
+    final cast = ChromecastService();
+    if (cast.isCasting && cast.castingItemId == itemId) {
+      await cast.seekTo(Duration(seconds: position.round()));
+      if (!cast.isPlaying) cast.play();
+      if (mounted) Navigator.pop(context);
+      AppShell.goToAbsorbingGlobal();
+      return;
+    }
+
+    // Same book already loaded: just seek.
     if (player.currentItemId == itemId) {
-      await player.seekTo(Duration(seconds: bookmark.positionSeconds.round()));
+      await player.seekTo(Duration(seconds: position.round()));
       if (!player.isPlaying) player.play();
       if (mounted) Navigator.pop(context);
       AppShell.goToAbsorbingGlobal();
       return;
     }
 
-    // Otherwise load the book from API
     if (api == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -387,7 +342,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
       coverUrl: coverUrl,
       totalDuration: duration,
       chapters: chapters,
-      startTime: bookmark.positionSeconds,
+      startTime: position,
       forceStartTime: true,
     );
     if (error != null && mounted) showErrorSnackBar(context, error);

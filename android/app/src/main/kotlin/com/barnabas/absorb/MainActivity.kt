@@ -30,6 +30,11 @@ class MainActivity : AudioServiceActivity() {
     private var currentSessionId: Int = 0
     private var eqEnabled: Boolean = false
     private var eqLoudnessGainMb: Int = 0  // gain from EQ loudness slider
+    // Some devices (e.g. older Samsung on Android 9) have a broken audio-effect
+    // HAL that fails to initialize. Constructing AudioEffects against it during
+    // playback can crash the process natively, which Kotlin can't catch. Once
+    // init proves the engine is unavailable, skip attaching native effects.
+    private var effectsAvailable: Boolean = true
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -99,20 +104,9 @@ class MainActivity : AudioServiceActivity() {
                 }
             }
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.absorb.cast_service")
-            .setMethodCallHandler { call, result ->
-                when (call.method) {
-                    "start" -> {
-                        CastForegroundService.start(this)
-                        result.success(true)
-                    }
-                    "stop" -> {
-                        CastForegroundService.stop(this)
-                        result.success(true)
-                    }
-                    else -> result.notImplemented()
-                }
-            }
+        // GMS-backed channels (cast foreground service, wear bridges).
+        // Resolves to the real impl in github/playstore, no-op in fdroid.
+        PlatformIntegration.registerChannels(this, flutterEngine)
     }
 
     private fun handleInit(result: MethodChannel.Result) {
@@ -128,6 +122,7 @@ class MainActivity : AudioServiceActivity() {
             val maxLevel = bandRange[1] / 100.0
             tempEq.release()
 
+            effectsAvailable = true
             Log.d(TAG, "init: $numBands bands, frequencies=$frequencies, range=[$minLevel, $maxLevel]dB")
             result.success(mapOf(
                 "bands" to numBands,
@@ -136,6 +131,7 @@ class MainActivity : AudioServiceActivity() {
                 "maxLevel" to maxLevel
             ))
         } catch (e: Exception) {
+            effectsAvailable = false
             Log.e(TAG, "init failed: ${e.message}")
             result.error("EQ_INIT_ERROR", e.message, null)
         }
@@ -150,6 +146,15 @@ class MainActivity : AudioServiceActivity() {
             currentSessionId = sessionId
 
             if (sessionId == 0) {
+                result.success(true)
+                return
+            }
+
+            // Don't touch the audio-effect HAL on devices where it failed to
+            // init, since constructing effects there can crash natively.
+            // Software presets still drive the EQ UI; we just skip hardware fx.
+            if (!effectsAvailable) {
+                Log.w(TAG, "attachSession: effect engine unavailable, skipping native effects for session $sessionId")
                 result.success(true)
                 return
             }
@@ -185,11 +190,11 @@ class MainActivity : AudioServiceActivity() {
 
     private fun handleSetEnabled(enabled: Boolean, result: MethodChannel.Result) {
         try {
+            // Master switch gates only the band EQ. Bass / virtualizer /
+            // loudness are independent and track their own values, so they
+            // keep working with the equalizer off.
             eqEnabled = enabled
             equalizer?.enabled = enabled
-            bassBoost?.enabled = enabled
-            virtualizer?.enabled = enabled
-            loudnessEnhancer?.enabled = enabled && eqLoudnessGainMb > 0
             result.success(true)
         } catch (e: Exception) {
             result.error("EQ_ERROR", e.message, null)
@@ -207,7 +212,10 @@ class MainActivity : AudioServiceActivity() {
 
     private fun handleSetBassBoost(strength: Int, result: MethodChannel.Result) {
         try {
-            bassBoost?.setStrength(strength.toShort().coerceIn(0, 1000))
+            val s = strength.toShort().coerceIn(0, 1000)
+            bassBoost?.setStrength(s)
+            // Independent of the band-EQ master: on when there's something to do.
+            bassBoost?.enabled = s > 0
             result.success(true)
         } catch (e: Exception) {
             result.error("EQ_ERROR", e.message, null)
@@ -216,7 +224,9 @@ class MainActivity : AudioServiceActivity() {
 
     private fun handleSetVirtualizer(strength: Int, result: MethodChannel.Result) {
         try {
-            virtualizer?.setStrength(strength.toShort().coerceIn(0, 1000))
+            val s = strength.toShort().coerceIn(0, 1000)
+            virtualizer?.setStrength(s)
+            virtualizer?.enabled = s > 0
             result.success(true)
         } catch (e: Exception) {
             result.error("EQ_ERROR", e.message, null)
@@ -227,7 +237,7 @@ class MainActivity : AudioServiceActivity() {
         try {
             eqLoudnessGainMb = gain
             loudnessEnhancer?.setTargetGain(gain)
-            loudnessEnhancer?.enabled = eqEnabled && gain > 0
+            loudnessEnhancer?.enabled = gain > 0
             result.success(true)
         } catch (e: Exception) {
             result.error("EQ_ERROR", e.message, null)

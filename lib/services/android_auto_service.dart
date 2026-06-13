@@ -57,6 +57,7 @@ class AutoMediaIds {
   static String libBooks(String libraryId) => '$libPrefix$libraryId:books';
   static String libSeries(String libraryId) => '$libPrefix$libraryId:series';
   static String libAuthors(String libraryId) => '$libPrefix$libraryId:authors';
+  static String libBookPrefix(String libraryId, String prefix) => '$libPrefix$libraryId:p:$prefix';
   static String seriesId(String sId, String libId) => '$seriesPrefix$sId@$libId';
   static String authorId(String aId, String libId) => '$authorPrefix$aId@$libId';
   static String showId(String sId, String libId) => '$showPrefix$sId@$libId';
@@ -932,9 +933,12 @@ class AndroidAutoService {
         return _getBookSubCategories(libId);
       }
 
+      if (sub.startsWith('p:')) {
+        return _fetchBooksAtPrefix(libId, sub.substring(2));
+      }
       switch (sub) {
         case 'books':
-          return _fetchLibraryBooks(libId);
+          return _fetchBooksAtPrefix(libId, '');
         case 'series':
           return _fetchLibrarySeries(libId);
         case 'authors':
@@ -964,48 +968,6 @@ class AndroidAutoService {
   }
 
   // ─── On-demand fetchers ────────────────────────────────────────────
-
-  Future<List<MediaItem>> _fetchLibraryBooks(String libraryId) async {
-    final api = await getApi();
-    if (api == null) return [];
-
-    try {
-      // Android Auto has a ~1MB Binder transaction limit for onLoadChildren
-      // results. With cover URLs, each MediaItem is ~1.2KB, so we cap at 200
-      // items to stay safely under the limit. For larger libraries, users can
-      // browse via Series or Authors instead.
-      const maxItems = 200;
-      final allBooks = <MediaItem>[];
-      int page = 0;
-      const pageSize = 100;
-
-      while (allBooks.length < maxItems) {
-        final result = await api.getLibraryItems(
-          libraryId, page: page, limit: pageSize,
-          sort: 'media.metadata.title', desc: 0,
-        );
-        if (result == null) break;
-
-        final entries = _resultsToEntries(result, api);
-        allBooks.addAll(entries.map((e) => e.toMediaItem()));
-
-        final total = (result['total'] as num?)?.toInt() ?? 0;
-        if (allBooks.length >= total || entries.length < pageSize) break;
-        page++;
-      }
-
-      if (allBooks.length > maxItems) {
-        debugPrint('[AutoBrowse] Trimmed books from ${allBooks.length} to $maxItems (Binder limit)');
-        return allBooks.sublist(0, maxItems);
-      }
-
-      debugPrint('[AutoBrowse] Fetched ${allBooks.length} books');
-      return allBooks;
-    } catch (e) {
-      debugPrint('[AutoBrowse] Error fetching library books: $e');
-    }
-    return [];
-  }
 
   Future<List<MediaItem>> _fetchLibrarySeries(String libraryId) async {
     final api = await getApi();
@@ -1263,31 +1225,150 @@ class AndroidAutoService {
   }
 
   /// Fetch books for a library, returning raw entries.
-  Future<List<AutoBookEntry>> fetchLibraryBooksData(String libraryId) async {
+  // ─── Alphabetical drilldown (CarPlay + Android Auto) ───────────────
+  // Large libraries blow past Android Auto's ~1MB Binder limit and stampede
+  // CarPlay's per-item cover loading. We group books by a growing title prefix
+  // (the ABS app calls this "alphabetical drawdown"): show buckets when a list
+  // exceeds [bucketThreshold], and drill one more character (T -> Th -> The) for
+  // any bucket that's still too big - so a huge letter splits rather than being
+  // truncated. We also skip characters that don't split (e.g. the space in
+  // "The ") so the pile breaks by the real word.
+  // 50 keeps final lists short and scannable (more letter drilldown) on both
+  // surfaces; CarPlay's memory is handled by the patched plugin image loader,
+  // so this is a navigation-feel choice, not a crash guard.
+  static const int bucketThreshold = 50;
+
+  // Cached full (title-sorted) book list per library so re-navigating doesn't
+  // re-fetch the whole library each time.
+  final Map<String, ({DateTime at, List<AutoBookEntry> books})> _allBooksCache = {};
+  static const _booksCacheTtl = Duration(minutes: 5);
+
+  /// Uppercased, left-trimmed title for prefix bucketing ('#' when empty).
+  static String _normTitle(String title) {
+    final t = title.trimLeft();
+    return t.isEmpty ? '#' : t.toUpperCase();
+  }
+
+  /// The [len]-character uppercased prefix of a title (whole title if shorter).
+  static String _prefixOf(String title, int len) {
+    final t = _normTitle(title);
+    return t.length <= len ? t : t.substring(0, len);
+  }
+
+  /// Fetch every book in the library (no cap), title-sorted. Cached for
+  /// [_booksCacheTtl]. Shared by CarPlay and Android Auto.
+  Future<List<AutoBookEntry>> fetchAllBooks(String libraryId) async {
+    final cached = _allBooksCache[libraryId];
+    if (cached != null && DateTime.now().difference(cached.at) < _booksCacheTtl) {
+      return cached.books;
+    }
     final api = await getApi();
-    if (api == null) return [];
+    final books = <AutoBookEntry>[];
+    if (api == null) return books;
     try {
-      const maxItems = 200;
-      final allEntries = <AutoBookEntry>[];
-      int page = 0;
+      var page = 0;
       const pageSize = 100;
-      while (allEntries.length < maxItems) {
+      while (true) {
         final result = await api.getLibraryItems(
           libraryId, page: page, limit: pageSize,
           sort: 'media.metadata.title', desc: 0,
         );
         if (result == null) break;
         final entries = _resultsToEntries(result, api);
-        allEntries.addAll(entries);
-        final total = (result['total'] as num?)?.toInt() ?? 0;
-        if (allEntries.length >= total || entries.length < pageSize) break;
+        books.addAll(entries);
+        final serverTotal = (result['total'] as num?)?.toInt() ?? 0;
+        if (books.length >= serverTotal || entries.length < pageSize) break;
         page++;
       }
-      return allEntries.length > maxItems ? allEntries.sublist(0, maxItems) : allEntries;
+      _allBooksCache[libraryId] = (at: DateTime.now(), books: books);
     } catch (e) {
-      debugPrint('[AutoBrowse] Error fetching library books data: $e');
-      return [];
+      debugPrint('[AutoBrowse] Error fetching all books: $e');
     }
+    return books;
+  }
+
+  /// Resolve a browse level for [prefix] (empty = top). Returns either the leaf
+  /// list of books to show, or the next set of (deeper) prefix buckets. Buckets
+  /// are returned only when the matching list exceeds [bucketThreshold] and a
+  /// longer prefix actually splits it; otherwise the matching books are a leaf.
+  ({List<AutoBookEntry>? books, List<({String prefix, int count})>? buckets})
+      resolveBrowseLevel(List<AutoBookEntry> all, String prefix) {
+    final matching = prefix.isEmpty
+        ? all
+        : all.where((b) => _normTitle(b.title).startsWith(prefix)).toList();
+    if (matching.length <= bucketThreshold) {
+      return (books: matching, buckets: null);
+    }
+    // Extend the prefix one character at a time until it actually splits the
+    // list (skips non-splitting chars like the space in "The ").
+    var depth = prefix.length + 1;
+    while (true) {
+      final counts = <String, int>{};
+      for (final b in matching) {
+        final k = _prefixOf(b.title, depth);
+        counts[k] = (counts[k] ?? 0) + 1;
+      }
+      if (counts.length > 1) {
+        final buckets = counts.entries
+            .map((e) => (prefix: e.key, count: e.value))
+            .toList();
+        return (books: null, buckets: buckets);
+      }
+      // Single bucket: go deeper only while some title is longer than [depth];
+      // otherwise these titles are identical and can't be split - show them.
+      if (!matching.any((b) => _normTitle(b.title).length > depth)) {
+        return (books: matching, buckets: null);
+      }
+      depth++;
+    }
+  }
+
+  /// Flatten the recursive prefix tree into a single ordered list of LEAF
+  /// buckets (each <= [bucketThreshold] books). Used by CarPlay, where the
+  /// recursive push drilldown isn't possible: CarPlay caps the navigation
+  /// stack (~5 templates), so we show one bucket level then the books instead
+  /// of pushing a template per letter the way Android Auto can.
+  List<({String prefix, int count})> flattenedBookBuckets(List<AutoBookEntry> all) {
+    final out = <({String prefix, int count})>[];
+    void walk(String prefix) {
+      final level = resolveBrowseLevel(all, prefix);
+      if (level.books != null) {
+        if (level.books!.isNotEmpty) {
+          out.add((prefix: prefix, count: level.books!.length));
+        }
+        return;
+      }
+      for (final b in level.buckets!) {
+        walk(b.prefix);
+      }
+    }
+
+    walk('');
+    return out;
+  }
+
+  /// All books whose title falls under [prefix] (a leaf bucket from
+  /// [flattenedBookBuckets]). Empty prefix = the whole library.
+  List<AutoBookEntry> booksForPrefix(List<AutoBookEntry> all, String prefix) {
+    if (prefix.isEmpty) return all;
+    return all.where((b) => _normTitle(b.title).startsWith(prefix)).toList();
+  }
+
+  /// Android Auto children for a books browse level at [prefix] (empty = top).
+  Future<List<MediaItem>> _fetchBooksAtPrefix(String libraryId, String prefix) async {
+    final all = await fetchAllBooks(libraryId);
+    final level = resolveBrowseLevel(all, prefix);
+    final books = level.books;
+    if (books != null) {
+      return books.map((e) => e.toMediaItem()).toList();
+    }
+    return level.buckets!
+        .map((b) => MediaItem(
+              id: AutoMediaIds.libBookPrefix(libraryId, b.prefix),
+              title: b.prefix,
+              playable: false,
+            ))
+        .toList();
   }
 
   /// Fetch series list for a library, returning id/name pairs.

@@ -54,6 +54,12 @@ A modern audiobookshelf client with a card-based player experience.
 - **Car mode** — large-button driving UI for use without Android Auto
 - **Localization** — community translations via Crowdin
 
+## Translations
+
+[![Crowdin](https://badges.crowdin.net/absorb/localized.svg)](https://crowdin.com/project/absorb)
+
+Absorb is translated by the community on [Crowdin](https://crowdin.com/project/absorb). Want your language added or improved? Jump in, no coding needed.
+
 ## Install
 
 [![Get it on GitHub](https://img.shields.io/badge/Get_it_on-GitHub-blue?style=for-the-badge&logo=github)](../../releases)
@@ -99,3 +105,13 @@ Absorb supports Android Auto for browsing and listening from your car. If you ar
 
 - An [audiobookshelf](https://www.audiobookshelf.org/) server (self-hosted)
 - Android 7.0+ / iOS 16+
+
+## License
+
+Copyright (C) 2026 Nathan Poulson
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.

@@ -56,6 +56,52 @@ class SocketService {
   /// Payload: serialized Task object including action and data.libraryItemId.
   void Function(Map<String, dynamic> data)? onEncodeFinished;
 
+  // Task (encode-m4b / embed-metadata) event fan-out so screens can subscribe
+  // alongside the library provider's onEncodeFinished above. task_started and
+  // task_finished carry the action; task_progress is generic {libraryItemId, progress}.
+  final List<void Function(Map<String, dynamic>)> _taskStartedListeners = [];
+  final List<void Function(Map<String, dynamic>)> _taskProgressListeners = [];
+  final List<void Function(Map<String, dynamic>)> _taskFinishedListeners = [];
+
+  void addTaskStartedListener(void Function(Map<String, dynamic>) fn) {
+    if (!_taskStartedListeners.contains(fn)) _taskStartedListeners.add(fn);
+  }
+  void removeTaskStartedListener(void Function(Map<String, dynamic>) fn) =>
+      _taskStartedListeners.remove(fn);
+  void addTaskProgressListener(void Function(Map<String, dynamic>) fn) {
+    if (!_taskProgressListeners.contains(fn)) _taskProgressListeners.add(fn);
+  }
+  void removeTaskProgressListener(void Function(Map<String, dynamic>) fn) =>
+      _taskProgressListeners.remove(fn);
+  void addTaskFinishedListener(void Function(Map<String, dynamic>) fn) {
+    if (!_taskFinishedListeners.contains(fn)) _taskFinishedListeners.add(fn);
+  }
+  void removeTaskFinishedListener(void Function(Map<String, dynamic>) fn) =>
+      _taskFinishedListeners.remove(fn);
+
+  void _emitTaskStarted(Map<String, dynamic> data) {
+    for (final fn in List.of(_taskStartedListeners)) {
+      fn(data);
+    }
+  }
+
+  void _emitTaskProgress(Map<String, dynamic> data) {
+    for (final fn in List.of(_taskProgressListeners)) {
+      fn(data);
+    }
+  }
+
+  void _emitTaskFinished(Map<String, dynamic> data) {
+    for (final fn in List.of(_taskFinishedListeners)) {
+      fn(data);
+    }
+  }
+
+  /// Called when ereader devices change. Server emits this both for the
+  /// per-user update (always) and admin-wide updates (only to admins).
+  /// Payload shape: { ereaderDevices: [...] } already filtered for this user.
+  void Function(List<Map<String, dynamic>> devices)? onEreaderDevicesUpdated;
+
   /// Update the stored token (e.g. after a JWT refresh) and re-auth if connected.
   void updateToken(String newToken) {
     _token = newToken;
@@ -149,12 +195,31 @@ class SocketService {
         if (data is Map<String, dynamic>) onUserUpdated?.call(data);
       });
 
-      // M4B encode task finished (fires once for the whole task, not per track)
+      // Task lifecycle (encode-m4b / embed-metadata). task_started + finished
+      // carry the action; task_progress is generic {libraryItemId, progress}.
+      _socket!.on('task_started', (data) {
+        if (data is Map<String, dynamic>) _emitTaskStarted(data);
+      });
+      _socket!.on('task_progress', (data) {
+        if (data is Map<String, dynamic>) _emitTaskProgress(data);
+      });
       _socket!.on('task_finished', (data) {
-        if (data is Map<String, dynamic> && data['action'] == 'encode-m4b') {
+        if (data is! Map<String, dynamic>) return;
+        if (data['action'] == 'encode-m4b') {
           debugPrint('[Socket] Encode finished');
           onEncodeFinished?.call(data);
         }
+        _emitTaskFinished(data);
+      });
+
+      // Ereader device list changed (admin-wide or per-user). Payload carries
+      // the list already filtered for this connection's user.
+      _socket!.on('ereader-devices-updated', (data) {
+        if (data is! Map) return;
+        final raw = data['ereaderDevices'] as List<dynamic>?;
+        if (raw == null) return;
+        debugPrint('[Socket] ereader-devices-updated (${raw.length} devices)');
+        onEreaderDevicesUpdated?.call(raw.cast<Map<String, dynamic>>());
       });
 
       _socket!.onDisconnect((reason) {
@@ -197,6 +262,7 @@ class SocketService {
     onUserUpdated = null;
     onReconnectFailed = null;
     onEncodeFinished = null;
+    onEreaderDevicesUpdated = null;
   }
 
   /// Disconnect the socket but keep callbacks and credentials so we can
@@ -276,10 +342,23 @@ class SocketService {
         if (data is Map<String, dynamic>) onUserUpdated?.call(data);
       });
 
+      _socket!.on('task_started', (data) {
+        if (data is Map<String, dynamic>) _emitTaskStarted(data);
+      });
+      _socket!.on('task_progress', (data) {
+        if (data is Map<String, dynamic>) _emitTaskProgress(data);
+      });
       _socket!.on('task_finished', (data) {
-        if (data is Map<String, dynamic> && data['action'] == 'encode-m4b') {
-          onEncodeFinished?.call(data);
-        }
+        if (data is! Map<String, dynamic>) return;
+        if (data['action'] == 'encode-m4b') onEncodeFinished?.call(data);
+        _emitTaskFinished(data);
+      });
+
+      _socket!.on('ereader-devices-updated', (data) {
+        if (data is! Map) return;
+        final raw = data['ereaderDevices'] as List<dynamic>?;
+        if (raw == null) return;
+        onEreaderDevicesUpdated?.call(raw.cast<Map<String, dynamic>>());
       });
 
       _socket!.onDisconnect((reason) {

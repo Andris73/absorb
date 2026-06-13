@@ -270,6 +270,9 @@ class _EpisodeCard extends StatelessWidget {
           EpisodeListSheet.show(context, item);
         }
       },
+      // Long-press an episode card for its quick-actions sheet (shows stay as-is).
+      onLongPress: episode == null ? null
+          : () => EpisodeDetailSheet.showQuick(context, item, episode),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,

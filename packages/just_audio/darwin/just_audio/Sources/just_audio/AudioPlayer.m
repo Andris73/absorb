@@ -344,10 +344,17 @@
     // TODO: Provide a similar case as _seekPos for _initialPos.
     if (CMTIME_IS_VALID(_seekPos)) {
         return (int)(1000 * CMTimeGetSeconds(_seekPos));
-    } else if (_indexedAudioSources && _indexedAudioSources.count > 0) {
+    } else if (_index >= 0 && _indexedAudioSources && _index < _indexedAudioSources.count) {
         int ms = (int)(1000 * CMTimeGetSeconds(_indexedAudioSources[_index].position));
         if (ms < 0) ms = 0;
         return ms;
+    } else if (_player && _player.currentItem) {
+        CMTime ct = _player.currentItem.currentTime;
+        if (CMTIME_IS_VALID(ct)) {
+            int ms = (int)(1000 * CMTimeGetSeconds(ct));
+            return ms < 0 ? 0 : ms;
+        }
+        return 0;
     } else {
         return 0;
     }
@@ -356,7 +363,7 @@
 - (int)getBufferedPosition {
     if (_processingState == none || _processingState == loading) {
         return 0;
-    } else if (_indexedAudioSources && _indexedAudioSources.count > 0) {
+    } else if (_index >= 0 && _indexedAudioSources && _index < _indexedAudioSources.count) {
         int ms = (int)(1000 * CMTimeGetSeconds(_indexedAudioSources[_index].bufferedPosition));
         if (ms < 0) ms = 0;
         return ms;
@@ -368,9 +375,16 @@
 - (int)getDuration {
     if (_processingState == none || _processingState == loading) {
         return -1;
-    } else if (_indexedAudioSources && _indexedAudioSources.count > 0) {
+    } else if (_index >= 0 && _indexedAudioSources && _index < _indexedAudioSources.count) {
         int v = (int)(1000 * CMTimeGetSeconds(_indexedAudioSources[_index].duration));
         return v;
+    } else if (_player && _player.currentItem) {
+        CMTime d = _player.currentItem.duration;
+        if (CMTIME_IS_VALID(d)) {
+            int ms = (int)(1000 * CMTimeGetSeconds(d));
+            return ms < 0 ? 0 : ms;
+        }
+        return 0;
     } else {
         return 0;
     }
@@ -666,6 +680,13 @@
                   forKeyPath:@"currentItem"
                      options:NSKeyValueObservingOptionNew
                      context:nil];
+        // Hand the AVQueuePlayer to host-app native code so it can drive
+        // queue transitions directly (avoids AVQueuePlayer auto-advance
+        // losing background audio output).
+        [[NSNotificationCenter defaultCenter]
+            postNotificationName:@"AbsorbJustAudioPlayerReady"
+                          object:nil
+                        userInfo:@{@"player": _player, @"playerId": _playerId}];
         // TODO: learn about the different ways to define weakSelf.
         //__weak __typeof__(self) weakSelf = self;
         //typeof(self) __weak weakSelf = self;
@@ -739,6 +760,11 @@
     //NSLog(@"onComplete");
 
     IndexedPlayerItem *endedPlayerItem = (IndexedPlayerItem *)notification.object;
+    if (![endedPlayerItem isKindOfClass:[IndexedPlayerItem class]] || _index < 0) {
+        // Foreign currentItem (host app drove the transition). Don't touch
+        // our own queue state.
+        return;
+    }
     IndexedAudioSource *endedSource = endedPlayerItem.audioSource;
 
     if (_loopMode == loopOne) {
@@ -888,8 +914,15 @@
     } else if ([keyPath isEqualToString:@"currentItem"] && _player.currentItem) {
         IndexedPlayerItem *playerItem = (IndexedPlayerItem *)change[NSKeyValueChangeNewKey];
         //IndexedPlayerItem *oldPlayerItem = (IndexedPlayerItem *)change[NSKeyValueChangeOldKey];
+        if (![playerItem isKindOfClass:[IndexedPlayerItem class]]) {
+            // Host-app code replaced currentItem with a vanilla AVPlayerItem.
+            // Leave our internal index alone and don't broadcast — sending
+            // currentIndex=-1 would crash the Dart event handler that
+            // dereferences it into the audio-source array.
+            return;
+        }
         if (playerItem.status == AVPlayerItemStatusFailed) {
-            if ([_orderInv[_index] intValue] + 1 < [_order count]) {
+            if (_index >= 0 && [_orderInv[_index] intValue] + 1 < [_order count]) {
                 // account for automatic move to next item
                 _index = [_order[[_orderInv[_index] intValue] + 1] intValue];
                 //NSLog(@"advance to next on error: index = %d", _index);
@@ -901,6 +934,10 @@
             return;
         } else {
             int expectedIndex = [self indexForItem:playerItem];
+            if (expectedIndex < 0) {
+                // Foreign item swapped in; skip broadcasting an invalid index.
+                return;
+            }
             if (_index != expectedIndex) {
                 // AVQueuePlayer will sometimes skip over error items without
                 // notifying this observer.
@@ -1033,6 +1070,33 @@
     _playing = YES;
     _player.rate = _speed;
     [self updatePosition];
+    if (@available(macOS 10.12, iOS 10.0, *)) {
+        NSString *tcsName;
+        switch (_player.timeControlStatus) {
+            case AVPlayerTimeControlStatusPaused: tcsName = @"paused"; break;
+            case AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate: tcsName = @"waiting"; break;
+            case AVPlayerTimeControlStatusPlaying: tcsName = @"playing"; break;
+            default: tcsName = @"unknown"; break;
+        }
+        NSString *reasonName = @"none";
+        AVPlayerWaitingReason reason = _player.reasonForWaitingToPlay;
+        if (reason == AVPlayerWaitingToMinimizeStallsReason) reasonName = @"minimizeStalls";
+        else if (reason == AVPlayerWaitingWhileEvaluatingBufferingRateReason) reasonName = @"evaluatingBuffer";
+        else if (reason == AVPlayerWaitingWithNoItemToPlayReason) reasonName = @"noItem";
+        else if (reason != nil) reasonName = (NSString *)reason;
+        NSString *errDesc = _player.error ? _player.error.localizedDescription : @"none";
+        NSString *itemErrDesc = _player.currentItem.error ? _player.currentItem.error.localizedDescription : @"none";
+        NSString *itemStatus;
+        switch (_player.currentItem.status) {
+            case AVPlayerItemStatusReadyToPlay: itemStatus = @"readyToPlay"; break;
+            case AVPlayerItemStatusFailed: itemStatus = @"failed"; break;
+            case AVPlayerItemStatusUnknown: itemStatus = @"unknown"; break;
+            default: itemStatus = @"other"; break;
+        }
+        NSString *line = [NSString stringWithFormat:@"[JustAudio] play() post-rate: tcs=%@ rate=%.2f waitReason=%@ itemStatus=%@ err=%@ itemErr=%@", tcsName, _player.rate, reasonName, itemStatus, errDesc, itemErrDesc];
+        NSLog(@"%@", line);
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"JustAudioDiag" object:nil userInfo:@{@"message": line}];
+    }
     if (@available(macOS 10.12, iOS 10.0, *)) {}
     else {
         if (_bufferUnconfirmed && !_player.currentItem.playbackBufferFull) {
@@ -1121,6 +1185,7 @@
     // - when the shuffle order changes. (TODO)
     // - when the shuffle mode changes.
     if (!_player) return;
+    if (_index < 0) return;
     if (_audioSource && (_loopMode != loopOff || ([_order count] > 0 && [_orderInv[_index] intValue] + 1 < [_order count]))) {
         _player.actionAtItemEnd = AVPlayerActionAtItemEndAdvance;
     } else {
@@ -1365,6 +1430,10 @@
         if (@available(macOS 10.12, iOS 10.0, *)) {
             [_player removeObserver:self forKeyPath:@"timeControlStatus"];
         }
+        [[NSNotificationCenter defaultCenter]
+            postNotificationName:@"AbsorbJustAudioPlayerReleased"
+                          object:nil
+                        userInfo:@{@"playerId": _playerId}];
         _player = nil;
     }
     // Untested:

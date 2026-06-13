@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../l10n/app_localizations.dart';
 
 /// HTTP client for the ReadMeABook (RMAB) native API.
 ///
@@ -330,6 +331,19 @@ class RmabException implements Exception {
 
   final RmabErrorKind kind;
   final String message;
+
+  /// User-facing message for this error. [genericPrefix] labels the
+  /// fallback case (e.g. request vs search wording).
+  String localizedMessage(AppLocalizations l, String genericPrefix) {
+    switch (kind) {
+      case RmabErrorKind.unauthorized:
+        return l.rmabRequestErrorTokenRejected;
+      case RmabErrorKind.network:
+        return l.rmabConfigErrorNetwork;
+      default:
+        return '$genericPrefix: $message';
+    }
+  }
 
   @override
   String toString() => 'RmabException($kind): $message';

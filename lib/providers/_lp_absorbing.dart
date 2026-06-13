@@ -400,6 +400,9 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
       {bool skipRefresh = false, bool skipAutoAdvance = false}) {
     _resetItems.remove(itemId);
     final existing = _progressMap[itemId] ?? {};
+    if (itemId.length > 36 && existing['isFinished'] != true) {
+      nudgeUnfinishedEpisodeCount(itemId.substring(0, 36), -1);
+    }
     _progressMap[itemId] = {...existing, 'isFinished': true};
     _localProgressOverrides[itemId] = 1.0;
     _lastFinishedItemId = itemId;
@@ -603,24 +606,55 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     }
 
     final merged = await PlayerSettings.getMergeAbsorbingLibraries();
+    final bookMode = await PlayerSettings.getBookQueueMode();
+    final podMode = await PlayerSettings.getPodcastQueueMode();
 
     final finishedCached = _absorbingItemCache[finishedKey];
     final finishedLibId = finishedCached?['libraryId'] as String?;
+    final finishedIsPodcast = finishedKey.length > 36;
 
     final finishedIdx = _absorbingBookIds.indexOf(finishedKey);
     final startIdx = finishedIdx >= 0 ? finishedIdx + 1 : 0;
 
+    debugPrint('[Queue] _manualQueueAdvance: finished=$finishedKey '
+        '(${finishedIsPodcast ? "podcast" : "book"}, lib=$finishedLibId) '
+        'merged=$merged bookMode=$bookMode podMode=$podMode '
+        'queueLen=${_absorbingBookIds.length} startIdx=$startIdx');
+
     for (int i = startIdx; i < _absorbingBookIds.length; i++) {
       final key = _absorbingBookIds[i];
-      if ((this as LibraryProvider).isItemFinishedByKey(key)) continue;
+      if ((this as LibraryProvider).isItemFinishedByKey(key)) {
+        debugPrint('[Queue]   [$i] $key SKIP - already finished');
+        continue;
+      }
+
+      final candidateIsPodcast = key.length > 36;
+      final candidateMode = candidateIsPodcast ? podMode : bookMode;
+      if (candidateMode == 'off') {
+        debugPrint('[Queue]   [$i] $key SKIP - ${candidateIsPodcast ? "podcast" : "book"} mode is off');
+        continue;
+      }
+
+      if (!merged && candidateIsPodcast != finishedIsPodcast) {
+        debugPrint('[Queue]   [$i] $key SKIP - cross-type (unified off, finished=${finishedIsPodcast ? "podcast" : "book"} candidate=${candidateIsPodcast ? "podcast" : "book"})');
+        continue;
+      }
 
       final cached = _absorbingItemCache[key];
-      if (cached == null) continue;
+      if (cached == null) {
+        debugPrint('[Queue]   [$i] $key SKIP - no cache entry');
+        continue;
+      }
 
       if (!merged && finishedLibId != null) {
         final candidateLibId = cached['libraryId'] as String?;
-        if (candidateLibId != null && candidateLibId != finishedLibId) continue;
+        if (candidateLibId != null && candidateLibId != finishedLibId) {
+          debugPrint('[Queue]   [$i] $key SKIP - cross-library (finished=$finishedLibId candidate=$candidateLibId)');
+          continue;
+        }
       }
+
+      debugPrint('[Queue]   [$i] $key PICK - ${candidateIsPodcast ? "podcast" : "book"} (lib=${cached['libraryId']})');
 
       final media = cached['media'] as Map<String, dynamic>? ?? {};
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
@@ -1132,6 +1166,112 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     return metadata['title'] as String?;
   }
 
+  /// Returns metadata for the item that would auto-advance next in manual
+  /// queue mode, formatted for AudioPlayerService's pre-buffer mechanism.
+  /// Returns null when nothing's queued, mode isn't manual, or the next item
+  /// isn't downloaded (MVP only pre-buffers local files).
+  Future<Map<String, dynamic>?> peekNextQueueItemForPreBuffer(
+      String currentItemId) async {
+    final self = this as LibraryProvider;
+    final isPodCurrent = currentItemId.length > 36;
+    final mode = isPodCurrent
+        ? await PlayerSettings.getPodcastQueueMode()
+        : await PlayerSettings.getBookQueueMode();
+    if (mode != 'manual') return null;
+
+    final bookMode = await PlayerSettings.getBookQueueMode();
+    final podMode = await PlayerSettings.getPodcastQueueMode();
+    final merged = await PlayerSettings.getMergeAbsorbingLibraries();
+    final currentLibId =
+        _absorbingItemCache[currentItemId]?['libraryId'] as String?;
+    final idx = _absorbingBookIds.indexOf(currentItemId);
+    final start = idx >= 0 ? idx + 1 : 0;
+
+    for (var i = start; i < _absorbingBookIds.length; i++) {
+      final key = _absorbingBookIds[i];
+      if (self.isItemFinishedByKey(key)) continue;
+      final candidateIsPodcast = key.length > 36;
+      final candidateMode = candidateIsPodcast ? podMode : bookMode;
+      if (candidateMode == 'off') continue;
+      if (!merged && candidateIsPodcast != isPodCurrent) continue;
+      final cached = _absorbingItemCache[key];
+      if (cached == null) continue;
+      if (!merged && currentLibId != null) {
+        final candidateLibId = cached['libraryId'] as String?;
+        if (candidateLibId != null && candidateLibId != currentLibId) continue;
+      }
+
+      final itemIdRaw = candidateIsPodcast ? key.substring(0, 36) : key;
+      final episodeIdRaw = candidateIsPodcast ? key.substring(37) : null;
+
+      // Try downloaded first; fall back to cached session for streaming so
+      // the pre-buffer + native handover path works for non-downloaded books.
+      final localPaths = DownloadService().getLocalPaths(key);
+      List<Map<String, dynamic>>? audioTracks;
+      Map<String, String>? audioHeaders;
+      if (localPaths == null || localPaths.isEmpty) {
+        final api = self._api;
+        if (api == null) {
+          debugPrint('[PreBuffer] Next item $key no api context, skip');
+          return null;
+        }
+        final cachedSession = await SessionCache.load(
+          itemId: itemIdRaw,
+          episodeId: episodeIdRaw,
+        );
+        final tracks = cachedSession?['audioTracks'] as List<dynamic>?;
+        if (tracks == null || tracks.isEmpty) {
+          debugPrint('[PreBuffer] Next item $key not downloaded and no cached session, skip');
+          return null;
+        }
+        if (tracks.length != 1) {
+          debugPrint('[PreBuffer] Next item $key streaming multi-track, skip (MVP)');
+          return null;
+        }
+        audioTracks = tracks.map<Map<String, dynamic>>((t) {
+          final track = t as Map<String, dynamic>;
+          final contentUrl = track['contentUrl'] as String? ?? '';
+          return {'url': api.buildTrackUrl(contentUrl)};
+        }).toList();
+        audioHeaders = api.mediaHeaders;
+      } else if (localPaths.length != 1) {
+        debugPrint('[PreBuffer] Next item $key is multi-track, skip (MVP)');
+        return null;
+      }
+
+      final media = cached['media'] as Map<String, dynamic>? ?? {};
+      final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+      final title = candidateIsPodcast
+          ? ((cached['recentEpisode'] as Map<String, dynamic>?)?['title']
+                  as String? ??
+              metadata['title'] as String? ??
+              '')
+          : (metadata['title'] as String? ?? '');
+      final author = metadata['authorName'] as String? ?? '';
+      final duration = candidateIsPodcast
+          ? (((cached['recentEpisode'] as Map<String, dynamic>?)?['duration']
+                          as num?)
+                      ?.toDouble() ??
+                  (media['duration'] as num?)?.toDouble() ??
+                  0)
+          : ((media['duration'] as num?)?.toDouble() ?? 0);
+      final chapters = (media['chapters'] as List<dynamic>?) ?? const [];
+      return {
+        'itemId': itemIdRaw,
+        'episodeId': episodeIdRaw,
+        'title': title,
+        'author': author,
+        'coverUrl': getCoverUrl(itemIdRaw),
+        'duration': duration,
+        'chapters': chapters,
+        if (localPaths != null && localPaths.isNotEmpty) 'localPaths': localPaths,
+        if (audioTracks != null) 'audioTracks': audioTracks,
+        if (audioHeaders != null) 'audioHeaders': audioHeaders,
+      };
+    }
+    return null;
+  }
+
   /// Returns a short label describing what would play next given the current
   /// queue mode and player state, or null when nothing is queued. Used by the
   /// "Up next: ..." chip under the queue-mode pill on the absorbing page.
@@ -1176,21 +1316,55 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     }
 
     if (mode == 'manual') {
+      final bookMode = await PlayerSettings.getBookQueueMode();
+      final podMode = await PlayerSettings.getPodcastQueueMode();
+      final merged = await PlayerSettings.getMergeAbsorbingLibraries();
+      final currentLibId =
+          _absorbingItemCache[currentItemId]?['libraryId'] as String?;
       final idx = _absorbingBookIds.indexOf(currentItemId);
       final start = idx >= 0 ? idx + 1 : 0;
+      debugPrint('[Queue] peekUpNext: current=$currentItemId '
+          '(${isPodCurrent ? "podcast" : "book"}, lib=$currentLibId) '
+          'merged=$merged bookMode=$bookMode podMode=$podMode '
+          'queueLen=${_absorbingBookIds.length} startIdx=$start');
       for (var i = start; i < _absorbingBookIds.length; i++) {
         final key = _absorbingBookIds[i];
-        if (self.isItemFinishedByKey(key)) continue;
+        if (self.isItemFinishedByKey(key)) {
+          debugPrint('[Queue]   peek [$i] $key SKIP - already finished');
+          continue;
+        }
+        final candidateIsPodcast = key.length > 36;
+        final candidateMode = candidateIsPodcast ? podMode : bookMode;
+        if (candidateMode == 'off') {
+          debugPrint('[Queue]   peek [$i] $key SKIP - ${candidateIsPodcast ? "podcast" : "book"} mode is off');
+          continue;
+        }
+        if (!merged && candidateIsPodcast != isPodCurrent) {
+          debugPrint('[Queue]   peek [$i] $key SKIP - cross-type (unified off)');
+          continue;
+        }
         final cached = _absorbingItemCache[key];
-        if (cached == null) continue;
+        if (cached == null) {
+          debugPrint('[Queue]   peek [$i] $key SKIP - no cache entry');
+          continue;
+        }
+        if (!merged && currentLibId != null) {
+          final candidateLibId = cached['libraryId'] as String?;
+          if (candidateLibId != null && candidateLibId != currentLibId) {
+            debugPrint('[Queue]   peek [$i] $key SKIP - cross-library (current=$currentLibId candidate=$candidateLibId)');
+            continue;
+          }
+        }
+        debugPrint('[Queue]   peek [$i] $key PICK - ${candidateIsPodcast ? "podcast" : "book"} (lib=${cached['libraryId']})');
         return _entryTitle(cached);
       }
+      debugPrint('[Queue]   peek: no eligible item found');
       return null;
     }
 
     // auto_next
     if (isPodCurrent) {
-      return _peekNextPodcastEpisode(currentItemId);
+      return await _peekNextPodcastEpisode(currentItemId);
     }
     return await _peekNextBookInSeries(currentItemId);
   }
@@ -1257,29 +1431,51 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     return _entryTitle(next);
   }
 
-  String? _peekNextPodcastEpisode(String currentCompoundKey) {
+  Future<String?> _peekNextPodcastEpisode(String currentCompoundKey) async {
     if (currentCompoundKey.length < 37) return null;
     final showId = currentCompoundKey.substring(0, 36);
     final currentEpId = currentCompoundKey.substring(37);
-    final showCached = _absorbingItemCache.values.cast<Map<String, dynamic>>().where((e) {
-      final mt = e['mediaType'] as String?;
-      return mt == 'podcast' && (e['id'] as String?) == showId;
-    }).firstOrNull;
-    if (showCached == null) return null;
-    final media = showCached['media'] as Map<String, dynamic>? ?? const {};
-    final eps = (media['episodes'] as List<dynamic>? ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .toList();
-    if (eps.isEmpty) return null;
     final self = this as LibraryProvider;
-    final currentIdx = eps.indexWhere((e) => e['id'] == currentEpId);
+
+    // Mirror _addNextPodcastEpisode: the absorbing cache stores per-episode
+    // synthetic entries (recentEpisode), not the full episodes list, so read
+    // the full list from a cached entry that has it or fall back to the API,
+    // then sort by the same advance direction. Without this the peek looks at
+    // the raw API order and shows nothing even though advancing works.
+    List<dynamic> eps = const [];
+    final showCached = _absorbingItemCache.values
+        .cast<Map<String, dynamic>>()
+        .where((e) => (e['id'] as String?) == showId)
+        .firstOrNull;
+    final cachedEps = (showCached?['media'] as Map<String, dynamic>?)?['episodes']
+        as List<dynamic>?;
+    if (cachedEps != null && cachedEps.isNotEmpty) {
+      eps = cachedEps;
+    } else if (_api != null) {
+      final fullItem = await _api!.getLibraryItem(showId);
+      final media = fullItem?['media'] as Map<String, dynamic>? ?? const {};
+      eps = media['episodes'] as List<dynamic>? ?? const [];
+    }
+    final episodes = eps.whereType<Map<String, dynamic>>().toList();
+    if (episodes.isEmpty) return null;
+
+    final prefs = await SharedPreferences.getInstance();
+    final advanceNewestFirst =
+        (prefs.getString('podcast_advance_dir_$showId') ?? 'oldest_first') ==
+            'newest_first';
+    episodes.sort((a, b) {
+      final aTime = (a['publishedAt'] as num?)?.toInt() ?? 0;
+      final bTime = (b['publishedAt'] as num?)?.toInt() ?? 0;
+      return advanceNewestFirst ? bTime.compareTo(aTime) : aTime.compareTo(bTime);
+    });
+
+    final currentIdx = episodes.indexWhere((e) => e['id'] == currentEpId);
     final start = currentIdx >= 0 ? currentIdx + 1 : 0;
-    for (var i = start; i < eps.length; i++) {
-      final ep = eps[i];
-      final epId = ep['id'] as String?;
+    for (var i = start; i < episodes.length; i++) {
+      final epId = episodes[i]['id'] as String?;
       if (epId == null) continue;
       if (self.isItemFinishedByKey('$showId-$epId')) continue;
-      return ep['title'] as String?;
+      return episodes[i]['title'] as String?;
     }
     return null;
   }

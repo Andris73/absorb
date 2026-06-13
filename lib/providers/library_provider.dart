@@ -14,6 +14,7 @@ import '../services/android_auto_service.dart';
 import '../services/carplay_service.dart';
 import '../services/chromecast_service.dart';
 import '../services/bookmark_service.dart';
+import '../services/metadata_override_service.dart';
 import '../services/session_cache.dart';
 import '../services/socket_service.dart';
 import '../services/home_widget_service.dart';
@@ -32,13 +33,26 @@ class LibraryProvider extends ChangeNotifier
     // Flutter UI wasn't foregrounded yet (e.g. Android Auto cold-start,
     // where updateAuth may not run until much later).
     AudioPlayerService.setOnBookFinishedCallback(markFinishedLocally);
+    AudioPlayerService.setOnAutoQueueAdvancedCallback((oldItemId) {
+      // Pre-buffer auto-advance already loaded and started the next item.
+      // Mark the old one finished WITHOUT triggering normal auto-advance
+      // (which would call playItem again and rebuild the source).
+      markFinishedLocally(oldItemId, skipAutoAdvance: true);
+    });
+    AudioPlayerService.setOnPeekNextItemCallback(peekNextQueueItemForPreBuffer);
     AudioPlayerService.setOnPlayStartedCallback((key) {
+      // Auto-download the book/episode you're listening to kicks off quickly so
+      // it doesn't feel broken; the short wait still skips it if you stop or
+      // switch right away. Rolling/queue look-ahead stays deferred to keep the
+      // moment playback starts light.
+      Future.delayed(const Duration(seconds: 5), () {
+        if (!AudioPlayerService().isPlaying) return;
+        _checkAutoDownloadOnStream(key);
+      });
       Future.delayed(const Duration(seconds: 30), () {
-        final stillPlaying = AudioPlayerService().isPlaying;
-        if (!stillPlaying) return;
+        if (!AudioPlayerService().isPlaying) return;
         _checkRollingDownloads(key);
         _checkQueueAutoDownloads(key);
-        _checkAutoDownloadOnStream(key);
       });
     });
     AudioPlayerService.setOnPlaybackStateChangedCallback((playing) {
@@ -123,6 +137,10 @@ class LibraryProvider extends ChangeNotifier
         notifyListeners();
       }
 
+      // Refresh the local metadata cover overrides for this account so the
+      // grid/card covers reflect them, then repaint once loaded.
+      MetadataOverrideService().loadAll().then((_) => notifyListeners());
+
       restoreOfflineMode().then((_) async {
         debugPrint(
             '[Library] restoreOfflineMode done, serverReachable=${auth.serverReachable} api=${_api != null} offline=$isOffline');
@@ -130,6 +148,7 @@ class LibraryProvider extends ChangeNotifier
         await _loadManualAbsorbing();
         await _loadRollingDownloadSeries();
         await _loadSubscribedPodcasts();
+        await _loadYearHidden();
         await _loadKnownEpisodeIds();
         Future.microtask(() => checkSubscribedPodcasts());
 
@@ -167,6 +186,12 @@ class LibraryProvider extends ChangeNotifier
           socket.onUserUpdated = _onRemoteUserUpdated;
           socket.onReconnectFailed = _onSocketReconnectFailed;
           socket.onEncodeFinished = _onEncodeFinished;
+          socket.onEreaderDevicesUpdated = (devices) {
+            // Admin broadcasts deliver the FULL unfiltered list; the per-user
+            // emit is already filtered. Run the same filter here either way -
+            // it's a no-op on an already-filtered list.
+            auth.setEreaderDevices(auth.filterDevicesForCurrentUser(devices));
+          };
           socket.connect(auth.serverUrl!, auth.token!, customHeaders: auth.customHeaders);
         }
         debugPrint('[Library] Calling loadLibraries()');
@@ -203,6 +228,11 @@ class LibraryProvider extends ChangeNotifier
       notifyListeners();
     }
   }
+
+  /// Repaint listeners after a local metadata cover override is saved or
+  /// cleared, so the grid/absorbing card re-resolve [getCoverUrl] (the cache
+  /// is already updated synchronously by MetadataOverrideService).
+  void notifyCoverOverridesChanged() => notifyListeners();
 
   Future<void> loadLibraries() async {
     if (_api == null) return;

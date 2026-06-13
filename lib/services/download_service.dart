@@ -7,9 +7,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:http/http.dart' as http;
+import 'package:background_downloader/background_downloader.dart';
+import '../l10n/app_localizations.dart';
+import '../main.dart' show rootNavigatorKey;
 import 'api_service.dart';
 import 'audio_player_service.dart';
-import 'download_notification_service.dart';
 
 enum DownloadStatus { none, downloading, downloaded, error }
 
@@ -121,6 +123,99 @@ class _QueuedDownload {
   });
 }
 
+/// An in-flight multi-file download. The static fields (persisted to
+/// SharedPreferences) carry everything needed to finalize the book even if the
+/// app is killed and relaunched while the OS finishes the transfer. The runtime
+/// maps are rebuilt from the background_downloader task database on relaunch.
+class _PendingBook {
+  final String itemId;        // composite key used in _downloads
+  final String apiItemId;     // real library item id for API calls
+  final String? episodeId;
+  final String title;
+  final String? author;
+  final String? coverUrl;
+  final String? localCoverPath;
+  final String? libraryId;
+  final String bookDir;
+  final int trackCount;
+  final List<String> expectedPaths; // index-aligned final file paths
+  final String? slimSessionJson;
+
+  /// True once the user cancels, so terminal handling cleans up instead of
+  /// surfacing an error.
+  bool cancelled = false;
+
+  /// Set synchronously the moment a terminal handler (success/fail/cancel) is
+  /// chosen, so a burst of terminal updates can't finalize the book twice.
+  bool finalizing = false;
+
+  /// A hard track failure aborts the whole book; remember why for the message.
+  bool failing = false;
+  TaskException? failException;
+  int? failCode;
+
+  final Map<int, double> trackProgress = {};
+  final Map<int, TaskStatus> trackStatus = {};
+  DateTime lastUi = DateTime.fromMillisecondsSinceEpoch(0);
+
+  _PendingBook({
+    required this.itemId,
+    required this.apiItemId,
+    required this.title,
+    required this.bookDir,
+    required this.trackCount,
+    required this.expectedPaths,
+    this.episodeId,
+    this.author,
+    this.coverUrl,
+    this.localCoverPath,
+    this.libraryId,
+    this.slimSessionJson,
+  });
+
+  double get overallProgress {
+    if (trackCount == 0) return 0;
+    var sum = 0.0;
+    for (int i = 0; i < trackCount; i++) {
+      sum += trackProgress[i] ?? 0.0;
+    }
+    return (sum / trackCount).clamp(0.0, 1.0);
+  }
+
+  Map<String, dynamic> toJson() => {
+        'itemId': itemId,
+        'apiItemId': apiItemId,
+        'episodeId': episodeId,
+        'title': title,
+        'author': author,
+        'coverUrl': coverUrl,
+        'localCoverPath': localCoverPath,
+        'libraryId': libraryId,
+        'bookDir': bookDir,
+        'trackCount': trackCount,
+        'expectedPaths': expectedPaths,
+        'slimSessionJson': slimSessionJson,
+      };
+
+  factory _PendingBook.fromJson(Map<String, dynamic> j) => _PendingBook(
+        itemId: j['itemId'] as String,
+        apiItemId: j['apiItemId'] as String,
+        episodeId: j['episodeId'] as String?,
+        title: j['title'] as String? ?? '',
+        author: j['author'] as String?,
+        coverUrl: j['coverUrl'] as String?,
+        localCoverPath: j['localCoverPath'] as String?,
+        libraryId: j['libraryId'] as String?,
+        bookDir: j['bookDir'] as String,
+        trackCount: j['trackCount'] as int? ?? 0,
+        expectedPaths: (j['expectedPaths'] as List<dynamic>?)
+                ?.map((e) => e as String)
+                .toList() ??
+            const [],
+        slimSessionJson: j['slimSessionJson'] as String?,
+      );
+}
+
 /// Strip the bulky `libraryItem` from persisted session data.
 /// For podcasts this contains ALL episodes and can be hundreds of KB.
 String? _stripLibraryItem(String? sessionJson) {
@@ -155,10 +250,19 @@ class DownloadService extends ChangeNotifier {
 
   final Map<String, DownloadInfo> _downloads = {};
   final Set<String> _activeDownloadIds = {};
-  final Map<String, http.Client> _httpClients = {};
   final Set<String> _cancelledIds = {};
-  final Map<String, int> _downloadSlots = {};
   String? _customDownloadPath;
+
+  /// All `background_downloader` tasks share this group, so a single grouped
+  /// progress notification covers every active download.
+  static const String _dlGroup = 'absorb_downloads';
+
+  /// In-flight books keyed by itemId. Holds everything needed to aggregate
+  /// per-track progress and finalize the book, including after an app relaunch.
+  final Map<String, _PendingBook> _pending = {};
+
+  StreamSubscription<TaskUpdate>? _updatesSub;
+  bool _downloaderConfigured = false;
 
   /// Queue of pending download requests.
   final List<_QueuedDownload> _queue = [];
@@ -394,10 +498,56 @@ class DownloadService extends ChangeNotifier {
 
     // Re-save to persist any metadata extracted from sessionData
     if (_downloads.isNotEmpty) await _save();
+
+    // Wire up native background downloads: configure the grouped notification,
+    // start tracking tasks (so they persist across launches), listen for
+    // updates, then rehydrate any download that was in flight when we were last
+    // killed and ask the OS to redeliver completions that landed while dead.
+    await _configureDownloader();
+    _updatesSub ??= FileDownloader().updates.listen(_onTaskUpdate);
+    await FileDownloader().trackTasks();
+    await _loadPending();
+    await _rehydratePending();
+    await FileDownloader().resumeFromBackground();
+
     notifyListeners();
 
     // Validate files and clean up orphans in background after startup
     _validateDownloads();
+  }
+
+  /// Configure the single grouped download notification (replaces the old
+  /// per-slot notifications + hand-rolled Android foreground service). The
+  /// package runs a background URLSession on iOS and a foreground service on
+  /// Android, so downloads continue when backgrounded, locked, or killed.
+  Future<void> _configureDownloader() async {
+    if (_downloaderConfigured) return;
+    final l = _l();
+    // NOTE: for group notifications, the count tokens ({numFinished}/{numTotal})
+    // only substitute in the TITLE - in the body they print literally. {progress}
+    // is valid anywhere. We keep it simple: "Downloading" + a progress bar/%.
+    FileDownloader().configureNotificationForGroup(
+      _dlGroup,
+      running: TaskNotification(
+        l?.downloadNotifDownloadingTitle ?? 'Downloading',
+        '{progress}',
+      ),
+      complete: TaskNotification(
+        l?.downloadNotifCompleteTitle ?? 'Downloads complete',
+        '',
+      ),
+      error: TaskNotification(
+        l?.downloadNotifFailedTitle ?? 'Download failed',
+        '',
+      ),
+      progressBar: true,
+    );
+    _downloaderConfigured = true;
+  }
+
+  AppLocalizations? _l() {
+    final ctx = rootNavigatorKey.currentContext;
+    return ctx != null ? AppLocalizations.of(ctx) : null;
   }
 
   /// On iOS, the app container UUID changes on every update, which breaks
@@ -408,6 +558,10 @@ class DownloadService extends ChangeNotifier {
 
     final appDir = await getApplicationDocumentsDirectory();
     final currentPrefix = appDir.path; // .../Documents
+    // Audio lives in the App Group container - stable across updates in practice
+    // (unlike Documents), but resolve it so we can remap audio paths too if the
+    // container ever shifts. Belt and suspenders so downloads survive an update.
+    final groupAudioBase = await _iosAppGroupAudioBase();
 
     bool changed = false;
     final entries = Map<String, DownloadInfo>.from(_downloads);
@@ -416,21 +570,25 @@ class DownloadService extends ChangeNotifier {
       final info = entry.value;
       bool needsUpdate = false;
 
-      // Remap localPaths
+      // Remap localPaths (audio sits under the App Group; legacy audio under
+      // Documents). Apply both: each is a no-op for paths it doesn't own.
       final newPaths = <String>[];
       for (final path in info.localPaths) {
-        final remapped = _remapIOSPath(path, currentPrefix);
+        final remapped =
+            _remapAppGroupPath(_remapIOSPath(path, currentPrefix), groupAudioBase);
         newPaths.add(remapped);
         if (remapped != path) needsUpdate = true;
       }
 
+      // Covers always live in Documents, so only that prefix can go stale.
       final newCoverPath = info.localCoverPath != null
           ? _remapIOSPath(info.localCoverPath!, currentPrefix)
           : null;
       if (newCoverPath != info.localCoverPath) needsUpdate = true;
 
       final newDirPath = info.localDirPath != null
-          ? _remapIOSPath(info.localDirPath!, currentPrefix)
+          ? _remapAppGroupPath(
+              _remapIOSPath(info.localDirPath!, currentPrefix), groupAudioBase)
           : null;
       if (newDirPath != info.localDirPath) needsUpdate = true;
 
@@ -560,6 +718,19 @@ class DownloadService extends ChangeNotifier {
     final idx = path.indexOf(marker);
     if (idx < 0) return path;
     return '$currentPrefix/${path.substring(idx + marker.length)}';
+  }
+
+  /// Replace a stale App Group container prefix with the current one. Audio is
+  /// stored at `<group>/audio/downloads/...`; if the container path ever shifts
+  /// across an update, rejoin the stable `/audio/downloads` tail onto the freshly
+  /// resolved base so previously-downloaded books keep playing. No-op when the
+  /// path is already current (the usual case) or for non-audio paths.
+  String _remapAppGroupPath(String path, String? groupAudioBase) {
+    if (groupAudioBase == null || path.startsWith(groupAudioBase)) return path;
+    const marker = '/audio/downloads';
+    final idx = path.indexOf(marker);
+    if (idx < 0) return path;
+    return '$groupAudioBase${path.substring(idx + marker.length)}';
   }
 
   /// Validate that downloaded files still exist on disk and clean up orphans.
@@ -840,19 +1011,20 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
-  /// Assign the lowest free notification slot (0–4).
-  int _assignSlot(String itemId) {
-    for (int i = 0; i < 5; i++) {
-      if (!_downloadSlots.containsValue(i)) {
-        _downloadSlots[itemId] = i;
-        return i;
-      }
-    }
-    // Fallback (shouldn't happen with max 5 concurrent)
-    _downloadSlots[itemId] = 0;
-    return 0;
-  }
+  static String _taskId(String itemId, int trackIndex) => '$itemId::$trackIndex';
 
+  /// Statuses from which a task will never progress further.
+  static const Set<TaskStatus> _terminal = {
+    TaskStatus.complete,
+    TaskStatus.failed,
+    TaskStatus.notFound,
+    TaskStatus.canceled,
+  };
+
+  /// Resolve a book/episode to durable per-file download tasks and enqueue them.
+  /// Returns once the tasks are handed to `background_downloader`; progress and
+  /// completion are driven asynchronously by [_onTaskUpdate] / [_finalizeSuccess]
+  /// (which also fire after an app relaunch).
   Future<void> _executeDownload({
     required ApiService api,
     required String itemId,
@@ -864,9 +1036,6 @@ class DownloadService extends ChangeNotifier {
   }) async {
     _activeDownloadIds.add(itemId);
     _cancelledIds.remove(itemId);
-    final slot = _assignSlot(itemId);
-    final client = http.Client();
-    _httpClients[itemId] = client;
 
     _downloads[itemId] = DownloadInfo(
       itemId: itemId,
@@ -879,14 +1048,6 @@ class DownloadService extends ChangeNotifier {
     );
     notifyListeners();
 
-    // Show per-download notification + foreground service
-    final notif = DownloadNotificationService();
-    try {
-      await notif.startDownload(slot: slot, title: title, author: author);
-    } catch (e) {
-      debugPrint('[Download] startDownload non-fatal error: $e');
-    }
-
     Directory? bookDir;
     try {
       // For episodes, itemId is a composite key like 'podcastId-episodeId'.
@@ -894,6 +1055,10 @@ class DownloadService extends ChangeNotifier {
       final apiItemId = episodeId != null
           ? itemId.substring(0, itemId.length - episodeId.length - 1)
           : itemId;
+
+      // The playback session is only for METADATA (durations/chapters) needed by
+      // offline seeking. We do NOT download from its session-scoped contentUrls
+      // (they die when the session closes); we use durable /file/:ino URLs.
       final sessionData = episodeId != null
           ? await api.startEpisodePlaybackSession(apiItemId, episodeId)
           : await api.startPlaybackSession(apiItemId);
@@ -904,6 +1069,8 @@ class DownloadService extends ChangeNotifier {
         throw Exception('No audio tracks');
       }
 
+      final files = await _resolveDurableFiles(api, apiItemId, episodeId, audioTracks);
+
       final basePath = await downloadBasePath;
       final dirName = (author != null && author.isNotEmpty)
           ? '${_sanitizePath(author)}/${_sanitizePath(title)}'
@@ -913,267 +1080,483 @@ class DownloadService extends ChangeNotifier {
         bookDir.createSync(recursive: true);
       }
 
-      // Cache the cover image in internal storage for offline use (lockscreen, Android Auto).
-      // Always use internal path — custom external paths may lack write permission.
-      String? localCoverPath;
-      if (coverUrl != null && coverUrl.isNotEmpty) {
-        try {
-          final coverResp = await http.get(Uri.parse(coverUrl), headers: api.mediaHeaders)
-              .timeout(const Duration(seconds: 10));
-          if (coverResp.statusCode == 200 && coverResp.bodyBytes.isNotEmpty) {
-            final internalBase = await _internalBasePath;
-            final coverDir = Directory('$internalBase/$itemId');
-            if (!coverDir.existsSync()) coverDir.createSync(recursive: true);
-            final coverFile = File('${coverDir.path}/cover.jpg');
-            await coverFile.writeAsBytes(coverResp.bodyBytes);
-            localCoverPath = coverFile.path;
-            debugPrint('[Download] Cached cover image: $localCoverPath');
-          }
-        } catch (e) {
-          debugPrint('[Download] Cover cache failed (non-fatal): $e');
-        }
-      }
+      final localCoverPath = await _cacheCover(api, itemId, coverUrl);
 
-      final localPaths = List<String?>.filled(audioTracks.length, null);
-
-      // Track progress per-track for overall calculation
-      final trackProgress = List<double>.filled(audioTracks.length, 0.0);
-      int lastNotifPercent = -1;
-      DateTime lastUIUpdate = DateTime.now();
-
-      Future<void> showProgressSafe(double progress) async {
-        try {
-          await notif.updateProgress(
-            slot: slot,
-            title: title,
-            author: author,
-            progress: progress,
-          );
-        } catch (e) {
-          debugPrint('[Download] updateProgress non-fatal error: $e');
-        }
-      }
-
-      void updateProgress() {
-        final overall = trackProgress.reduce((a, b) => a + b) / audioTracks.length;
-        final now = DateTime.now();
-        // Throttle UI updates to max ~4/sec
-        if (now.difference(lastUIUpdate).inMilliseconds > 250) {
-          lastUIUpdate = now;
-          _downloads[itemId] = DownloadInfo(
-            itemId: itemId,
-            status: DownloadStatus.downloading,
-            progress: overall,
-            title: title,
-            author: author,
-            coverUrl: coverUrl,
-            libraryId: libraryId,
-          );
-          notifyListeners();
-        }
-        // Throttle notification to every 2%
-        final pct = (overall * 50).round();
-        if (pct != lastNotifPercent) {
-          lastNotifPercent = pct;
-          unawaited(showProgressSafe(overall));
-        }
-      }
-
-      Future<void> downloadTrack(int i) async {
-        final track = audioTracks[i] as Map<String, dynamic>;
-        final contentUrl = track['contentUrl'] as String? ?? '';
-        final fullUrl = api.buildTrackUrl(contentUrl);
-
-        // Try to get the original filename from track metadata first
-        final trackMeta = track['metadata'] as Map<String, dynamic>?;
-        var originalName = trackMeta?['filename'] as String? ?? '';
-        // Fallback: extract from contentUrl path
-        if (originalName.isEmpty) {
-          final contentPath = Uri.tryParse(contentUrl)?.path ?? contentUrl;
-          originalName = Uri.decodeComponent(contentPath.split('/').last);
-          if (originalName.contains('?')) originalName = originalName.split('?').first;
-        }
-
-        final String fileName;
-        if (originalName.isNotEmpty && originalName.contains('.')) {
-          fileName = _sanitizePath(originalName.replaceAll(RegExp(r'\.[^.]+$'), ''))
-              + originalName.substring(originalName.lastIndexOf('.'));
-        } else {
-          final mimeType = track['mimeType'] as String? ?? 'audio/mpeg';
-          final ext = mimeType.contains('mp4')
-              ? 'm4a'
-              : mimeType.contains('flac')
-                  ? 'flac'
-                  : mimeType.contains('ogg')
-                      ? 'ogg'
-                      : 'mp3';
-          fileName = 'track_${i.toString().padLeft(3, '0')}.$ext';
-        }
-
-        final filePath = '${bookDir!.path}/$fileName';
-        final file = File(filePath);
-
-        debugPrint('[Download] Track ${i + 1}/${audioTracks.length}: $fullUrl');
-
-        final request = http.Request('GET', Uri.parse(fullUrl));
-        api.mediaHeaders.forEach((key, value) => request.headers[key] = value);
-        final response = await client.send(request)
-            .timeout(const Duration(seconds: 30));
-
-        if (response.statusCode != 200) {
-          throw Exception('HTTP ${response.statusCode} for track ${i + 1}');
-        }
-
-        final totalBytes = response.contentLength ?? -1;
-        int receivedBytes = 0;
-        final sink = file.openWrite();
-        try {
-          await for (final chunk in response.stream.timeout(const Duration(seconds: 60))) {
-            sink.add(chunk);
-            receivedBytes += chunk.length;
-            trackProgress[i] = totalBytes > 0 ? receivedBytes / totalBytes : 0.5;
-            updateProgress();
-          }
-        } finally {
-          await sink.close();
-        }
-        localPaths[i] = filePath;
-        await _excludeFromBackup(filePath);
-      }
-
-      // Download tracks in parallel batches of 3
-      const trackConcurrency = 3;
-      for (int batch = 0; batch < audioTracks.length; batch += trackConcurrency) {
-        if (_cancelledIds.contains(itemId)) break;
-        final end = (batch + trackConcurrency).clamp(0, audioTracks.length);
-        await Future.wait([
-          for (int i = batch; i < end; i++) downloadTrack(i),
-        ]);
-      }
-
-      // Final UI update
-      _downloads[itemId] = DownloadInfo(
-        itemId: itemId,
-        status: DownloadStatus.downloading,
-        progress: 1.0,
-        title: title,
-        author: author,
-        coverUrl: coverUrl,
-        libraryId: libraryId,
-      );
-      notifyListeners();
-
-      final completedPaths = localPaths.whereType<String>().toList();
-
+      // Strip the bulky libraryItem before persisting the session for offline use.
+      final slimSession = Map<String, dynamic>.from(sessionData)..remove('libraryItem');
       final sessionId = sessionData['id'] as String?;
-      if (sessionId != null) {
-        try {
-          await api.closePlaybackSession(sessionId)
-              .timeout(const Duration(seconds: 10));
-        } catch (_) {}
+      if (sessionId != null) unawaited(api.closePlaybackSession(sessionId));
+
+      // Cancelled while we were resolving? Bail before enqueueing anything.
+      if (_cancelledIds.remove(itemId)) {
+        _cleanupBookDir(bookDir);
+        _activeDownloadIds.remove(itemId);
+        _downloads.remove(itemId);
+        notifyListeners();
+        unawaited(_processQueue());
+        return;
       }
 
-      // Strip large nested objects from session data before persisting.
-      // libraryItem contains the full item (with ALL episodes for podcasts)
-      // and can be hundreds of KB - storing one per downloaded episode
-      // bloats SharedPreferences and can cause ANR/OOM.
-      final slimSession = Map<String, dynamic>.from(sessionData);
-      slimSession.remove('libraryItem');
+      final expectedPaths = [for (final f in files) '${bookDir.path}/${f.filename}'];
+      final wifiOnly = await PlayerSettings.getWifiOnlyDownloads();
 
-      _downloads[itemId] = DownloadInfo(
+      final pending = _PendingBook(
         itemId: itemId,
-        status: DownloadStatus.downloaded,
-        localPaths: completedPaths,
-        sessionData: jsonEncode(slimSession),
+        apiItemId: apiItemId,
+        episodeId: episodeId,
         title: title,
         author: author,
         coverUrl: coverUrl,
         localCoverPath: localCoverPath,
-        localDirPath: bookDir.path,
         libraryId: libraryId,
+        bookDir: bookDir.path,
+        trackCount: files.length,
+        expectedPaths: expectedPaths,
+        slimSessionJson: jsonEncode(slimSession),
       );
-      await _save();
-      notifyListeners();
+      _pending[itemId] = pending;
+      await _persistPending();
 
-      // Show completion notification
-      try {
-        await notif.finishDownload(slot: slot, title: title);
-      } catch (_) {}
-
-      // If this book is currently streaming, hot-swap to local files
-      try {
-        final player = AudioPlayerService();
-        if (player.currentItemId == itemId && player.hasBook) {
-          await player.switchToLocal(itemId);
-        }
-      } catch (_) {}
-
-      debugPrint('[Download] Complete: $title (${completedPaths.length} files)');
-    } catch (e) {
-      // Clean up partial files on any failure
-      try {
-        if (bookDir != null && bookDir.existsSync()) {
-          bookDir.deleteSync(recursive: true);
-          final parent = bookDir.parent;
-          if (parent.existsSync() && parent.listSync().isEmpty) {
-            parent.deleteSync();
-          }
-        }
-      } catch (_) {}
-
-      if (_cancelledIds.contains(itemId)) {
-        debugPrint('[Download] Cancelled: $title');
-        _downloads.remove(itemId);
-        try {
-          await notif.cancelDownload(slot);
-        } catch (_) {}
-      } else {
-        final isStorageFull = e.toString().contains('No space left') ||
-            e.toString().contains('ENOSPC');
-        final isPermissionDenied = e.toString().contains('Permission denied') ||
-            e.toString().contains('Operation not permitted') ||
-            e.toString().contains('error = 13') ||
-            e.toString().contains('errno = 1');
-        final errorMsg = isStorageFull
-            ? 'Not enough storage space'
-            : isPermissionDenied
-                ? 'Permission denied - check download location in Settings'
-                : 'Download failed';
-        debugPrint('[Download] Error: $e');
-        _downloads[itemId] = DownloadInfo(
-          itemId: itemId,
-          status: DownloadStatus.error,
-          title: title,
-          author: author,
-          coverUrl: coverUrl,
+      for (int i = 0; i < files.length; i++) {
+        final task = DownloadTask(
+          taskId: _taskId(itemId, i),
+          url: files[i].url,
+          headers: api.mediaHeaders,
+          filename: files[i].filename,
+          baseDirectory: BaseDirectory.root,
+          directory: bookDir.path,
+          group: _dlGroup,
+          metaData: jsonEncode({'itemId': itemId, 'i': i, 'n': files.length}),
+          updates: Updates.statusAndProgress,
+          requiresWiFi: wifiOnly,
+          retries: 3,
+          allowPause: true,
         );
-        // Show error notification
-        try {
-          await notif.finishDownload(
-            slot: slot,
-            title: title,
-            success: false,
-            errorMessage: '$errorMsg: $title',
-          );
-        } catch (notifErr) {
-          debugPrint('[Download] finishDownload non-fatal error: $notifErr');
-        }
+        final ok = await FileDownloader().enqueue(task);
+        if (!ok) throw Exception('Failed to enqueue track ${i + 1}');
+      }
+      debugPrint('[Download] Enqueued ${files.length} task(s) for "$title"');
+    } catch (e) {
+      await _failBook(itemId,
+          cause: e, bookDir: bookDir, title: title, author: author, coverUrl: coverUrl);
+    }
+  }
+
+  /// Map each playback track to a durable, session-independent file URL using
+  /// the library item's audioFiles[].ino. Index-aligned with [audioTracks].
+  Future<List<({String url, String filename})>> _resolveDurableFiles(
+      ApiService api, String apiItemId, String? episodeId, List<dynamic> audioTracks) async {
+    final item = await api.getLibraryItem(apiItemId);
+    if (item == null) throw Exception('Failed to load item details');
+    final media = item['media'] as Map<String, dynamic>? ?? {};
+
+    List<Map<String, dynamic>> audioFiles;
+    if (episodeId != null) {
+      final episodes = (media['episodes'] as List<dynamic>?) ?? const [];
+      Map<String, dynamic>? ep;
+      for (final e in episodes) {
+        if (e is Map<String, dynamic> && e['id'] == episodeId) { ep = e; break; }
+      }
+      final af = ep?['audioFile'] as Map<String, dynamic>?;
+      audioFiles = af != null ? [af] : const [];
+    } else {
+      audioFiles = ((media['audioFiles'] as List<dynamic>?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList()
+        ..sort((a, b) => ((a['index'] as num?) ?? 0).compareTo((b['index'] as num?) ?? 0));
+    }
+
+    if (audioFiles.length < audioTracks.length) {
+      throw Exception(
+          'Audio file mismatch (${audioFiles.length} files vs ${audioTracks.length} tracks)');
+    }
+
+    final out = <({String url, String filename})>[];
+    for (int i = 0; i < audioTracks.length; i++) {
+      final track = audioTracks[i] as Map<String, dynamic>;
+      final ino = audioFiles[i]['ino']?.toString();
+      if (ino == null || ino.isEmpty) {
+        throw Exception('Missing file inode for track ${i + 1}');
+      }
+      out.add((url: api.buildFileUrl(apiItemId, ino), filename: _trackFileName(track, i)));
+    }
+    return out;
+  }
+
+  /// Derive the on-disk filename for a track, preferring its original name so
+  /// the layout matches what older (http-based) downloads produced.
+  String _trackFileName(Map<String, dynamic> track, int i) {
+    final contentUrl = track['contentUrl'] as String? ?? '';
+    final trackMeta = track['metadata'] as Map<String, dynamic>?;
+    var originalName = trackMeta?['filename'] as String? ?? '';
+    if (originalName.isEmpty) {
+      final contentPath = Uri.tryParse(contentUrl)?.path ?? contentUrl;
+      originalName = Uri.decodeComponent(contentPath.split('/').last);
+      if (originalName.contains('?')) originalName = originalName.split('?').first;
+    }
+    if (originalName.isNotEmpty && originalName.contains('.')) {
+      return _sanitizePath(originalName.replaceAll(RegExp(r'\.[^.]+$'), '')) +
+          originalName.substring(originalName.lastIndexOf('.'));
+    }
+    final mimeType = track['mimeType'] as String? ?? 'audio/mpeg';
+    final ext = mimeType.contains('mp4')
+        ? 'm4a'
+        : mimeType.contains('flac')
+            ? 'flac'
+            : mimeType.contains('ogg')
+                ? 'ogg'
+                : 'mp3';
+    return 'track_${i.toString().padLeft(3, '0')}.$ext';
+  }
+
+  /// Cache the cover into INTERNAL storage (lockscreen / Android Auto / offline).
+  /// Always internal, since a custom external audio path may lack write access.
+  Future<String?> _cacheCover(ApiService api, String itemId, String? coverUrl) async {
+    if (coverUrl == null || coverUrl.isEmpty) return null;
+    try {
+      final coverResp = await http.get(Uri.parse(coverUrl), headers: api.mediaHeaders)
+          .timeout(const Duration(seconds: 10));
+      if (coverResp.statusCode == 200 && coverResp.bodyBytes.isNotEmpty) {
+        final internalBase = await _internalBasePath;
+        final coverDir = Directory('$internalBase/$itemId');
+        if (!coverDir.existsSync()) coverDir.createSync(recursive: true);
+        final coverFile = File('${coverDir.path}/cover.jpg');
+        await coverFile.writeAsBytes(coverResp.bodyBytes);
+        debugPrint('[Download] Cached cover image: ${coverFile.path}');
+        return coverFile.path;
+      }
+    } catch (e) {
+      debugPrint('[Download] Cover cache failed (non-fatal): $e');
+    }
+    return null;
+  }
+
+  // ── background_downloader update handling ──
+
+  (String, int)? _decodeMeta(String metaData) {
+    if (metaData.isEmpty) return null;
+    try {
+      final m = jsonDecode(metaData) as Map<String, dynamic>;
+      final itemId = m['itemId'] as String?;
+      final i = m['i'] as int?;
+      if (itemId == null || i == null) return null;
+      return (itemId, i);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _onTaskUpdate(TaskUpdate update) {
+    final meta = _decodeMeta(update.task.metaData);
+    if (meta == null) return;
+    final itemId = meta.$1;
+    final i = meta.$2;
+    final p = _pending[itemId];
+    if (p == null) return;
+
+    if (update is TaskProgressUpdate) {
+      final prog = update.progress;
+      if (prog >= 0 && prog <= 1) {
+        p.trackProgress[i] = prog;
+        _emitBookProgress(itemId, p);
+      }
+    } else if (update is TaskStatusUpdate) {
+      p.trackStatus[i] = update.status;
+      if (update.status == TaskStatus.complete) p.trackProgress[i] = 1.0;
+
+      // A hard failure aborts the whole book: cancel the remaining siblings so
+      // it doesn't hang waiting on tracks that will never finish.
+      if ((update.status == TaskStatus.failed || update.status == TaskStatus.notFound) &&
+          !p.cancelled && !p.failing) {
+        p.failing = true;
+        p.failException = update.exception;
+        p.failCode = update.responseStatusCode;
+        unawaited(_cancelSiblings(itemId, p));
+      }
+      _checkBookTerminal(itemId, p);
+    }
+  }
+
+  void _emitBookProgress(String itemId, _PendingBook p) {
+    final now = DateTime.now();
+    if (now.difference(p.lastUi).inMilliseconds < 250) return;
+    p.lastUi = now;
+    _downloads[itemId] = DownloadInfo(
+      itemId: itemId,
+      status: DownloadStatus.downloading,
+      progress: p.overallProgress,
+      title: p.title,
+      author: p.author,
+      coverUrl: p.coverUrl,
+      libraryId: p.libraryId,
+    );
+    notifyListeners();
+  }
+
+  /// Once every track of a book is terminal, route to success / fail / cancel.
+  void _checkBookTerminal(String itemId, _PendingBook p) {
+    if (p.finalizing) return;
+    for (int i = 0; i < p.trackCount; i++) {
+      final s = p.trackStatus[i];
+      if (s == null || !_terminal.contains(s)) return;
+    }
+    p.finalizing = true; // synchronous guard against a burst of terminal updates
+    if (p.trackStatus.values.every((s) => s == TaskStatus.complete)) {
+      unawaited(_finalizeSuccess(itemId));
+    } else if (p.failing) {
+      unawaited(_failBook(itemId, taskException: p.failException, responseCode: p.failCode));
+    } else {
+      unawaited(_handleCanceled(itemId));
+    }
+  }
+
+  Future<void> _finalizeSuccess(String itemId) async {
+    final p = _pending[itemId];
+    if (p == null) return;
+
+    final localPaths = p.expectedPaths.where((path) => File(path).existsSync()).toList();
+    if (localPaths.length != p.trackCount) {
+      debugPrint('[Download] Finalize "$itemId": only ${localPaths.length}/${p.trackCount} '
+          'files present, treating as failure');
+      p.finalizing = false; // let _failBook proceed
+      await _failBook(itemId, cause: 'Missing files after download');
+      return;
+    }
+
+    if (Platform.isIOS) {
+      for (final path in localPaths) {
+        await _excludeFromBackup(path);
       }
     }
 
+    _downloads[itemId] = DownloadInfo(
+      itemId: itemId,
+      status: DownloadStatus.downloaded,
+      localPaths: localPaths,
+      sessionData: p.slimSessionJson,
+      title: p.title,
+      author: p.author,
+      coverUrl: p.coverUrl,
+      localCoverPath: p.localCoverPath,
+      localDirPath: p.bookDir,
+      libraryId: p.libraryId,
+    );
+    await _save();
     _activeDownloadIds.remove(itemId);
-    _downloadSlots.remove(itemId);
-    try { _httpClients[itemId]?.close(); } catch (_) {}
-    _httpClients.remove(itemId);
-    _cancelledIds.remove(itemId);
-
+    _pending.remove(itemId);
+    await _persistPending();
+    await _deleteDbRecords(itemId, p.trackCount);
     notifyListeners();
 
-    // Fill freed slot from queue
+    // Hot-swap if this book is currently streaming. switchToLocal reads the
+    // live position, so it's safe even when this fires from a background update.
+    try {
+      final player = AudioPlayerService();
+      if (player.currentItemId == itemId && player.hasBook) {
+        await player.switchToLocal(itemId);
+      }
+    } catch (_) {}
+
+    debugPrint('[Download] Complete: ${p.title} (${localPaths.length} files)');
     unawaited(_processQueue());
   }
 
+  Future<void> _failBook(
+    String itemId, {
+    Object? cause,
+    TaskException? taskException,
+    int? responseCode,
+    String? title,
+    String? author,
+    String? coverUrl,
+    Directory? bookDir,
+  }) async {
+    final p = _pending[itemId];
+    if (p != null) {
+      if (p.finalizing) return;
+      p.finalizing = true;
+    }
+    final t = title ?? p?.title ?? '';
+    final a = author ?? p?.author;
+    final c = coverUrl ?? p?.coverUrl;
+    final dir = bookDir ?? (p != null ? Directory(p.bookDir) : null);
+
+    if (p != null) await _cancelSiblings(itemId, p, force: true);
+    _cleanupBookDir(dir);
+
+    final msg = _mapError(cause, taskException, responseCode);
+    _downloads[itemId] = DownloadInfo(
+      itemId: itemId,
+      status: DownloadStatus.error,
+      title: t,
+      author: a,
+      coverUrl: c,
+    );
+    _activeDownloadIds.remove(itemId);
+    _pending.remove(itemId);
+    await _persistPending();
+    await _deleteDbRecords(itemId, p?.trackCount ?? 0);
+    _cancelledIds.remove(itemId);
+    debugPrint('[Download] Failed "$t": $msg (${cause ?? taskException?.description})');
+    notifyListeners();
+    unawaited(_processQueue());
+  }
+
+  Future<void> _handleCanceled(String itemId) async {
+    final p = _pending[itemId];
+    _cleanupBookDir(p != null ? Directory(p.bookDir) : null);
+    _downloads.remove(itemId);
+    _activeDownloadIds.remove(itemId);
+    _pending.remove(itemId);
+    await _persistPending();
+    await _deleteDbRecords(itemId, p?.trackCount ?? 0);
+    _cancelledIds.remove(itemId);
+    debugPrint('[Download] Cancelled: ${p?.title ?? itemId}');
+    notifyListeners();
+    unawaited(_processQueue());
+  }
+
+  Future<void> _cancelSiblings(String itemId, _PendingBook p, {bool force = false}) async {
+    final ids = <String>[];
+    for (int i = 0; i < p.trackCount; i++) {
+      final s = p.trackStatus[i];
+      if (force || s == null || !_terminal.contains(s)) ids.add(_taskId(itemId, i));
+    }
+    if (ids.isNotEmpty) {
+      try {
+        await FileDownloader().cancelTasksWithIds(ids);
+      } catch (_) {}
+    }
+  }
+
+  void _cleanupBookDir(Directory? dir) {
+    if (dir == null) return;
+    try {
+      if (dir.existsSync()) {
+        dir.deleteSync(recursive: true);
+        final parent = dir.parent;
+        if (parent.existsSync() && parent.listSync().isEmpty) parent.deleteSync();
+      }
+    } catch (_) {}
+  }
+
+  String _mapError(Object? cause, TaskException? te, int? code) {
+    final s = '${cause ?? ''} ${te?.description ?? ''}'.toLowerCase();
+    if (s.contains('no space') || s.contains('enospc')) return 'Not enough storage space';
+    if (s.contains('permission') || s.contains('not permitted') || code == 403) {
+      return 'Permission denied - check download location in Settings';
+    }
+    return 'Download failed';
+  }
+
+  Future<void> _deleteDbRecords(String itemId, int trackCount) async {
+    for (int i = 0; i < trackCount; i++) {
+      try {
+        await FileDownloader().database.deleteRecordWithId(_taskId(itemId, i));
+      } catch (_) {}
+    }
+  }
+
+  // ── Resume-after-kill persistence ──
+
+  Future<void> _persistPending() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_pending.isEmpty) {
+      await prefs.remove('pending_downloads');
+      return;
+    }
+    final map = {for (final e in _pending.entries) e.key: e.value.toJson()};
+    await prefs.setString('pending_downloads', jsonEncode(map));
+  }
+
+  Future<void> _loadPending() async {
+    final prefs = await SharedPreferences.getInstance();
+    final json = prefs.getString('pending_downloads');
+    if (json == null) return;
+    try {
+      final map = jsonDecode(json) as Map<String, dynamic>;
+      for (final e in map.entries) {
+        final p = _PendingBook.fromJson(e.value as Map<String, dynamic>);
+        _pending[e.key] = p;
+        _activeDownloadIds.add(e.key);
+        _downloads[e.key] = DownloadInfo(
+          itemId: e.key,
+          status: DownloadStatus.downloading,
+          progress: 0,
+          title: p.title,
+          author: p.author,
+          coverUrl: p.coverUrl,
+          libraryId: p.libraryId,
+        );
+      }
+    } catch (e) {
+      debugPrint('[Download] loadPending error: $e');
+    }
+  }
+
+  /// Rebuild in-flight progress from the package task DB after a relaunch, then
+  /// finalize books that finished while we were dead and drop ones whose tasks
+  /// are gone. Tasks still in flight keep running; their updates (plus
+  /// resumeFromBackground) drive them to terminal.
+  Future<void> _rehydratePending() async {
+    if (_pending.isEmpty) return;
+    List<TaskRecord> records;
+    try {
+      records = await FileDownloader().database.allRecords();
+    } catch (_) {
+      records = const [];
+    }
+
+    final tracked = <String, Set<int>>{};
+    for (final r in records) {
+      final meta = _decodeMeta(r.task.metaData);
+      if (meta == null) continue;
+      final p = _pending[meta.$1];
+      if (p == null) continue;
+      final i = meta.$2;
+      p.trackStatus[i] = r.status;
+      p.trackProgress[i] = r.status == TaskStatus.complete
+          ? 1.0
+          : (r.progress >= 0 && r.progress <= 1 ? r.progress : 0.0);
+      (tracked[meta.$1] ??= {}).add(i);
+    }
+
+    for (final itemId in _pending.keys.toList()) {
+      final p = _pending[itemId]!;
+      bool allComplete = p.trackCount > 0;
+      bool allTerminal = true;
+      for (int i = 0; i < p.trackCount; i++) {
+        final s = p.trackStatus[i];
+        if (s != TaskStatus.complete) allComplete = false;
+        if (s == null || !_terminal.contains(s)) allTerminal = false;
+      }
+
+      if (allComplete) {
+        p.finalizing = true;
+        await _finalizeSuccess(itemId);
+      } else if (allTerminal) {
+        p.finalizing = true;
+        await _failBook(itemId, cause: 'Interrupted download');
+      } else if ((tracked[itemId]?.isEmpty ?? true)) {
+        // The package has no record of these tasks (DB wiped) and we can't
+        // rebuild durable URLs here, so surface as failed for a manual retry.
+        p.finalizing = true;
+        await _failBook(itemId, cause: 'Interrupted download');
+      } else {
+        // Still in flight: leave it; updates + resumeFromBackground finish it.
+        _emitBookProgress(itemId, p);
+      }
+    }
+  }
+
   Future<void> deleteDownload(String itemId, {bool skipStopCheck = false}) async {
+    // If this is still downloading, cancel the in-flight transfer (which cleans
+    // up partial files and the background tasks) rather than deleting.
+    if (_pending.containsKey(itemId)) {
+      cancelDownload(itemId);
+      return;
+    }
+
     final info = _downloads[itemId];
     if (info == null) return;
 
@@ -1232,14 +1615,23 @@ class DownloadService extends ChangeNotifier {
   }
 
   void cancelDownload(String itemId) {
-    if (_activeDownloadIds.contains(itemId)) {
-      _cancelledIds.add(itemId);
-      _httpClients[itemId]?.close();
-      _httpClients.remove(itemId);
-      // Notification cleanup happens in _executeDownload's catch block
-    }
-    // Remove from queue if it was waiting
+    // Drop it from the waiting queue if it never started.
     _queue.removeWhere((q) => q.itemId == itemId);
+
+    // Flag so an in-flight _executeDownload bails before enqueueing, and so a
+    // book mid-resolution doesn't leak an active slot.
+    _cancelledIds.add(itemId);
+
+    final p = _pending[itemId];
+    if (p != null) {
+      p.cancelled = true;
+      // Cancel every task; the resulting `canceled` updates drive _handleCanceled
+      // which removes partial files, the pending record, and the DB rows.
+      final ids = [for (int i = 0; i < p.trackCount; i++) _taskId(itemId, i)];
+      unawaited(FileDownloader().cancelTasksWithIds(ids));
+    }
+
+    // Instant UI feedback; full cleanup happens on the canceled updates.
     _downloads.remove(itemId);
     notifyListeners();
   }

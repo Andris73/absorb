@@ -203,8 +203,24 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
               );
             },
           ),
+        ListTile(
+          leading: Icon(Icons.playlist_remove_rounded, color: cs.error, size: 22),
+          title: Text(l.upcomingReleasesRemoveFromList, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+          dense: true, visualDensity: VisualDensity.compact,
+          onTap: () {
+            Navigator.pop(context);
+            _removeBook(book['asin'] as String? ?? '');
+          },
+        ),
       ],
     );
+  }
+
+  Future<void> _removeBook(String asin) async {
+    final l = AppLocalizations.of(context)!;
+    await _service.removeBook(asin);
+    if (!mounted) return;
+    showOverlayToast(context, l.upcomingReleasesRemovedFromList, icon: Icons.playlist_remove_rounded);
   }
 
   Future<void> _rescanBook(String asin) async {

@@ -18,6 +18,7 @@ import '../services/sleep_timer_service.dart';
 import 'absorb_slider.dart';
 import 'absorbing_shared.dart';
 import 'book_detail_sheet.dart';
+import 'bookmark_detail_dialog.dart';
 import 'card_button_config.dart';
 import 'card_chapters_sheet.dart';
 import 'chromecast_button.dart';
@@ -159,25 +160,26 @@ class MoreMenuItem extends StatelessWidget {
 
   @override Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    // Grid pill: centered icon over a short label, fills its (fixed-height)
+    // grid cell. Matches the book menu's quick-actions pills. The loose
+    // Flexible lets a long label ellipsise inside the cell at big font scales.
     return Pressable(
       onTap: enabled ? onTap : () => showInactiveToast(context),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
         decoration: BoxDecoration(
-          color: cs.onSurface.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(14),
+          color: cs.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
         ),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: enabled ? accent.withValues(alpha: 0.7) : cs.onSurface.withValues(alpha: 0.24)),
-            const SizedBox(width: 14),
-            Expanded(child: Text(label, style: TextStyle(
-              color: enabled ? cs.onSurface.withValues(alpha: 0.8) : cs.onSurface.withValues(alpha: 0.24),
-              fontSize: 14, fontWeight: FontWeight.w500))),
-            Icon(Icons.chevron_right_rounded, size: 18, color: enabled ? cs.onSurface.withValues(alpha: 0.24) : cs.onSurface.withValues(alpha: 0.12)),
-          ],
-        ),
+        child: Column(mainAxisSize: MainAxisSize.max, mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, size: 22, color: enabled ? accent.withValues(alpha: 0.85) : cs.onSurface.withValues(alpha: 0.24)),
+          const SizedBox(height: 7),
+          Flexible(child: Text(label, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: enabled ? cs.onSurface.withValues(alpha: 0.85) : cs.onSurface.withValues(alpha: 0.24),
+              fontSize: 11, fontWeight: FontWeight.w500, height: 1.15))),
+        ]),
       ),
     );
   }
@@ -389,7 +391,7 @@ class CardDownloadButtonInline extends StatelessWidget {
       final auth = context.read<AuthProvider>();
       final api = auth.apiService;
       if (api == null) return;
-      final error = await dl.downloadItem(api: api, itemId: itemId, episodeId: episodeId, title: title, author: author, coverUrl: coverUrl, libraryId: context.read<LibraryProvider>().selectedLibraryId);
+      final error = await dl.downloadItem(api: api, itemId: _key, episodeId: episodeId, title: title, author: author, coverUrl: coverUrl, libraryId: context.read<LibraryProvider>().selectedLibraryId);
       if (error != null && context.mounted) {
         showOverlayToast(context, error, icon: Icons.error_outline_rounded);
       }
@@ -761,12 +763,20 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
   @override void initState() { super.initState(); _loadSort(); }
   Future<void> _loadSort() async {
     _sort = await PlayerSettings.getBookmarkSort();
-    // Sync first, then load
+    // Show the local bookmarks first so the sheet never hangs on a slow or
+    // unreachable server (it used to await the sync before loading anything,
+    // which spun forever if the server didn't respond). Then sync in the
+    // background and refresh with whatever it pulled in.
+    await _load();
     final api = AudioPlayerService().currentApi;
     if (api != null) {
-      await BookmarkService().syncBookmarks(widget.itemId, api);
+      try {
+        await BookmarkService()
+            .syncBookmarks(widget.itemId, api)
+            .timeout(const Duration(seconds: 12));
+      } catch (_) {}
+      await _load();
     }
-    _load();
   }
   Future<void> _load() async {
     final bm = await BookmarkService().getBookmarks(widget.itemId, sort: _sort);
@@ -840,19 +850,24 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
                       final hasNote = bm.note != null && bm.note!.isNotEmpty;
                       return InkWell(
                         onTap: () async {
-                          final confirmed = await showDialog<bool>(context: ctx, builder: (dlg) => AlertDialog(
-                            title: Text(l.bookmarksJumpTitle),
-                            content: Text(l.bookmarksJumpShortContent(bm.title, bm.formattedPosition)),
-                            actions: [
-                              TextButton(onPressed: () => Navigator.pop(dlg, false), child: Text(l.cancel)),
-                              FilledButton(onPressed: () => Navigator.pop(dlg, true), child: Text(l.bookmarksJump)),
-                            ],
-                          ));
-                          if (confirmed != true || !ctx.mounted) return;
+                          final result = await showDialog<BookmarkDetailResult>(
+                            context: ctx,
+                            builder: (_) => BookmarkDetailDialog(
+                              itemId: widget.itemId,
+                              bookmark: bm,
+                              api: context.read<AuthProvider>().apiService,
+                            ),
+                          );
+                          if (!ctx.mounted) return;
+                          if (result == null || result.action != 'jump') {
+                            _load(); // reflect any saved title/note/time edits
+                            return;
+                          }
+                          final position = result.position;
                           final isActive = widget.player.currentItemId == widget.itemId;
                           Navigator.pop(ctx); // Close bookmark sheet first
                           if (isActive || _isCasting) {
-                            final seekDur = Duration(seconds: bm.positionSeconds.round());
+                            final seekDur = Duration(seconds: position.round());
                             if (_isCasting) {
                               ChromecastService().seekTo(seekDur);
                             } else {
@@ -860,7 +875,7 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
                               if (!widget.player.isPlaying) widget.player.play();
                             }
                           } else {
-                            await _startPlaybackAt(bm.positionSeconds);
+                            await _startPlaybackAt(position);
                           }
                         },
                         onLongPress: () => _editBookmark(bm),
@@ -1093,10 +1108,20 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
                 ],
               ),
               const SizedBox(height: 12),
-              for (int i = 0; i < widget.overflowIds.length; i++) ...[
-                widget.buildItem(widget.overflowIds[i]),
-                if (i < widget.overflowIds.length - 1) const SizedBox(height: 6),
-              ],
+              // Overflow actions as a responsive pill grid (matches the book
+              // menu): 3 across normally, 2 on a narrow screen or large font
+              // scale, with cell height that tracks the text scale.
+              LayoutBuilder(builder: (ctx, constraints) {
+                const gap = 10.0;
+                final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+                final cols = (constraints.maxWidth < 340 || textScale >= 1.3) ? 2 : 3;
+                final cellW = (constraints.maxWidth - gap * (cols - 1)) / cols;
+                final cellH = (cols == 2 ? 72.0 : 80.0) * textScale.clamp(1.0, 1.7) + 8;
+                return Wrap(spacing: gap, runSpacing: gap, children: [
+                  for (final id in widget.overflowIds)
+                    SizedBox(width: cellW, height: cellH, child: widget.buildItem(id)),
+                ]);
+              }),
               const SizedBox(height: 8),
             ],
           ),
@@ -1744,7 +1769,7 @@ class CardActionDelegate {
                   final auth = context.read<AuthProvider>();
                   final api = auth.apiService;
                   if (api == null) return;
-                  dl.downloadItem(api: api, itemId: itemId, episodeId: episodeId, title: title, author: author, coverUrl: coverUrl, libraryId: context.read<LibraryProvider>().selectedLibraryId).then((error) {
+                  dl.downloadItem(api: api, itemId: dlKey, episodeId: episodeId, title: title, author: author, coverUrl: coverUrl, libraryId: context.read<LibraryProvider>().selectedLibraryId).then((error) {
                     if (error != null && context.mounted) {
                       showOverlayToast(context, error, icon: Icons.error_outline_rounded);
                     }

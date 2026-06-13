@@ -368,6 +368,21 @@ class ProgressSyncService {
     }
   }
 
+  /// Bank time saved by playback speed: [elapsedSeconds] of wall-clock
+  /// listening at [speed]. Exact even with constant speed changes because it
+  /// samples whatever speed is live each time listening accrues. Stored
+  /// per-account; shown on the stats page.
+  Future<void> addTimeSaved(int elapsedSeconds, double speed) async {
+    if (elapsedSeconds <= 0 || (speed - 1.0).abs() < 0.01) return;
+    final saved = elapsedSeconds * (speed - 1.0);
+    final current = await ScopedPrefs.getDouble('stats_time_saved') ?? 0.0;
+    await ScopedPrefs.setDouble('stats_time_saved', current + saved);
+    if (await ScopedPrefs.getInt('stats_time_saved_since') == null) {
+      await ScopedPrefs.setInt(
+          'stats_time_saved_since', DateTime.now().millisecondsSinceEpoch);
+    }
+  }
+
   /// Flush accumulated offline listening time to the server by creating
   /// a session, syncing the accumulated time, and closing it.
   /// Called externally (e.g. from library_provider) and also internally

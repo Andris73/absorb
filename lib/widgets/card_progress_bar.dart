@@ -46,6 +46,7 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
   // so the expanded card's book time row matches the small card's behavior
   // when speed-adjusted time is enabled.
   double _savedSpeed = 1.0;
+  double _progressTextScale = 1.0;
   bool _isPlaying = false;
   bool _isCastMode = false;
   StreamSubscription<Duration>? _posSub;
@@ -63,6 +64,7 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
   void _loadSettings() {
     PlayerSettings.getShowBookSlider().then((v) { if (mounted && v != _showBookSlider) setState(() => _showBookSlider = v); });
     PlayerSettings.getSpeedAdjustedTime().then((v) { if (mounted && v != _speedAdjustedTime) setState(() => _speedAdjustedTime = v); });
+    PlayerSettings.getProgressTextScale().then((v) { if (mounted && v != _progressTextScale) setState(() => _progressTextScale = v); });
     _loadSavedSpeed();
   }
 
@@ -332,19 +334,19 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
               Padding(padding: const EdgeInsets.only(top: 2, bottom: 6), child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(_fmt(_bookDragValue != null ? _bookDragValue! * totalDur : bookElapsed), style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? cs.onSurface.withValues(alpha: 0.7) : cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600, shadows: [Shadow(color: Theme.of(context).brightness == Brightness.dark ? Colors.black.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.5), blurRadius: 3)])),
+                  Text(_fmt(_bookDragValue != null ? _bookDragValue! * totalDur : bookElapsed), style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? cs.onSurface.withValues(alpha: 0.7) : cs.onSurfaceVariant, fontSize: 12 * _progressTextScale, fontWeight: FontWeight.w600, shadows: [Shadow(color: Theme.of(context).brightness == Brightness.dark ? Colors.black.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.5), blurRadius: 3)])),
                   if (_bookDragValue != null && _bookScrubSpeed < 1.0) Text(_scrubSpeedLabel(l, _bookScrubSpeed), style: tt.labelSmall?.copyWith(color: widget.accent, fontSize: 11, fontWeight: FontWeight.w500)),
-                  Text('-${_fmt(_bookDragValue != null ? (1.0 - _bookDragValue!) * totalDur : bookRemaining)}', style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? cs.onSurface.withValues(alpha: 0.7) : cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600, shadows: [Shadow(color: Theme.of(context).brightness == Brightness.dark ? Colors.black.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.5), blurRadius: 3)])),
+                  Text('-${_fmt(_bookDragValue != null ? (1.0 - _bookDragValue!) * totalDur : bookRemaining)}', style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? cs.onSurface.withValues(alpha: 0.7) : cs.onSurfaceVariant, fontSize: 12 * _progressTextScale, fontWeight: FontWeight.w600, shadows: [Shadow(color: Theme.of(context).brightness == Brightness.dark ? Colors.black.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.5), blurRadius: 3)])),
                 ],
               )),
             ] else ...[
               Row(children: [
-                Text(_fmt(_bookDragValue != null ? _bookDragValue! * totalDur : bookElapsed), style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? cs.onSurface.withValues(alpha: 0.6) : cs.onSurface.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w500, shadows: [Shadow(color: Theme.of(context).brightness == Brightness.dark ? Colors.black.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.5), blurRadius: 3)])),
+                Text(_fmt(_bookDragValue != null ? _bookDragValue! * totalDur : bookElapsed), style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? cs.onSurface.withValues(alpha: 0.6) : cs.onSurface.withValues(alpha: 0.5), fontSize: 11 * _progressTextScale, fontWeight: FontWeight.w500, shadows: [Shadow(color: Theme.of(context).brightness == Brightness.dark ? Colors.black.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.5), blurRadius: 3)])),
                 const SizedBox(width: 8),
                 Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(value: bookProgress, minHeight: 3, backgroundColor: cs.onSurface.withValues(alpha: 0.08), valueColor: AlwaysStoppedAnimation(widget.accent.withValues(alpha: 0.5))))),
                 const SizedBox(width: 8),
-                Text('-${_fmt(_bookDragValue != null ? (1.0 - _bookDragValue!) * totalDur : bookRemaining)}', style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? cs.onSurface.withValues(alpha: 0.6) : cs.onSurface.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w500, shadows: [Shadow(color: Theme.of(context).brightness == Brightness.dark ? Colors.black.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.5), blurRadius: 3)])),
+                Text('-${_fmt(_bookDragValue != null ? (1.0 - _bookDragValue!) * totalDur : bookRemaining)}', style: tt.labelSmall?.copyWith(color: _bookDragValue != null ? cs.onSurface.withValues(alpha: 0.6) : cs.onSurface.withValues(alpha: 0.5), fontSize: 11 * _progressTextScale, fontWeight: FontWeight.w500, shadows: [Shadow(color: Theme.of(context).brightness == Brightness.dark ? Colors.black.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.5), blurRadius: 3)])),
               ]),
               SizedBox(height: widget.compact ? 4 : 10),
             ],
@@ -407,14 +409,14 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
                 Text(_fmt(_chapterDragValue != null ? (_chapterDragValue! * chapterDur) / speedDiv : chapterElapsed),
                   style: tt.labelSmall?.copyWith(
                     color: _chapterDragValue != null ? widget.accent : cs.onSurface.withValues(alpha: 0.54),
-                    fontSize: 11, fontWeight: FontWeight.w600,
+                    fontSize: 11 * _progressTextScale, fontWeight: FontWeight.w600,
                     fontFeatures: const [FontFeature.tabularFigures()],
                     shadows: [Shadow(color: Theme.of(context).brightness == Brightness.dark ? Colors.black.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.5), blurRadius: 3)])),
                 if (_chapterDragValue != null && _chapterScrubSpeed < 1.0) Text(_scrubSpeedLabel(l, _chapterScrubSpeed), style: tt.labelSmall?.copyWith(color: widget.accent, fontSize: 11, fontWeight: FontWeight.w500)),
                 Text('-${_fmt(_chapterDragValue != null ? ((1.0 - _chapterDragValue!) * chapterDur) / speedDiv : chapterRemaining)}',
                   style: tt.labelSmall?.copyWith(
                     color: _chapterDragValue != null ? widget.accent : cs.onSurface.withValues(alpha: 0.5),
-                    fontSize: 11, fontWeight: FontWeight.w500,
+                    fontSize: 11 * _progressTextScale, fontWeight: FontWeight.w500,
                     fontFeatures: const [FontFeature.tabularFigures()],
                     shadows: [Shadow(color: Theme.of(context).brightness == Brightness.dark ? Colors.black.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.5), blurRadius: 3)])),
               ],

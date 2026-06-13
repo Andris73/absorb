@@ -1,11 +1,17 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
+import '../services/backup_service.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/absorb_wave_icon.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/duration_format.dart';
 
 class AdminUsersScreen extends StatefulWidget {
   final List<dynamic> users;
@@ -50,15 +56,23 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               IconButton(icon: Icon(Icons.close_rounded, color: cs.onSurfaceVariant), onPressed: () => Navigator.pop(context)),
             ]),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Expanded(
             child: RefreshIndicator(
               onRefresh: _reload,
-              child: ListView.builder(
-                padding: const EdgeInsets.only(bottom: 80),
-                itemCount: _users.length,
-                itemBuilder: (_, i) => _userTile(cs, tt, _users[i]),
-              ),
+              child: LayoutBuilder(builder: (ctx, constraints) {
+                const gap = 10.0;
+                final cellW = (constraints.maxWidth - 32 - gap * 2) / 3;
+                return SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 90),
+                  child: Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: _sortedUsers.map((u) => SizedBox(width: cellW, child: _userCell(cs, tt, u))).toList(),
+                  ),
+                );
+              }),
             ),
           ),
         ]),
@@ -66,61 +80,121 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     );
   }
 
-  Widget _userTile(ColorScheme cs, TextTheme tt, dynamic user) {
-    final l = AppLocalizations.of(context)!;
-    final username = user['username'] as String? ?? l.unknown;
+  bool _isOnline(Map<String, dynamic> user) {
     final userId = user['id'] as String? ?? '';
-    final type = user['type'] as String? ?? 'user';
-    final isActive = user['isActive'] as bool? ?? true;
-    final isLocked = user['isLocked'] as bool? ?? false;
-    final isOnline = _onlineUsers.any((o) {
+    final username = user['username'] as String? ?? '';
+    final socketOnline = _onlineUsers.any((o) {
       if (o is! Map) return false;
       final oId = o['id'] as String? ?? '';
       if (oId.isNotEmpty && oId == userId) return true;
       final oName = o['username'] as String? ?? '';
       return oName.isNotEmpty && oName == username;
     });
+    if (socketOnline) return true;
+    // The server only counts open socket connections, which mobile clients
+    // drop in the background even while listening. Mirror the detail page's
+    // 5-minute activity window so those users still show as online.
+    final lastSeen = user['lastSeen'] as num?;
+    return lastSeen != null &&
+        DateTime.now().millisecondsSinceEpoch - lastSeen < 300000;
+  }
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: GestureDetector(
-        onTap: () => _showUserDetail(user as Map<String, dynamic>),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(color: cs.surfaceContainerHigh, borderRadius: BorderRadius.circular(16)),
-          child: Row(children: [
-            if (isOnline) ...[
-              Container(width: 8, height: 8, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF4CAF50))),
-              const SizedBox(width: 10),
-            ],
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Flexible(child: Text(username, style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface), overflow: TextOverflow.ellipsis)),
-                const SizedBox(width: 6),
-                if (type == 'root') Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
-                  child: Text(l.adminUsersRootBadge, style: tt.labelSmall?.copyWith(color: Colors.amber, fontSize: 9, fontWeight: FontWeight.w600)))
-                else if (type == 'admin') Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
-                  child: Text(l.adminUsersAdminBadge, style: tt.labelSmall?.copyWith(color: cs.primary, fontSize: 9, fontWeight: FontWeight.w600))),
-                if (isLocked) ...[const SizedBox(width: 4), Icon(Icons.lock_rounded, size: 12, color: Colors.red.withValues(alpha: 0.6))],
-                if (!isActive) ...[const SizedBox(width: 4), Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                  decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
-                  child: Text(l.adminUsersDisabledBadge, style: tt.labelSmall?.copyWith(color: Colors.red.withValues(alpha: 0.7), fontSize: 9)))],
-              ]),
-              if (!isActive) ...[
-                const SizedBox(height: 2),
-                Text(l.disabled, style: tt.labelSmall?.copyWith(color: Colors.red.withValues(alpha: 0.5), fontSize: 10)),
-              ],
-            ])),
-            Icon(Icons.chevron_right_rounded, size: 18, color: cs.onSurface.withValues(alpha: 0.15)),
-          ]),
+  /// Online users first, then alphabetical so the green pills cluster at the top.
+  List<Map<String, dynamic>> get _sortedUsers {
+    final list = _users.whereType<Map<String, dynamic>>().toList();
+    list.sort((a, b) {
+      final ao = _isOnline(a), bo = _isOnline(b);
+      if (ao != bo) return ao ? -1 : 1;
+      final an = (a['username'] as String? ?? '').toLowerCase();
+      final bn = (b['username'] as String? ?? '').toLowerCase();
+      return an.compareTo(bn);
+    });
+    return list;
+  }
+
+  Widget _userCell(ColorScheme cs, TextTheme tt, Map<String, dynamic> user) {
+    final l = AppLocalizations.of(context)!;
+    final username = user['username'] as String? ?? l.unknown;
+    final type = user['type'] as String? ?? 'user';
+    final isActive = user['isActive'] as bool? ?? true;
+    final isLocked = user['isLocked'] as bool? ?? false;
+    final isOnline = _isOnline(user);
+    final lastSeen = user['lastSeen'] as num?;
+
+    const green = Color(0xFF4CAF50);
+    final dotColor = type == 'root'
+        ? Colors.amber
+        : type == 'admin'
+            ? cs.primary
+            : isOnline
+                ? green
+                : null;
+    final borderColor = isOnline ? green : cs.onSurface.withValues(alpha: 0.08);
+    final textColor = isActive ? cs.onSurface : cs.onSurface.withValues(alpha: 0.35);
+
+    final String subtext;
+    final Color subColor;
+    if (!isActive) {
+      subtext = l.disabled;
+      subColor = Colors.red.withValues(alpha: 0.5);
+    } else if (isOnline) {
+      subtext = l.adminUsersOnlineNow;
+      subColor = green.withValues(alpha: 0.85);
+    } else if (lastSeen != null) {
+      subtext = _timeAgo(DateTime.fromMillisecondsSinceEpoch(lastSeen.toInt()));
+      subColor = cs.onSurface.withValues(alpha: 0.32);
+    } else {
+      subtext = l.adminUsersNever;
+      subColor = cs.onSurface.withValues(alpha: 0.32);
+    }
+
+    return GestureDetector(
+      onTap: () => _showUserDetail(user),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+        decoration: BoxDecoration(
+          color: isOnline ? green.withValues(alpha: 0.08) : cs.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: borderColor, width: isOnline ? 1.5 : 1),
+          boxShadow: isOnline
+              ? [BoxShadow(color: green.withValues(alpha: 0.2), blurRadius: 10, spreadRadius: -2)]
+              : null,
         ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            if (dotColor != null) ...[
+              Container(width: 6, height: 6, decoration: BoxDecoration(shape: BoxShape.circle, color: dotColor)),
+              const SizedBox(width: 6),
+            ],
+            Flexible(child: Text(username, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: tt.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: textColor,
+                decoration: isActive ? null : TextDecoration.lineThrough,
+                decorationColor: cs.onSurface.withValues(alpha: 0.35),
+              ))),
+            if (isLocked) ...[
+              const SizedBox(width: 4),
+              Icon(Icons.lock_rounded, size: 11, color: Colors.red.withValues(alpha: 0.6)),
+            ],
+          ]),
+          const SizedBox(height: 3),
+          Text(subtext, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: tt.labelSmall?.copyWith(color: subColor, fontSize: 10)),
+        ]),
       ),
     );
+  }
+
+  String _timeAgo(DateTime dt) {
+    final l = AppLocalizations.of(context)!;
+    final d = DateTime.now().difference(dt);
+    if (d.inSeconds < 60) return l.justNow;
+    if (d.inMinutes < 60) return l.minutesAgo(d.inMinutes);
+    if (d.inHours < 24) return l.hoursAgo(d.inHours);
+    if (d.inDays < 30) return l.daysAgo(d.inDays);
+    return l.adminUsersMonthsAgo((d.inDays / 30).floor());
   }
 
   void _showUserDetail(Map<String, dynamic> user) {
@@ -307,6 +381,12 @@ class _UserDetailScreenState extends State<_UserDetailScreen> {
             padding: const EdgeInsets.fromLTRB(20, 12, 8, 0),
             child: Row(children: [
               Expanded(child: AbsorbPageHeader(title: _username, padding: EdgeInsets.zero)),
+              if (!_isRoot)
+                IconButton(
+                  icon: Icon(Icons.ios_share_rounded, color: cs.primary.withValues(alpha: 0.7), size: 20),
+                  tooltip: l.adminCreateSetupFile,
+                  onPressed: _exportSetupFile,
+                ),
               if (!_isRoot)
                 IconButton(
                   icon: Icon(Icons.edit_rounded, color: cs.primary.withValues(alpha: 0.7), size: 20),
@@ -578,7 +658,7 @@ class _UserDetailScreenState extends State<_UserDetailScreen> {
             ]),
             const SizedBox(height: 3),
             Row(children: [
-              Text('${_fmtDur(currentTime.toDouble())} / ${_fmtDur(duration.toDouble())}',
+              Text('${formatHm(currentTime.toDouble())} / ${formatHm(duration.toDouble())}',
                 style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.2), fontSize: 9)),
               if (lastUpdateStr.isNotEmpty) ...[
                 const Spacer(),
@@ -643,7 +723,7 @@ class _UserDetailScreenState extends State<_UserDetailScreen> {
           ])),
           const SizedBox(width: 8),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(_fmtDur(duration), style: tt.labelSmall?.copyWith(
+            Text(formatHm(duration), style: tt.labelSmall?.copyWith(
               color: cs.onSurface.withValues(alpha: 0.4), fontWeight: FontWeight.w600, fontSize: 11)),
             if (updatedAt != null)
               Text(_relativeDate(updatedAt), style: TextStyle(color: cs.onSurface.withValues(alpha: 0.18), fontSize: 9)),
@@ -702,6 +782,104 @@ class _UserDetailScreenState extends State<_UserDetailScreen> {
       }));
   }
 
+  /// Mint an API key for this user and write a one-account .absorb setup file.
+  /// The new user imports it from the login screen and is signed straight in.
+  /// The file carries a working credential, so it must be handed over privately.
+  Future<void> _exportSetupFile() async {
+    final auth = context.read<AuthProvider>();
+    final api = auth.apiService;
+    if (api == null) return;
+    final userId = widget.user['id'] as String? ?? '';
+    final username = widget.user['username'] as String? ?? '';
+    if (userId.isEmpty) return;
+
+    final l = AppLocalizations.of(context)!;
+    final urlCtrl = TextEditingController(text: auth.serverUrl ?? '');
+    final hasHeaders = auth.customHeaders.isNotEmpty;
+
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return AlertDialog(
+          title: Text(l.adminCreateSetupFile),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(l.adminSetupFileDescription(username),
+                style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
+            const SizedBox(height: 14),
+            TextField(
+              controller: urlCtrl,
+              autocorrect: false,
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(labelText: l.adminSetupFileServerUrl, isDense: true),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              hasHeaders ? l.adminSetupFileNoteWithHeaders : l.adminSetupFileNote,
+              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant.withValues(alpha: 0.8)),
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.adminSetupFileCreate)),
+          ],
+        );
+      },
+    );
+
+    if (proceed != true) return;
+    final serverUrl = urlCtrl.text.trim();
+    if (serverUrl.isEmpty) return;
+
+    final key = await api.createApiKey(name: 'Absorb setup: $username', userId: userId);
+    final token = key?['apiKey'] as String?;
+    if (token == null || token.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l.adminSetupFileKeyError)),
+        );
+      }
+      return;
+    }
+
+    try {
+      final payload = await BackupService.buildSetupFile(
+        serverUrl: serverUrl,
+        username: username,
+        token: token,
+        userId: userId,
+        customHeaders: auth.customHeaders,
+      );
+      final jsonStr = const JsonEncoder.withIndent('  ').convert(payload);
+      final safeName = username.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+      final bytes = Uint8List.fromList(utf8.encode(jsonStr));
+
+      final result = await FilePicker.platform.saveFile(
+        dialogTitle: l.adminSetupFileSaveTitle,
+        fileName: 'absorb_setup_$safeName.absorb',
+        type: FileType.any,
+        bytes: bytes,
+      );
+
+      if (result != null) {
+        if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+          await File(result).writeAsString(jsonStr);
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l.adminSetupFileSaved(username))),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l.adminSetupFileFailed(e.toString()))),
+        );
+      }
+    }
+  }
+
   String _timeAgo(DateTime dt) {
     final l = AppLocalizations.of(context)!;
     final d = DateTime.now().difference(dt);
@@ -712,12 +890,6 @@ class _UserDetailScreenState extends State<_UserDetailScreen> {
     return l.adminUsersMonthsAgo((d.inDays / 30).floor());
   }
 
-  String _fmtDur(double s) {
-    final h = (s / 3600).floor();
-    final m = ((s % 3600) / 60).floor();
-    if (h > 0) return '${h}h ${m}m';
-    return '${m}m';
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -741,6 +913,8 @@ class _UserEditorSheetState extends State<_UserEditorSheet> {
   final Set<String> _selectedLibraries = {};
   bool _saving = false;
   bool _deleting = false;
+  bool _unlinking = false;
+  late bool _hasOpenIDLink;
 
   bool get _isNew => widget.user == null;
 
@@ -761,6 +935,7 @@ class _UserEditorSheetState extends State<_UserEditorSheet> {
     _accessAllLibraries = p['accessAllLibraries'] as bool? ?? true;
     final accessible = (u?['librariesAccessible'] as List?)?.cast<String>() ?? [];
     _selectedLibraries.addAll(accessible);
+    _hasOpenIDLink = u?['hasOpenIDLink'] as bool? ?? false;
   }
 
   @override
@@ -834,6 +1009,20 @@ class _UserEditorSheetState extends State<_UserEditorSheet> {
                   ),
                 ));
               }),
+            ],
+            if (!_isNew && _hasOpenIDLink) ...[
+              const SizedBox(height: 20),
+              SizedBox(width: double.infinity, child: OutlinedButton.icon(
+                onPressed: _unlinking ? null : _unlinkOpenID,
+                icon: _unlinking
+                  ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: cs.error))
+                  : Icon(Icons.link_off_rounded, size: 18, color: cs.error),
+                label: Text(l.adminUsersUnlinkOpenId, style: TextStyle(color: cs.error, fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: BorderSide(color: cs.error.withValues(alpha: 0.4)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              )),
             ],
           ]))),
         Padding(padding: EdgeInsets.fromLTRB(20, 8, 20, MediaQuery.of(context).padding.bottom + 12),
@@ -928,6 +1117,27 @@ class _UserEditorSheetState extends State<_UserEditorSheet> {
     }
   }
 
+  Future<void> _unlinkOpenID() async {
+    final l = AppLocalizations.of(context)!;
+    final name = widget.user?['username'] as String? ?? l.adminUsersThisUser;
+    final yes = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: Text(l.adminUsersUnlinkOpenIdTitle),
+      content: Text(l.adminUsersUnlinkOpenIdContent(name)),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
+        TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.adminUsersUnlinkOpenId, style: TextStyle(color: Colors.red.shade300)))],
+    ));
+    if (yes != true) return;
+    final api = context.read<AuthProvider>().apiService; if (api == null) return;
+    setState(() => _unlinking = true);
+    final ok = await api.unlinkOpenID(widget.user!['id'] as String);
+    if (mounted) {
+      final l2 = AppLocalizations.of(context)!;
+      setState(() { _unlinking = false; if (ok) _hasOpenIDLink = false; });
+      if (ok) { widget.onSaved(); _snk(l2.adminUsersOpenIdUnlinked); }
+      else { _snk(l2.adminUsersFailedUnlinkOpenId); }
+    }
+  }
+
   void _snk(String s) => ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(
     SnackBar(content: Text(s), behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
 }
@@ -954,10 +1164,7 @@ class _AdminSessionDetailsSheet extends StatelessWidget {
   }
 
   String _fmtDuration(double seconds) {
-    final h = (seconds / 3600).floor();
-    final m = ((seconds % 3600) / 60).floor();
-    if (h > 0) return '${h}h ${m}m';
-    if (m > 0) return '${m}m';
+    if (seconds >= 60) return formatHm(seconds);
     if (seconds > 0) return '<1m';
     return '0m';
   }

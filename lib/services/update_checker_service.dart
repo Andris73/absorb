@@ -1,7 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class UpdateInfo {
@@ -22,16 +27,25 @@ class UpdateInfo {
   bool get hasUpdate => _compareVersions(latestVersion, currentVersion) > 0;
 }
 
-/// Compare semver strings. Returns positive if a > b, negative if a < b, 0 if equal.
+/// Compare versions like v1.9.1, v1.9.1-176, or 1.9.1+176: semver first, then
+/// the trailing build number. Returns positive if a > b, negative if a < b,
+/// 0 if equal. Builds only compare when both sides have one, so a clean final
+/// tag never out-ranks the beta build it was promoted from.
 int _compareVersions(String a, String b) {
-  final aParts = a.replaceAll(RegExp(r'^v'), '').split('.').map((s) => int.tryParse(s) ?? 0).toList();
-  final bParts = b.replaceAll(RegExp(r'^v'), '').split('.').map((s) => int.tryParse(s) ?? 0).toList();
+  final (aSem, aBuild) = _parseVersion(a);
+  final (bSem, bBuild) = _parseVersion(b);
   for (int i = 0; i < 3; i++) {
-    final av = i < aParts.length ? aParts[i] : 0;
-    final bv = i < bParts.length ? bParts[i] : 0;
-    if (av != bv) return av - bv;
+    if (aSem[i] != bSem[i]) return aSem[i] - bSem[i];
   }
+  if (aBuild != null && bBuild != null) return aBuild - bBuild;
   return 0;
+}
+
+(List<int>, int?) _parseVersion(String v) {
+  final sem = RegExp(r'(\d+)\.(\d+)\.(\d+)').firstMatch(v);
+  final parts = [for (var i = 1; i <= 3; i++) int.parse(sem?.group(i) ?? '0')];
+  final build = RegExp(r'[-+](\d+)$').firstMatch(v);
+  return (parts, build == null ? null : int.parse(build.group(1)!));
 }
 
 class UpdateCheckerService {
@@ -93,7 +107,7 @@ class UpdateCheckerService {
       }
 
       final packageInfo = await PackageInfo.fromPlatform();
-      final currentVersion = packageInfo.version;
+      final currentVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
 
       final info = UpdateInfo(
         latestVersion: tagName,
@@ -123,4 +137,110 @@ class UpdateCheckerService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_dismissedKey, version);
   }
+}
+
+enum ApkInstallStatus {
+  ok,
+  downloadFailed,
+  permissionDenied,
+  launchFailed,
+  cancelled,
+}
+
+class ApkInstallResult {
+  final ApkInstallStatus status;
+  final String? message;
+  const ApkInstallResult(this.status, [this.message]);
+}
+
+/// Downloads the APK in-app and hands it to the system installer.
+///
+/// Why: launching the URL in a browser leaves Chrome holding the APK in its
+/// SafeBrowsing "scanning" limbo - the download bar hits 100% and never
+/// finalises. Pulling the bytes ourselves and opening the file with
+/// open_filex bypasses the browser entirely.
+class ApkUpdater {
+  static http.Client? _activeClient;
+
+  static Future<ApkInstallResult> downloadAndInstall(
+    UpdateInfo info, {
+    required void Function(int received, int total) onProgress,
+  }) async {
+    if (!Platform.isAndroid) {
+      return const ApkInstallResult(ApkInstallStatus.launchFailed, 'Android only');
+    }
+
+    final perm = await Permission.requestInstallPackages.request();
+    if (!perm.isGranted) {
+      return const ApkInstallResult(ApkInstallStatus.permissionDenied);
+    }
+
+    final File file;
+    try {
+      file = await _download(info, onProgress);
+    } on _CancelledException {
+      return const ApkInstallResult(ApkInstallStatus.cancelled);
+    } catch (e) {
+      debugPrint('[ApkUpdater] Download failed: $e');
+      return ApkInstallResult(ApkInstallStatus.downloadFailed, e.toString());
+    }
+
+    final result = await OpenFilex.open(file.path, type: 'application/vnd.android.package-archive');
+    if (result.type != ResultType.done) {
+      debugPrint('[ApkUpdater] OpenFilex failed: ${result.type} ${result.message}');
+      return ApkInstallResult(ApkInstallStatus.launchFailed, result.message);
+    }
+    return const ApkInstallResult(ApkInstallStatus.ok);
+  }
+
+  /// Cancel an in-flight download started by [downloadAndInstall].
+  static void cancel() {
+    _activeClient?.close();
+    _activeClient = null;
+  }
+
+  static Future<File> _download(
+    UpdateInfo info,
+    void Function(int, int) onProgress,
+  ) async {
+    final dir = await getTemporaryDirectory();
+    final filename = Uri.parse(info.downloadUrl).pathSegments.last;
+    final file = File('${dir.path}/$filename');
+    if (await file.exists()) await file.delete();
+
+    final client = http.Client();
+    _activeClient = client;
+    try {
+      final request = http.Request('GET', Uri.parse(info.downloadUrl));
+      final response = await client.send(request);
+      if (response.statusCode != 200) {
+        throw HttpException('HTTP ${response.statusCode}');
+      }
+      final total = response.contentLength ?? 0;
+      var received = 0;
+      final sink = file.openWrite();
+      try {
+        await for (final chunk in response.stream) {
+          if (_activeClient != client) {
+            await sink.close();
+            throw const _CancelledException();
+          }
+          sink.add(chunk);
+          received += chunk.length;
+          onProgress(received, total);
+        }
+        await sink.flush();
+      } finally {
+        await sink.close();
+      }
+      return file;
+    } finally {
+      if (_activeClient == client) _activeClient = null;
+      client.close();
+    }
+  }
+}
+
+class _CancelledException implements Exception {
+  const _CancelledException();
 }

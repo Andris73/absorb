@@ -11,8 +11,10 @@ import '../services/session_cache.dart';
 import '../services/socket_service.dart';
 import '../services/user_account_service.dart';
 import '../services/home_widget_service.dart';
+import '../services/wear_auth_service.dart';
 import '../l10n/app_localizations.dart';
-import '../main.dart' show scaffoldMessengerKey, rootNavigatorKey;
+import '../main.dart' show rootNavigatorKey;
+import '../widgets/overlay_toast.dart';
 
 class AuthProvider extends ChangeNotifier {
   String? _accessToken;
@@ -25,6 +27,10 @@ class AuthProvider extends ChangeNotifier {
   Map<String, dynamic>? _userJson;
   Map<String, dynamic>? _serverSettings;
   String? _serverVersion;
+  // Ereader devices come on the login response (top-level, NOT inside user).
+  // /api/me doesn't include them, so cache to prefs so the list survives
+  // cold restarts until the next login.
+  List<Map<String, dynamic>> _ereaderDevices = const [];
   bool __serverReachable = true;
   bool get _serverReachable => __serverReachable;
   set _serverReachable(bool value) {
@@ -81,6 +87,81 @@ class AuthProvider extends ChangeNotifier {
     return perms?['update'] == true;
   }
 
+  /// True when the server will accept a destructive call from this user.
+  /// Root has `permissions.delete = true` by default; admins do NOT (they
+  /// need root to grant it explicitly), so most delete actions are
+  /// effectively root-only on a fresh install.
+  bool get canDelete {
+    final perms = _userJson?['permissions'] as Map<String, dynamic>?;
+    return perms?['delete'] == true;
+  }
+
+  /// E-reader devices the current user is allowed to send ebooks to.
+  /// Populated from the login response (top-level `ereaderDevices`, NOT
+  /// nested inside the user object) and persisted across restarts since
+  /// /api/me doesn't include them.
+  List<Map<String, dynamic>> get ereaderDevices => _ereaderDevices;
+
+  /// Replace the cached ereader devices list and persist it. Call this
+  /// after an admin edit so the book detail sheet sees fresh devices
+  /// without waiting for a re-login.
+  Future<void> setEreaderDevices(List<Map<String, dynamic>> devices) async {
+    _ereaderDevices = List<Map<String, dynamic>>.from(devices);
+    await _persistEreaderDevices();
+    notifyListeners();
+  }
+
+  Future<void> _persistEreaderDevices() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_ereaderDevices.isEmpty) {
+        await prefs.remove('ereader_devices');
+      } else {
+        await prefs.setString('ereader_devices', jsonEncode(_ereaderDevices));
+      }
+    } catch (e) {
+      debugPrint('[Auth] _persistEreaderDevices error: $e');
+    }
+  }
+
+  Future<void> _restoreEreaderDevices() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('ereader_devices');
+      if (raw == null || raw.isEmpty) return;
+      final list = jsonDecode(raw) as List<dynamic>;
+      _ereaderDevices = list.cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('[Auth] _restoreEreaderDevices error: $e');
+    }
+  }
+
+  /// Apply the same access filter ABS uses server-side. Used after an
+  /// admin updates the full device list to figure out what THIS user can
+  /// still see.
+  List<Map<String, dynamic>> filterDevicesForCurrentUser(
+      List<Map<String, dynamic>> all) {
+    final id = _userId;
+    final type = _userJson?['type'] as String? ?? 'user';
+    final isAdminLike = type == 'admin' || type == 'root';
+    return all.where((d) {
+      final opt = d['availabilityOption'] as String? ?? 'adminOrUp';
+      switch (opt) {
+        case 'adminOrUp':
+          return isAdminLike;
+        case 'userOrUp':
+          return isAdminLike || type == 'user';
+        case 'guestOrUp':
+          return true;
+        case 'specificUsers':
+          final users = (d['users'] as List<dynamic>?) ?? const [];
+          return id != null && users.contains(id);
+        default:
+          return false;
+      }
+    }).toList();
+  }
+
   ApiService? get apiService {
     final url = activeServerUrl;
     if (url != null && _accessToken != null) {
@@ -111,7 +192,27 @@ class AuthProvider extends ChangeNotifier {
     }
     // Push new token to socket
     SocketService().updateToken(_accessToken!);
+    // Keep the paired Wear OS app's cached token in sync.
+    _pushSessionToWear();
     notifyListeners();
+  }
+
+  /// Push the current session to the paired Wear OS app (if any). Safe
+  /// to call unconditionally — the service is a no-op on non-Android
+  /// platforms and when no watch is connected.
+  void _pushSessionToWear() {
+    final url = _serverUrl;
+    final token = _accessToken;
+    if (url == null || token == null) return;
+    WearAuthService.instance.publish(
+      serverUrl: url,
+      accessToken: token,
+      refreshToken: _refreshToken,
+      username: _username ?? '',
+      userId: _userId,
+      isLegacyToken: _isLegacyToken,
+      customHeaders: _customHeaders,
+    );
   }
 
   void _onAuthExpired() {
@@ -120,9 +221,7 @@ class AuthProvider extends ChangeNotifier {
     final ctx = rootNavigatorKey.currentContext;
     final l = ctx != null ? AppLocalizations.of(ctx) : null;
     final msg = l?.authSessionExpired ?? 'Session expired. Please log in again.';
-    scaffoldMessengerKey.currentState?.showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+    if (ctx != null) showOverlayToast(ctx, msg, icon: Icons.error_outline_rounded);
     logout();
   }
 
@@ -144,6 +243,9 @@ class AuthProvider extends ChangeNotifier {
       final savedRefreshToken = prefs.getString('refresh_token');
       final savedUsername = prefs.getString('username');
       final savedLibraryId = prefs.getString('default_library_id');
+      // Restore ereader devices alongside other session data. /api/me doesn't
+      // return them, so without this they'd stay empty until next login.
+      await _restoreEreaderDevices();
 
       debugPrint('[Auth] saved credentials: url=${savedUrl != null}, token=${savedToken != null}, refreshToken=${savedRefreshToken != null}');
 
@@ -211,14 +313,36 @@ class AuthProvider extends ChangeNotifier {
               onTokensRefreshed: _onTokensRefreshed,
               onAuthExpired: _onAuthExpired,
             );
-            final me = await api.getMe();
-            if (me != null) {
-              _userJson = me;
-              _userId = me['id'] as String?;
+            // Prefer /api/authorize over /api/me because it returns the
+            // full login payload (including ereaderDevices) — /api/me drops
+            // those extras. Fall back to /api/me if authorize fails (older
+            // server versions).
+            final auth = await api.authorize();
+            if (auth != null) {
+              final user = auth['user'] as Map<String, dynamic>?;
+              if (user != null) {
+                _userJson = user;
+                _userId = user['id'] as String?;
+              }
+              final devicesRaw = auth['ereaderDevices'] as List<dynamic>?;
+              if (devicesRaw != null) {
+                _ereaderDevices = devicesRaw.cast<Map<String, dynamic>>();
+                await _persistEreaderDevices();
+              }
+              final sSettings = auth['serverSettings'] as Map<String, dynamic>?;
+              if (sSettings != null) _serverSettings = sSettings;
+              final defaultLib = auth['userDefaultLibraryId'] as String?;
+              if (defaultLib != null) _defaultLibraryId = defaultLib;
             } else {
-              debugPrint('[Auth] /me returned null (token may be invalid)');
+              final me = await api.getMe();
+              if (me != null) {
+                _userJson = me;
+                _userId = me['id'] as String?;
+              } else {
+                debugPrint('[Auth] /me returned null (token may be invalid)');
+              }
             }
-            debugPrint('[Auth] /me done (${sw.elapsedMilliseconds}ms)');
+            debugPrint('[Auth] authorize/me done (${sw.elapsedMilliseconds}ms)');
           } catch (_) {}
           _fetchServerVersion(activeServerUrl!);
         }
@@ -230,6 +354,7 @@ class AuthProvider extends ChangeNotifier {
     }
 
     debugPrint('[Auth] tryRestoreSession done, isAuthenticated=$isAuthenticated (${sw.elapsedMilliseconds}ms)');
+    if (isAuthenticated) _pushSessionToWear();
     _isLoading = false;
     notifyListeners();
   }
@@ -302,6 +427,10 @@ class AuthProvider extends ChangeNotifier {
     _userJson = user;
     _serverSettings = result['serverSettings'] as Map<String, dynamic>?;
     _customHeaders = customHeaders;
+    // Ereader devices come at the top level of the login response.
+    final devicesRaw = result['ereaderDevices'] as List<dynamic>?;
+    _ereaderDevices = devicesRaw?.cast<Map<String, dynamic>>() ?? const [];
+    await _persistEreaderDevices();
 
     // Try to get version from login response first, fall back to /status
     final loginVersion = result['serverVersion'] as String?
@@ -348,6 +477,7 @@ class AuthProvider extends ChangeNotifier {
     await HomeWidgetService().clearStats();
     HomeWidgetService().refreshStats(force: true);
 
+    _pushSessionToWear();
     _isLoading = false;
     notifyListeners();
     return true;
@@ -434,6 +564,7 @@ class AuthProvider extends ChangeNotifier {
     await HomeWidgetService().clearStats();
     HomeWidgetService().refreshStats(force: true);
 
+    _pushSessionToWear();
     _isLoading = false;
     notifyListeners();
     return true;
@@ -447,6 +578,7 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> loginWithOidc({
     required String serverUrl,
     required Map<String, dynamic> result,
+    Map<String, String> customHeaders = const {},
     AppLocalizations? l,
   }) async {
     _errorMessage = null;
@@ -477,6 +609,10 @@ class AuthProvider extends ChangeNotifier {
     _userJson = user;
     _serverSettings = result['serverSettings'] as Map<String, dynamic>?;
     _serverReachable = true;
+    _customHeaders = customHeaders;
+    final devicesRaw = result['ereaderDevices'] as List<dynamic>?;
+    _ereaderDevices = devicesRaw?.cast<Map<String, dynamic>>() ?? const [];
+    await _persistEreaderDevices();
 
     // Try to get version from response first, fall back to /status
     final oidcVersion = result['serverVersion'] as String?
@@ -498,6 +634,11 @@ class AuthProvider extends ChangeNotifier {
       if (_defaultLibraryId != null) {
         await prefs.setString('default_library_id', _defaultLibraryId!);
       }
+      if (customHeaders.isNotEmpty) {
+        await prefs.setString('custom_headers', jsonEncode(customHeaders));
+      } else {
+        await prefs.remove('custom_headers');
+      }
     } catch (_) {}
 
     // Save to multi-account service
@@ -518,6 +659,7 @@ class AuthProvider extends ChangeNotifier {
     await HomeWidgetService().clearStats();
     HomeWidgetService().refreshStats(force: true);
 
+    _pushSessionToWear();
     _isLoading = false;
     notifyListeners();
     return true;
@@ -598,16 +740,9 @@ class AuthProvider extends ChangeNotifier {
 
   void _showServerToast(String message) {
     try {
-      scaffoldMessengerKey.currentState?.showSnackBar(SnackBar(
-        content: Row(children: [
-          const Icon(Icons.dns_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Text(message),
-        ]),
-        duration: const Duration(seconds: 3),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ));
+      final ctx = rootNavigatorKey.currentContext;
+      if (ctx == null) return;
+      showOverlayToast(ctx, message, icon: Icons.dns_rounded);
     } catch (_) {}
   }
 
@@ -668,6 +803,8 @@ class AuthProvider extends ChangeNotifier {
     _serverSettings = null;
     _serverVersion = null;
     _errorMessage = null;
+    _ereaderDevices = const [];
+    await _persistEreaderDevices();
 
     try {
       if (logoutServer != null && logoutUser != null) {
@@ -681,6 +818,9 @@ class AuthProvider extends ChangeNotifier {
       await prefs.remove('user_id');
       await prefs.remove('default_library_id');
     } catch (_) {}
+
+    // Sign the paired watch out too.
+    WearAuthService.instance.clear();
 
     notifyListeners();
   }
@@ -771,10 +911,24 @@ class AuthProvider extends ChangeNotifier {
         onTokensRefreshed: _onTokensRefreshed,
         onAuthExpired: _onAuthExpired,
       );
-      final me = await api.getMe();
-      if (me != null) {
-        _userJson = me;
-        _userId = me['id'] as String?;
+      final auth = await api.authorize();
+      if (auth != null) {
+        final user = auth['user'] as Map<String, dynamic>?;
+        if (user != null) {
+          _userJson = user;
+          _userId = user['id'] as String?;
+        }
+        final devicesRaw = auth['ereaderDevices'] as List<dynamic>?;
+        if (devicesRaw != null) {
+          _ereaderDevices = devicesRaw.cast<Map<String, dynamic>>();
+          await _persistEreaderDevices();
+        }
+      } else {
+        final me = await api.getMe();
+        if (me != null) {
+          _userJson = me;
+          _userId = me['id'] as String?;
+        }
       }
     } catch (_) {
       _serverReachable = false;
@@ -795,7 +949,46 @@ class AuthProvider extends ChangeNotifier {
       }
     }
     _fetchServerVersion(activeServerUrl!);
+    _pushSessionToWear();
     notifyListeners();
+    return true;
+  }
+
+  /// Change the server URL of a saved account in place (e.g. a dynamic-DNS
+  /// hostname changed) without re-adding it. The account's per-user data is
+  /// migrated to the new scope by [UserAccountService.updateAccountUrl]. If the
+  /// edited account is the live session, its URL is updated immediately so the
+  /// next API call (and the [apiService] getter) uses the new address.
+  /// Returns true if the account was found and updated.
+  Future<bool> editServerUrl(SavedAccount account, String newServerUrl) async {
+    // Normalize the same way login() does.
+    String url = newServerUrl.trim();
+    if (url.isEmpty) return false;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'http://$url';
+    }
+    if (url.endsWith('/')) {
+      url = url.substring(0, url.length - 1);
+    }
+    if (url == account.serverUrl) return true; // nothing to change
+
+    final ok = await UserAccountService()
+        .updateAccountUrl(account.serverUrl, account.username, url);
+    if (!ok) return false;
+
+    // If we just edited the currently active session, update it live.
+    final isActiveSession =
+        account.serverUrl == _serverUrl && account.username == _username;
+    if (isActiveSession) {
+      _serverUrl = url;
+      _serverReachable = true;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('server_url', url);
+      } catch (_) {}
+      _pushSessionToWear();
+      notifyListeners();
+    }
     return true;
   }
 

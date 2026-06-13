@@ -90,4 +90,9 @@ class Wording {
   String get tipsSheetQuickAddAbsorbingDesc => classic
       ? 'Swipe right on any book in a list sheet (series, author, search results) to instantly add it to your Now Playing queue.'
       : _l.tipsSheetQuickAddAbsorbingDesc;
+
+  // ── Queue mode info popup ──
+  String get queueModeInfoManualDesc => classic
+      ? 'Your Now Playing list acts as a playlist. When one finishes, the next non-finished item auto-plays. Add items with the "Add to Now Playing" button on a book or episode and reorder from the Now Playing screen.'
+      : _l.queueModeInfoManualDesc;
 }

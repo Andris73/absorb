@@ -413,8 +413,14 @@ class _EqualizerSheetContentState extends State<_EqualizerSheetContent> {
                     );
                   }).toList(),
                 ),
-                if (_vPreset == 'custom')
-                  Padding(
+                // Reserve the chip's space always, so it appearing when a band
+                // is first touched doesn't shift the sliders down under the finger.
+                Visibility(
+                  visible: _vPreset == 'custom',
+                  maintainSize: true,
+                  maintainAnimation: true,
+                  maintainState: true,
+                  child: Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: GestureDetector(
                       onTap: _vEnabled ? () => _applyPreset('flat') : null,
@@ -430,6 +436,7 @@ class _EqualizerSheetContentState extends State<_EqualizerSheetContent> {
                       ),
                     ),
                   ),
+                ),
                 const SizedBox(height: 20),
 
                 // ── EQ Bands ──
@@ -468,7 +475,7 @@ class _EqualizerSheetContentState extends State<_EqualizerSheetContent> {
                   label: l.bassBoost,
                   value: _vBass,
                   accent: accent,
-                  enabled: _vEnabled,
+                  enabled: true,
                   onChanged: (v) => _setBass(v),
                 ),
                 const SizedBox(height: 8),
@@ -480,7 +487,7 @@ class _EqualizerSheetContentState extends State<_EqualizerSheetContent> {
                     label: l.surround,
                     value: _vVirt,
                     accent: accent,
-                    enabled: _vEnabled,
+                    enabled: true,
                     onChanged: (v) => _setVirt(v),
                   ),
                   const SizedBox(height: 8),
@@ -492,7 +499,7 @@ class _EqualizerSheetContentState extends State<_EqualizerSheetContent> {
                   label: l.loudness,
                   value: _vLoud,
                   accent: accent,
-                  enabled: _vEnabled,
+                  enabled: true,
                   onChanged: (v) => _setLoud(v),
                 ),
                 const SizedBox(height: 8),
@@ -564,12 +571,10 @@ class _EqualizerSheetContentState extends State<_EqualizerSheetContent> {
                 // Reset button
                 Center(
                   child: TextButton.icon(
-                    onPressed: _vEnabled ? () => _resetAll() : null,
-                    icon: Icon(Icons.refresh_rounded, size: 18,
-                      color: _vEnabled ? cs.onSurfaceVariant : cs.onSurface.withValues(alpha: 0.12)),
+                    onPressed: () => _resetAll(),
+                    icon: Icon(Icons.refresh_rounded, size: 18, color: cs.onSurfaceVariant),
                     label: Text(l.resetAll, style: TextStyle(
-                      color: _vEnabled ? cs.onSurfaceVariant : cs.onSurface.withValues(alpha: 0.12),
-                      fontSize: 13)),
+                      color: cs.onSurfaceVariant, fontSize: 13)),
                   ),
                 ),
                 const SizedBox(height: 24),

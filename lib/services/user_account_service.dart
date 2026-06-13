@@ -156,6 +156,83 @@ class UserAccountService {
     }
   }
 
+  /// Change the server URL of a saved account (e.g. a dynamic-DNS hostname
+  /// changed) WITHOUT losing the account's per-user data. The scopeKey is
+  /// derived from the URL, so every scoped SharedPreferences key is migrated
+  /// from the old scope to the new one. Returns true if the account was found.
+  Future<bool> updateAccountUrl(
+      String oldServerUrl, String username, String newServerUrl) async {
+    final idx = _accounts.indexWhere(
+        (a) => a.serverUrl == oldServerUrl && a.username == username);
+    if (idx < 0) return false;
+
+    final old = _accounts[idx];
+    final updated = SavedAccount(
+      serverUrl: newServerUrl,
+      username: old.username,
+      token: old.token,
+      refreshToken: old.refreshToken,
+      userId: old.userId,
+      isLegacyToken: old.isLegacyToken,
+    );
+
+    final oldScope = old.scopeKey;
+    final newScope = updated.scopeKey;
+    await _migrateScopedData(oldScope, newScope);
+
+    _accounts[idx] = updated;
+    // If this was the active account, re-point the active scope so scoped
+    // reads/writes land on the migrated data.
+    if (_activeScopeKey == oldScope) {
+      _activeScopeKey = newScope;
+    }
+    await _persist();
+    debugPrint(
+        '[UserAccount] Updated server URL for $username: $oldServerUrl -> $newServerUrl');
+    return true;
+  }
+
+  /// Copy every `oldScope:*` SharedPreferences key to `newScope:*` (without
+  /// clobbering keys that already exist under the new scope), then remove the
+  /// old ones. No-op when the scope is unchanged.
+  Future<void> _migrateScopedData(String oldScope, String newScope) async {
+    if (oldScope.isEmpty || newScope.isEmpty || oldScope == newScope) return;
+    final prefs = await SharedPreferences.getInstance();
+    final oldPrefix = '$oldScope:';
+    final newPrefix = '$newScope:';
+    int moved = 0;
+    for (final key in prefs.getKeys().toList()) {
+      if (!key.startsWith(oldPrefix)) continue;
+      final newKey = '$newPrefix${key.substring(oldPrefix.length)}';
+      if (prefs.containsKey(newKey)) {
+        // Target already has data for this key; drop the stale old copy.
+        await prefs.remove(key);
+        continue;
+      }
+      final value = prefs.get(key);
+      bool copied = true;
+      if (value is String) {
+        await prefs.setString(newKey, value);
+      } else if (value is bool) {
+        await prefs.setBool(newKey, value);
+      } else if (value is int) {
+        await prefs.setInt(newKey, value);
+      } else if (value is double) {
+        await prefs.setDouble(newKey, value);
+      } else if (value is List<String>) {
+        await prefs.setStringList(newKey, value);
+      } else {
+        copied = false; // unknown type — leave the old key untouched
+      }
+      if (copied) {
+        await prefs.remove(key);
+        moved++;
+      }
+    }
+    debugPrint(
+        '[UserAccount] Migrated $moved scoped key(s): $oldScope -> $newScope');
+  }
+
   // ── Scoped key helpers ──────────────────────────────────
 
   /// Returns a SharedPreferences key scoped to the active user.

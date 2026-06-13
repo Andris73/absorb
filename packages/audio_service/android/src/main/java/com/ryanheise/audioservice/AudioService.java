@@ -509,16 +509,7 @@ public class AudioService extends MediaBrowserServiceCompat {
             notificationChanged = true;
         }
         this.controls = controls;
-        this.nativeActions.clear();
-        this.customActions.clear();
-        for (MediaControl control : controls) {
-            final PlaybackStateCompat.CustomAction customAction = createCustomAction(control);
-            if (customAction != null) {
-                customActions.add(customAction);
-            } else {
-                nativeActions.add(createAction(control.icon, control.label, control.actionCode));
-            }
-        }
+        rebuildActions();
         this.compactActionIndices = compactActionIndices;
         boolean wasPlaying = this.playing;
         AudioProcessingState oldProcessingState = this.processingState;
@@ -567,6 +558,22 @@ public class AudioService extends MediaBrowserServiceCompat {
             stop();
         } else if (processingState != AudioProcessingState.idle && notificationChanged) {
             updateNotification();
+        }
+    }
+
+    // Rebuilds the notification actions and PlaybackState custom actions from the
+    // current control list.
+    private void rebuildActions() {
+        this.nativeActions.clear();
+        this.customActions.clear();
+        if (controls == null) return;
+        for (MediaControl control : controls) {
+            final PlaybackStateCompat.CustomAction customAction = createCustomAction(control);
+            if (customAction != null) {
+                customActions.add(customAction);
+            } else {
+                nativeActions.add(createAction(control.icon, control.label, control.actionCode));
+            }
         }
     }
 

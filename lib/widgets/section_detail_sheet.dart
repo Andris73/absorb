@@ -141,15 +141,26 @@ class _SectionDetailSheetState extends State<SectionDetailSheet> {
         final itemId = item['id'] as String? ?? '';
         final media = item['media'] as Map<String, dynamic>? ?? {};
         final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-        final title = metadata['title'] as String? ?? l.unknown;
-        final author = metadata['authorName'] as String? ?? '';
+        // Episode entities (e.g. Newest Episodes) carry the show in metadata
+        // and the episode itself in recentEpisode.
+        final episode = item['recentEpisode'] as Map<String, dynamic>?;
+        final episodeId = episode?['id'] as String?;
+        final title = episode?['title'] as String? ??
+            metadata['title'] as String? ?? l.unknown;
+        final author = episode != null
+            ? (metadata['title'] as String? ?? '')
+            : (metadata['authorName'] as String? ?? '');
         final coverUrl = lib.getCoverUrl(itemId);
         final isExplicit = PlayerSettings.showExplicitBadge &&
             metadata['explicit'] == true;
-        final progress = lib.getProgress(itemId);
-        final isFinished =
-            lib.getProgressData(itemId)?['isFinished'] == true;
-        final isDownloaded = DownloadService().isDownloaded(itemId);
+        final progress = episodeId != null
+            ? lib.getEpisodeProgress(itemId, episodeId)
+            : lib.getProgress(itemId);
+        final isFinished = episodeId != null
+            ? (lib.getEpisodeProgressData(itemId, episodeId)?['isFinished'] == true)
+            : (lib.getProgressData(itemId)?['isFinished'] == true);
+        final isDownloaded = DownloadService()
+            .isDownloaded(episodeId != null ? '$itemId-$episodeId' : itemId);
         final isOnAbsorbing = lib.isOnAbsorbingList(itemId);
 
         final card = Padding(
@@ -259,15 +270,24 @@ class _SectionDetailSheetState extends State<SectionDetailSheet> {
         final itemId = item['id'] as String? ?? '';
         final media = item['media'] as Map<String, dynamic>? ?? {};
         final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-        final title = metadata['title'] as String? ?? l.unknown;
-        final author = metadata['authorName'] as String? ?? '';
+        final episode = item['recentEpisode'] as Map<String, dynamic>?;
+        final episodeId = episode?['id'] as String?;
+        final title = episode?['title'] as String? ??
+            metadata['title'] as String? ?? l.unknown;
+        final author = episode != null
+            ? (metadata['title'] as String? ?? '')
+            : (metadata['authorName'] as String? ?? '');
         final coverUrl = lib.getCoverUrl(itemId);
         final isExplicit = PlayerSettings.showExplicitBadge &&
             metadata['explicit'] == true;
-        final progress = lib.getProgress(itemId);
-        final isFinished =
-            lib.getProgressData(itemId)?['isFinished'] == true;
-        final isDownloaded = DownloadService().isDownloaded(itemId);
+        final progress = episodeId != null
+            ? lib.getEpisodeProgress(itemId, episodeId)
+            : lib.getProgress(itemId);
+        final isFinished = episodeId != null
+            ? (lib.getEpisodeProgressData(itemId, episodeId)?['isFinished'] == true)
+            : (lib.getProgressData(itemId)?['isFinished'] == true);
+        final isDownloaded = DownloadService()
+            .isDownloaded(episodeId != null ? '$itemId-$episodeId' : itemId);
 
         return GestureDetector(
           onTap: () => _openEntityDetail(context, item),

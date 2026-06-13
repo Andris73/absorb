@@ -8,13 +8,12 @@ import '../services/wording.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
+import 'books_sheet_shared.dart';
 import 'edit_author_sheet.dart';
 import 'library_grid_tiles.dart';
 import 'library_search_results.dart';
 import 'series_books_sheet.dart';
 import 'stackable_sheet.dart';
-
-enum _AuthorLayout { list, grid }
 
 /// Show a bottom sheet with author info and books.
 void showAuthorDetailSheet(BuildContext context, {
@@ -67,7 +66,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
   String? _asin;
   late String _displayName;
   bool _descExpanded = false;
-  _AuthorLayout _layout = _AuthorLayout.list;
+  bool _gridView = false;
   bool _groupBySeries = true;
 
   @override
@@ -82,7 +81,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
     final grid = await PlayerSettings.getSheetGridView();
     final collapse = await PlayerSettings.getSheetCollapseSeries();
     if (mounted) setState(() {
-      _layout = grid ? _AuthorLayout.grid : _AuthorLayout.list;
+      _gridView = grid;
       _groupBySeries = collapse;
     });
   }
@@ -113,17 +112,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
           // libraryItems from the author endpoint include full metadata with series info
           final rawItems = authorData['libraryItems'] as List<dynamic>? ?? [];
           _books = rawItems.whereType<Map<String, dynamic>>().toList();
-          // Register updatedAt for cover cache busting
-          final lib = context.read<LibraryProvider>();
-          for (final book in _books) {
-            final id = book['id'] as String?;
-            final bts = book['updatedAt'] as num?;
-            if (id != null && bts != null) lib.registerUpdatedAt(id, bts.toInt());
-            if (id != null) {
-              final coverPath = (book['media'] as Map<String, dynamic>?)?['coverPath'] as String?;
-              lib.registerHasCover(id, coverPath != null && coverPath.isNotEmpty);
-            }
-          }
+          registerBookCovers(context.read<LibraryProvider>(), _books);
         }
         _isLoading = false;
       });
@@ -138,7 +127,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
     final lib = context.read<LibraryProvider>();
     final auth = context.watch<AuthProvider>();
     final headers = lib.mediaHeaders;
-    final canEdit = auth.isRoot && !lib.isOffline;
+    final canEdit = auth.isAdmin && !lib.isOffline;
 
     if (_isLoading) {
       return Column(
@@ -162,23 +151,13 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
     ];
 
     if (_books.isEmpty) {
-      return ListView(
-        controller: widget.scrollController,
-        padding: EdgeInsets.fromLTRB(0, 0, 0, bottomPad),
-        children: [
-          ...headerWidgets,
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 48),
-              child: Text(l.noBooksFound,
-                  style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
-            ),
-          ),
-        ],
-      );
+      return sheetEmptyBooksList(context,
+          controller: widget.scrollController,
+          headerWidgets: headerWidgets,
+          bottomPad: bottomPad);
     }
 
-    if (_layout == _AuthorLayout.list) {
+    if (!_gridView) {
       return _buildListView(cs, tt, lib, sections, headerWidgets, bottomPad, l);
     }
     return _buildGridView(cs, tt, lib, sections, headerWidgets, bottomPad, l);
@@ -284,36 +263,19 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
   }
 
   Widget _buildViewModeBar(ColorScheme cs, AppLocalizations l) {
-    Widget layoutBtn(IconData icon, _AuthorLayout mode, String tooltip) {
-      final active = _layout == mode;
-      return IconButton(
-        icon: Icon(icon, size: 20, color: active ? cs.primary : cs.onSurfaceVariant),
-        tooltip: tooltip,
+    return sheetViewModeBar(
+      context,
+      gridView: _gridView,
+      onChanged: (grid) => setState(() => _gridView = grid),
+      leading: IconButton(
+        icon: Icon(Icons.collections_bookmark_rounded, size: 20,
+          color: _groupBySeries ? cs.primary : cs.onSurfaceVariant),
+        tooltip: l.authorBooksGroupBySeries,
         visualDensity: VisualDensity.compact,
         onPressed: () {
-          setState(() => _layout = mode);
-          PlayerSettings.setSheetGridView(mode == _AuthorLayout.grid);
+          setState(() => _groupBySeries = !_groupBySeries);
+          PlayerSettings.setSheetCollapseSeries(_groupBySeries);
         },
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-      child: Row(
-        children: [
-          IconButton(
-            icon: Icon(Icons.collections_bookmark_rounded, size: 20,
-              color: _groupBySeries ? cs.primary : cs.onSurfaceVariant),
-            tooltip: l.authorBooksGroupBySeries,
-            visualDensity: VisualDensity.compact,
-            onPressed: () {
-              setState(() => _groupBySeries = !_groupBySeries);
-              PlayerSettings.setSheetCollapseSeries(_groupBySeries);
-            },
-          ),
-          const Spacer(),
-          layoutBtn(Icons.view_list_rounded, _AuthorLayout.list, l.authorBooksList),
-          layoutBtn(Icons.apps_rounded, _AuthorLayout.grid, l.authorBooksGrid),
-        ],
       ),
     );
   }
@@ -372,10 +334,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
           SliverPadding(
             padding: EdgeInsets.fromLTRB(16, 0, 16, bottomPad),
             sliver: SliverGrid(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: (MediaQuery.of(context).size.width / 130).floor().clamp(3, 10),
-                mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 0.55,
-              ),
+              gridDelegate: sheetBookGridDelegate(context),
               delegate: SliverChildBuilderDelegate((_, i) {
                 final item = collapsed[i];
                 if (item is _BookSection) {
@@ -398,10 +357,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             sliver: SliverGrid(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: (MediaQuery.of(context).size.width / 130).floor().clamp(3, 10),
-                mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 0.55,
-              ),
+              gridDelegate: sheetBookGridDelegate(context),
               delegate: SliverChildBuilderDelegate(
                 (_, i) => GridBookTile(item: section.books[i], sequenceBadge: _sequenceFor(section.books[i], section.label)?.replaceFirst('#', '')),
                 childCount: section.books.length,
@@ -551,56 +507,35 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
   }
 
   Widget _buildHeader(ColorScheme cs, TextTheme tt, Map<String, String> headers, AppLocalizations l, {bool canEdit = false}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: cs.secondaryContainer,
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: _imageUrl != null
-                ? CachedNetworkImage(
-                    imageUrl: _imageUrl!,
-                    fit: BoxFit.cover,
-                    httpHeaders: headers,
-                    placeholder: (_, __) => _avatarPlaceholder(cs),
-                    errorWidget: (_, __, ___) => _avatarPlaceholder(cs),
-                  )
-                : _avatarPlaceholder(cs),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 4),
-                Text(_displayName,
-                    style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
-                if (_books.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      l.authorBooksBookCount(_books.length),
-                      style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          if (canEdit)
-            IconButton(
+    return sheetPersonHeader(
+      context,
+      avatar: Container(
+        width: 72,
+        height: 72,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: cs.secondaryContainer,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: _imageUrl != null
+            ? CachedNetworkImage(
+                imageUrl: _imageUrl!,
+                fit: BoxFit.cover,
+                httpHeaders: headers,
+                placeholder: (_, __) => _avatarPlaceholder(cs),
+                errorWidget: (_, __, ___) => _avatarPlaceholder(cs),
+              )
+            : _avatarPlaceholder(cs),
+      ),
+      title: _displayName,
+      subtitle: _books.isNotEmpty ? l.authorBooksBookCount(_books.length) : null,
+      trailing: canEdit
+          ? IconButton(
               icon: Icon(Icons.edit_rounded, size: 20, color: cs.onSurfaceVariant),
               tooltip: l.editAuthor,
               onPressed: _openEditAuthor,
-            ),
-        ],
-      ),
+            )
+          : null,
     );
   }
 

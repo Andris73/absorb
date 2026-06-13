@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
+import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import 'overlay_toast.dart';
 
@@ -17,9 +18,11 @@ class OfflineStatusIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lib = context.watch<LibraryProvider>();
+    final auth = context.watch<AuthProvider>();
     final l = AppLocalizations.of(context)!;
     final offline = lib.isOffline;
     final reconnecting = lib.isReconnecting;
+    final onLocal = !offline && auth.useLocalServer;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: reconnecting
@@ -51,7 +54,11 @@ class OfflineStatusIcon extends StatelessWidget {
               : Icon(
                   offline ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
                   size: 20,
-                  color: offline ? Colors.orange : Colors.green,
+                  color: offline
+                      ? Colors.orange
+                      : onLocal
+                          ? Colors.lightBlueAccent
+                          : Colors.green,
                 ),
         ),
       ),

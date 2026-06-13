@@ -8,7 +8,7 @@ import 'scoped_prefs.dart';
 import 'audio_player_service.dart';
 import 'chromecast_service.dart';
 
-enum SleepTimerMode { off, time, chapters }
+enum SleepTimerMode { off, time, chapters, episodes }
 
 /// Auto sleep timer settings — automatically start a sleep timer within a time window.
 class AutoSleepSettings {
@@ -152,6 +152,8 @@ class SleepTimerService extends ChangeNotifier {
       return '<1m';
     } else if (_mode == SleepTimerMode.chapters) {
       return '$_chaptersRemaining ch';
+    } else if (_mode == SleepTimerMode.episodes) {
+      return 'ep';
     }
     return '';
   }
@@ -328,6 +330,40 @@ class SleepTimerService extends ChangeNotifier {
     debugPrint('[SleepTimer] Added 1 chapter — now $_chaptersRemaining remaining');
   }
 
+  // ── Episode-based sleep (podcasts) ──
+
+  /// Stop at the end of the current podcast episode. Implemented as the
+  /// end-of-chapter analog: we pause a few seconds before the episode's natural
+  /// end so the player never "completes". That keeps every queue auto-advance
+  /// path (manual / auto_next / playlist, gapless or not) from firing, so it
+  /// works the same in any queue mode. Rewind-on-sleep masks the small gap.
+  void setEpisodeSleep() {
+    cancel();
+    _mode = SleepTimerMode.episodes;
+    _startEpisodeMonitor();
+    notifyListeners();
+    debugPrint('[SleepTimer] Set episode sleep (stop at end of current episode)');
+  }
+
+  // Pause this many seconds before the episode end. Wide enough that a 1 Hz
+  // position tick reliably lands in the window before any auto-advance triggers.
+  static const _episodeEndGuardSec = 2.5;
+
+  void _startEpisodeMonitor() {
+    _positionSub?.cancel();
+    // Targets local playback; while casting totalDuration is 0 so this no-ops.
+    _positionSub = _player.positionStream.listen((_) {
+      if (_mode != SleepTimerMode.episodes) return;
+      if (!_isPlaybackActive) return;
+      final totalSec = _player.totalDuration;
+      if (totalSec <= 0) return;
+      final posSec = _player.position.inMilliseconds / 1000.0;
+      if (posSec >= totalSec - _episodeEndGuardSec) {
+        _triggerSleep();
+      }
+    });
+  }
+
   // ── Common ──
 
   int _getCurrentChapterIndex() {
@@ -358,11 +394,9 @@ class SleepTimerService extends ChangeNotifier {
       // Restore volume so next playback starts at normal level
       _player.setVolume(_fadeStartVolume);
       // Auto-rewind so the user resumes from a few seconds back
-      final rewindSeconds = await PlayerSettings.getSleepRewindSeconds();
+      final rewindSeconds = await PlayerSettings.getEffectiveSleepRewindSeconds(_player.currentItemId);
       if (rewindSeconds > 0) {
-        final currentPos = _player.position;
-        final newPos = currentPos - Duration(seconds: rewindSeconds);
-        _player.seekTo(newPos < Duration.zero ? Duration.zero : newPos);
+        await _player.sleepTimerRewind(rewindSeconds);
         debugPrint('[SleepTimer] Rewound ${rewindSeconds}s');
       }
     }

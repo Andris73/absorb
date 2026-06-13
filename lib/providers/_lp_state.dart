@@ -15,6 +15,15 @@ mixin _StateMixin on ChangeNotifier {
   final Map<String, int> _itemUpdatedAt = {};
   final Set<String> _itemsWithoutCover = {};
 
+  /// Local nudges to podcast unfinished-episode badges after an episode is
+  /// finished/reset in-app, keyed by show id. Pending deltas get folded into
+  /// _unfinishedCountAdjustments against the server count on the next badge
+  /// read; an adjustment is dropped once the server reports a different base
+  /// count (fresh data caught up). Needed because show tiles can render from
+  /// caches the provider doesn't own (library screen pages).
+  final Map<String, int> _pendingUnfinishedDeltas = {};
+  final Map<String, (int, int)> _unfinishedCountAdjustments = {};
+
   Future<void>? _personalizedInFlight;
   Future<void>? _progressShelvesInFlight;
   DateTime? _lastPersonalizedFetchAt;
@@ -57,6 +66,9 @@ mixin _StateMixin on ChangeNotifier {
 
   Set<String> _rollingDownloadSeries = {};
   Set<String> _subscribedPodcasts = {};
+  // Book ids the user hid from the local "finished this year" stats list.
+  // Purely local; the server's finished date is left untouched.
+  Set<String> _yearHiddenIds = {};
 
   bool _manualOffline = false;
   bool _networkOffline = false;
@@ -158,6 +170,8 @@ mixin _StateMixin on ChangeNotifier {
       if (p['isFinished'] != true) continue;
       final ep = p['episodeId'];
       if (ep is String && ep.isNotEmpty) continue;
+      final id = p['libraryItemId'];
+      if (id is String && _yearHiddenIds.contains(id)) continue;
       final raw = p['finishedAt'];
       if (raw is! num) continue;
       final dt = DateTime.fromMillisecondsSinceEpoch(raw.toInt());
@@ -183,11 +197,15 @@ mixin _StateMixin on ChangeNotifier {
       if (dt.year != year) continue;
       final id = p['libraryItemId'] as String?;
       if (id == null) continue;
+      if (_yearHiddenIds.contains(id)) continue;
       entries.add(MapEntry(id, ts));
     }
     entries.sort((a, b) => b.value.compareTo(a.value));
     return entries.map((e) => e.key).toList();
   }
+
+  /// Book ids the user hid from the local "finished this year" list.
+  Set<String> get yearHiddenIds => _yearHiddenIds;
 
   int get finishedEpisodesThisYearCount {
     final year = DateTime.now().year;
@@ -319,6 +337,11 @@ mixin _StateMixin on ChangeNotifier {
     if (_itemsWithoutCover.contains(apiItemId)) return null;
 
     if (_api != null && !isOffline) {
+      // A local metadata override cover wins over the server cover so the
+      // chosen art shows everywhere (grid, absorbing card), not just the
+      // book sheet.
+      final overrideCover = MetadataOverrideService().coverUrlFor(itemId);
+      if (overrideCover != null && overrideCover.isNotEmpty) return overrideCover;
       final ts = _itemUpdatedAt[apiItemId];
       return _api!.getCoverUrl(apiItemId, width: width, updatedAt: ts);
     }

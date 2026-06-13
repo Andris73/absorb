@@ -1,8 +1,6 @@
 {
   "@@locale": "de",
-
   "appTitle": "A B S O R B",
-
   "online": "Online",
   "offline": "Offline",
   "stillOffline": "Immer noch offline. Tippe, um es erneut zu versuchen.",
@@ -29,7 +27,6 @@
   "untitled": "Ohne Titel",
   "noThanks": "Nein, danke",
   "stay": "Bleiben",
-
   "homeTitle": "Start",
   "continueListening": "Weiterhören",
   "continueSeries": "Serie fortsetzen",
@@ -43,7 +40,6 @@
   "downloadBooksWhileOnline": "Lade Bücher herunter, solange du online bist, um sie offline zu hören",
   "customizeHome": "Startseite anpassen",
   "dragToReorderTapEye": "Zum Umsortieren ziehen, Auge antippen zum Ein-/Ausblenden",
-
   "loginTagline": "Start Absorbing",
   "loginConnectToServer": "Verbinde dich mit deinem Server",
   "loginServerAddress": "Serveradresse",
@@ -74,17 +70,34 @@
   "loginInvalidBackupFile": "Ungültige Backup-Datei",
   "loginRestoreBackupTitle": "Backup wiederherstellen?",
   "loginRestoreBackupWithAccounts": "Damit werden alle Einstellungen und {count} gespeicherte Konten wiederhergestellt. Du wirst automatisch angemeldet.",
-  "@loginRestoreBackupWithAccounts": { "placeholders": { "count": { "type": "int" } } },
+  "@loginRestoreBackupWithAccounts": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "loginRestoreBackupNoAccounts": "Damit werden alle Einstellungen wiederhergestellt. Es waren keine Konten in diesem Backup enthalten.",
   "loginRestore": "Wiederherstellen",
   "loginRestoredAndSignedIn": "Einstellungen wiederhergestellt und als {username} angemeldet",
-  "@loginRestoredAndSignedIn": { "placeholders": { "username": { "type": "String" } } },
+  "@loginRestoredAndSignedIn": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
   "loginSessionExpired": "Einstellungen wiederhergestellt. Sitzung abgelaufen - melde dich an, um fortzufahren.",
   "loginSettingsRestored": "Einstellungen wiederhergestellt",
   "loginRestoreFailed": "Wiederherstellung fehlgeschlagen: {error}",
-  "@loginRestoreFailed": { "placeholders": { "error": { "type": "String" } } },
+  "@loginRestoreFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "loginSavedAccounts": "gespeicherte Konten",
-
   "libraryTitle": "Bibliothek",
   "librarySearchBooksHint": "Bücher, Serien, Autoren, Sprecher suchen...",
   "librarySearchShowsHint": "Sendungen und Episoden suchen...",
@@ -100,7 +113,13 @@
   "libraryNoSeriesFound": "Keine Serien gefunden",
   "libraryNoBooksWithEbooks": "Keine Bücher mit eBooks",
   "libraryNoBooksInGenre": "Keine Bücher in \"{genre}\"",
-  "@libraryNoBooksInGenre": { "placeholders": { "genre": { "type": "String" } } },
+  "@libraryNoBooksInGenre": {
+    "placeholders": {
+      "genre": {
+        "type": "String"
+      }
+    }
+  },
   "libraryClearFilter": "Filter zurücksetzen",
   "libraryNoAuthorsFound": "Keine Autoren gefunden",
   "libraryNoNarratorsFound": "Keine Sprecher gefunden",
@@ -110,15 +129,43 @@
   "librarySearchEpisodes": "Episoden",
   "librarySearchSeries": "Serien",
   "librarySearchAuthors": "Autoren",
+  "librarySearchTags": "Schlagwörter",
+  "librarySearchGenres": "Genres",
   "librarySeriesCount": "{count} Serien",
-  "@librarySeriesCount": { "placeholders": { "count": { "type": "int" } } },
+  "@librarySeriesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "libraryAuthorsCount": "{count} Autoren",
-  "@libraryAuthorsCount": { "placeholders": { "count": { "type": "int" } } },
+  "@libraryAuthorsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "libraryNarratorsCount": "{count} Sprecher",
-  "@libraryNarratorsCount": { "placeholders": { "count": { "type": "int" } } },
+  "@libraryNarratorsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "libraryBooksCount": "{loaded}/{total} Bücher",
-  "@libraryBooksCount": { "placeholders": { "loaded": { "type": "int" }, "total": { "type": "int" } } },
-
+  "@libraryBooksCount": {
+    "placeholders": {
+      "loaded": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "sort": "Sortieren",
   "filter": "Filter",
   "filterActive": "Filter ●",
@@ -137,11 +184,12 @@
   "downloaded": "Heruntergeladen",
   "hasEbook": "Mit eBook",
   "genre": "Genre",
+  "tag": "Schlagwort",
   "clearFilter": "Filter zurücksetzen",
   "noGenresFound": "Keine Genres gefunden",
+  "noTagsFound": "Keine Schlagwörter gefunden",
   "asc": "AUF",
   "desc": "AB",
-
   "absorbingTitle": "Absorbing",
   "absorbingStop": "Stopp",
   "absorbingManageQueue": "Warteschlange verwalten",
@@ -154,14 +202,12 @@
   "absorbingDownloadBooksToListen": "Bücher herunterladen, um offline zu hören",
   "absorbingStartEpisodeFromShows": "Starte eine Episode aus dem Sendungen-Tab",
   "absorbingStartBookFromLibrary": "Starte ein Buch aus dem Bibliothek-Tab",
-
   "carModeTitle": "Auto-Modus",
   "carModeNoBookLoaded": "Kein Buch geladen",
   "carModeBookLabel": "Buch",
   "carModeChapterLabel": "Kapitel",
   "carModeBookmarkDefault": "Lesezeichen",
   "carModeBookmarkAdded": "Lesezeichen hinzugefügt",
-
   "downloadsTitle": "Downloads",
   "downloadsCancelSelection": "Auswahl aufheben",
   "downloadsSelect": "Auswählen",
@@ -173,18 +219,47 @@
   "downloadsCancel": "Abbrechen",
   "downloadsDelete": "Löschen",
   "downloadsDeleteCount": "{count} Download(s) löschen?",
-  "@downloadsDeleteCount": { "placeholders": { "count": { "type": "int" } } },
+  "@downloadsDeleteCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "downloadsDeleteContent": "Heruntergeladene Dateien werden von diesem Gerät entfernt.",
   "downloadsDeletedCount": "{count} Download(s) gelöscht",
-  "@downloadsDeletedCount": { "placeholders": { "count": { "type": "int" } } },
+  "@downloadsDeletedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "downloadsRemoveTitle": "Download entfernen?",
   "downloadsRemoveContent": "\"{title}\" von diesem Gerät löschen?",
-  "@downloadsRemoveContent": { "placeholders": { "title": { "type": "String" } } },
+  "@downloadsRemoveContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "downloadsRemovedTitle": "\"{title}\" entfernt",
-  "@downloadsRemovedTitle": { "placeholders": { "title": { "type": "String" } } },
+  "@downloadsRemovedTitle": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "downloadsSelectedCount": "{count} ausgewählt",
-  "@downloadsSelectedCount": { "placeholders": { "count": { "type": "int" } } },
-
+  "@downloadsSelectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "bookmarksTitle": "Alle Lesezeichen",
   "bookmarksCancelSelection": "Auswahl aufheben",
   "bookmarksSortedByNewest": "Sortiert nach neuesten",
@@ -192,28 +267,69 @@
   "bookmarksSelect": "Auswählen",
   "bookmarksNoBookmarks": "Noch keine Lesezeichen",
   "bookmarksDeleteCount": "{count} Lesezeichen löschen?",
-  "@bookmarksDeleteCount": { "placeholders": { "count": { "type": "int" } } },
+  "@bookmarksDeleteCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "bookmarksDeleteContent": "Das kann nicht rückgängig gemacht werden.",
   "bookmarksDeletedCount": "{count} Lesezeichen gelöscht",
-  "@bookmarksDeletedCount": { "placeholders": { "count": { "type": "int" } } },
+  "@bookmarksDeletedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "bookmarksJumpTitle": "Zum Lesezeichen springen?",
   "bookmarksJumpContent": "\"{title}\" bei {position}\nin {bookTitle}",
-  "@bookmarksJumpContent": { "placeholders": { "title": { "type": "String" }, "position": { "type": "String" }, "bookTitle": { "type": "String" } } },
+  "@bookmarksJumpContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      },
+      "position": {
+        "type": "String"
+      },
+      "bookTitle": {
+        "type": "String"
+      }
+    }
+  },
   "bookmarksJump": "Springen",
   "bookmarksNotConnected": "Nicht mit dem Server verbunden",
   "bookmarksCouldNotLoad": "Buch konnte nicht geladen werden",
   "bookmarksSelectedCount": "{count} ausgewählt",
-  "@bookmarksSelectedCount": { "placeholders": { "count": { "type": "int" } } },
-
+  "@bookmarksSelectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statsTitle": "Deine Statistiken",
   "statsCouldNotLoad": "Statistiken konnten nicht geladen werden",
   "statsTotalListeningTime": "GESAMTE HÖRZEIT",
   "statsHoursUnit": "h",
   "statsMinutesUnit": "m",
   "statsDaysOfAudio": "Das sind {days} Tage Audio",
-  "@statsDaysOfAudio": { "placeholders": { "days": { "type": "String" } } },
+  "@statsDaysOfAudio": {
+    "placeholders": {
+      "days": {
+        "type": "String"
+      }
+    }
+  },
   "statsHoursOfAudio": "Das sind {hours} Stunden Audio",
-  "@statsHoursOfAudio": { "placeholders": { "hours": { "type": "String" } } },
+  "@statsHoursOfAudio": {
+    "placeholders": {
+      "hours": {
+        "type": "String"
+      }
+    }
+  },
   "statsToday": "Heute",
   "statsThisWeek": "Diese Woche",
   "statsThisMonth": "Diesen Monat",
@@ -230,7 +346,6 @@
   "statsLast7Days": "Letzte 7 Tage",
   "statsMostListened": "Meistgehört",
   "statsRecentSessions": "Letzte Sitzungen",
-
   "appShellHomeTab": "Start",
   "appShellLibraryTab": "Bibliothek",
   "appShellAbsorbingTab": "Absorbing",
@@ -239,7 +354,6 @@
   "appShellDiscoverTab": "Entdecken",
   "appShellShowsTab": "Sendungen",
   "appShellPressBackToExit": "Erneut zurück drücken zum Beenden",
-
   "settingsTitle": "Einstellungen",
   "sectionAppearance": "Darstellung",
   "languageLabel": "Sprache",
@@ -267,7 +381,6 @@
   "rectangleBookCovers": "Rechteckige Buchcover",
   "rectangleBookCoversOnSubtitle": "Cover werden im 2:3-Buchformat angezeigt",
   "rectangleBookCoversOffSubtitle": "Cover sind quadratisch",
-
   "sectionAbsorbingCards": "Absorbing-Karten",
   "fullScreenPlayer": "Vollbild-Player",
   "fullScreenPlayerOnSubtitle": "An - Bücher öffnen sich beim Abspielen im Vollbild",
@@ -297,18 +410,41 @@
   "queueModeInfoOffDesc": "Die Wiedergabe stoppt, wenn das aktuelle Buch oder die Episode endet.",
   "queueModeInfoManual": "Manuelle Warteschlange",
   "queueModeInfoManualDesc": "Deine Absorbing-Karten funktionieren wie eine Playlist. Wenn eine endet, läuft die nächste noch nicht beendete Karte automatisch weiter. Füge Inhalte über den Button \"Zu Absorbing hinzufügen\" bei einem Buch oder einer Episode hinzu und sortiere sie auf dem Absorbing-Bildschirm um.",
-  "queueModeInfoAutoAbsorb": "Auto Absorb",
-  "queueModeInfoAutoAbsorbDesc": "Absorbt automatisch das nächste Buch einer Serie oder die nächste Episode eines Podcasts.",
   "queueModeOff": "Aus",
   "queueModeManual": "Manuell",
   "queueModeAuto": "Auto",
+  "queueModePlaylist": "Wiedergabeliste",
+  "queuePlaylistNone": "Keine Wiedergabeliste ausgewählt",
+  "queuePlaylistActiveLabel": "Wiedergabeliste: {name}",
+  "@queuePlaylistActiveLabel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "exit": "Beenden",
+  "upNext": "Als Nächstes: {label}",
+  "@upNext": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "playlistAllFinished": "Alle abgeschlossen",
   "queueModeBooks": "Bücher",
   "queueModePodcasts": "Podcasts",
   "autoDownloadQueue": "Auto-Download-Warteschlange",
   "autoDownloadQueueOnSubtitle": "Die nächsten {count} Inhalte heruntergeladen halten",
-  "@autoDownloadQueueOnSubtitle": { "placeholders": { "count": { "type": "int" } } },
+  "@autoDownloadQueueOnSubtitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "autoDownloadQueueOffSubtitle": "Aus - nur manuelle Downloads",
-
   "sectionPlayback": "Wiedergabe",
   "defaultSpeed": "Standardgeschwindigkeit",
   "defaultSpeedSubtitle": "Neue Bücher starten mit dieser Geschwindigkeit - jedes Buch merkt sich seine eigene",
@@ -319,7 +455,16 @@
   "chapterProgressOffSubtitle": "Aus - Sperrbildschirm zeigt Fortschritt des gesamten Buchs",
   "autoRewindOnResume": "Auto-Zurückspulen beim Fortsetzen",
   "autoRewindOnSubtitle": "An - {min}s bis {max}s je nach Pausendauer",
-  "@autoRewindOnSubtitle": { "placeholders": { "min": { "type": "String" }, "max": { "type": "String" } } },
+  "@autoRewindOnSubtitle": {
+    "placeholders": {
+      "min": {
+        "type": "String"
+      },
+      "max": {
+        "type": "String"
+      }
+    }
+  },
   "autoRewindOffSubtitle": "Aus",
   "rewindRange": "Rückspulbereich",
   "rewindAfterPausedFor": "Zurückspulen nach Pause von",
@@ -327,15 +472,33 @@
   "rewindAlwaysLabel": "Immer",
   "rewindAlwaysDescription": "Spult jedes Mal beim Fortsetzen zurück, auch nach kurzen Unterbrechungen",
   "rewindAfterDescription": "Spult nur zurück, wenn länger als {seconds} Sekunden pausiert wurde",
-  "@rewindAfterDescription": { "placeholders": { "seconds": { "type": "String" } } },
+  "@rewindAfterDescription": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
   "chapterBarrier": "Kapitelgrenze",
   "chapterBarrierSubtitle": "Nicht über den Anfang des aktuellen Kapitels hinaus zurückspulen",
   "rewindInstant": "Sofort",
   "rewindPause": "{duration} Pause",
-  "@rewindPause": { "placeholders": { "duration": { "type": "String" } } },
+  "@rewindPause": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
   "rewindNoRewind": "kein Rückspulen",
   "rewindSeconds": "{seconds}s zurückspulen",
-  "@rewindSeconds": { "placeholders": { "seconds": { "type": "String" } } },
+  "@rewindSeconds": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
   "sectionSleepTimer": "Sleep-Timer",
   "sleep": "Sleep",
   "sleepTimer": "Sleep-Timer",
@@ -345,7 +508,13 @@
   "shakeReset": "Zurücksetzen",
   "shakeAdds": "Schütteln fügt hinzu",
   "shakeAddsValue": "{minutes} Min.",
-  "@shakeAddsValue": { "placeholders": { "minutes": { "type": "int" } } },
+  "@shakeAddsValue": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "shakeSensitivity": "Schüttel-Empfindlichkeit",
   "shakeSensitivityVeryLow": "Sehr niedrig",
   "shakeSensitivityLow": "Niedrig",
@@ -360,7 +529,19 @@
   "fadeVolumeOffSubtitle": "Wiedergabe stoppt sofort, wenn der Timer endet",
   "autoSleepTimer": "Automatischer Sleep-Timer",
   "autoSleepTimerOnSubtitle": "{start} - {end} - {duration} Min.",
-  "@autoSleepTimerOnSubtitle": { "placeholders": { "start": { "type": "String" }, "end": { "type": "String" }, "duration": { "type": "int" } } },
+  "@autoSleepTimerOnSubtitle": {
+    "placeholders": {
+      "start": {
+        "type": "String"
+      },
+      "end": {
+        "type": "String"
+      },
+      "duration": {
+        "type": "int"
+      }
+    }
+  },
   "autoSleepTimerOffSubtitle": "Sleep-Timer in einem Zeitfenster automatisch starten",
   "windowStart": "Fensterbeginn",
   "windowEnd": "Fensterende",
@@ -368,14 +549,34 @@
   "timer": "Timer",
   "endOfChapter": "Kapitelende",
   "startMinTimer": "{minutes}-Min.-Timer starten",
-  "@startMinTimer": { "placeholders": { "minutes": { "type": "int" } } },
+  "@startMinTimer": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "sleepAfterChapters": "Sleep nach {count} {label}",
-  "@sleepAfterChapters": { "placeholders": { "count": { "type": "int" }, "label": { "type": "String" } } },
+  "@sleepAfterChapters": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "label": {
+        "type": "String"
+      }
+    }
+  },
   "addMoreTime": "Mehr Zeit hinzufügen",
   "cancelTimer": "Timer abbrechen",
   "chaptersLeftCount": "{count} Kap. übrig",
-  "@chaptersLeftCount": { "placeholders": { "count": { "type": "int" } } },
-
+  "@chaptersLeftCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "sectionDownloadsAndStorage": "Downloads & Speicher",
   "downloadOverWifiOnly": "Nur über WLAN herunterladen",
   "downloadOverWifiOnSubtitle": "An - mobile Daten für Downloads blockiert",
@@ -399,9 +600,24 @@
   "downloadLocation": "Download-Speicherort",
   "storageUsed": "Speicher belegt",
   "storageUsedByDownloads": "{size} von Downloads belegt",
-  "@storageUsedByDownloads": { "placeholders": { "size": { "type": "String" } } },
+  "@storageUsedByDownloads": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
   "storageFreeOfTotal": "{free} frei von {total}",
-  "@storageFreeOfTotal": { "placeholders": { "free": { "type": "String" }, "total": { "type": "String" } } },
+  "@storageFreeOfTotal": {
+    "placeholders": {
+      "free": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
   "manageDownloads": "Downloads verwalten",
   "streamingCache": "Streaming-Cache",
   "streamingCacheInfoTitle": "Streaming-Cache",
@@ -409,10 +625,15 @@
   "streamingCacheOff": "Aus",
   "streamingCacheOffSubtitle": "Aus - Audio wird ohne Caching gestreamt",
   "streamingCacheOnSubtitle": "{size} MB - kürzlich gestreamtes Audio wird auf der Festplatte gecached",
-  "@streamingCacheOnSubtitle": { "placeholders": { "size": { "type": "int" } } },
+  "@streamingCacheOnSubtitle": {
+    "placeholders": {
+      "size": {
+        "type": "int"
+      }
+    }
+  },
   "clearCache": "Cache leeren",
   "streamingCacheCleared": "Streaming-Cache geleert",
-
   "sectionLibrary": "Bibliothek",
   "hideEbookOnlyTitles": "Nur-eBook-Titel ausblenden",
   "hideEbookOnlyOnSubtitle": "Bücher ohne Audiodateien werden ausgeblendet",
@@ -420,7 +641,6 @@
   "showGoodreadsButton": "Goodreads-Button anzeigen",
   "showGoodreadsOnSubtitle": "Buchdetails zeigen einen Link zu Goodreads",
   "showGoodreadsOffSubtitle": "Aus - Goodreads-Button ausgeblendet",
-
   "sectionPermissions": "Berechtigungen",
   "notifications": "Benachrichtigungen",
   "notificationsSubtitle": "Für Download-Fortschritt und Wiedergabesteuerung",
@@ -428,7 +648,6 @@
   "unrestrictedBattery": "Uneingeschränkte Akkunutzung",
   "unrestrictedBatterySubtitle": "Verhindert, dass Android die Hintergrundwiedergabe beendet",
   "batteryAlreadyUnrestricted": "Akkunutzung ist bereits uneingeschränkt",
-
   "sectionIssuesAndSupport": "Probleme & Support",
   "bugsAndFeatureRequests": "Bugs & Feature-Wünsche",
   "bugsAndFeatureRequestsSubtitle": "Issue auf GitHub eröffnen",
@@ -444,10 +663,15 @@
   "sendLogs": "Logs senden",
   "sendLogsSubtitle": "Logdatei als Anhang teilen",
   "failedToShare": "Teilen fehlgeschlagen: {error}",
-  "@failedToShare": { "placeholders": { "error": { "type": "String" } } },
+  "@failedToShare": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "clearLogs": "Logs löschen",
   "logsCleared": "Logs gelöscht",
-
   "sectionAdvanced": "Erweitert",
   "localServer": "Lokaler Server",
   "localServerInfoTitle": "Lokaler Server",
@@ -471,13 +695,27 @@
   "trustAllCertificatesInfoContent": "Aktiviere dies, wenn dein Audiobookshelf-Server ein selbstsigniertes Zertifikat oder eine eigene Root-CA verwendet. Wenn aktiviert, überspringt Absorb die TLS-Zertifikatsprüfung für alle Verbindungen. Aktiviere dies nur, wenn du deinem Netzwerk vertraust.",
   "trustAllCertificatesOnSubtitle": "An - alle Zertifikate werden akzeptiert",
   "trustAllCertificatesOffSubtitle": "Aus - nur vertrauenswürdige Zertifikate akzeptiert",
-
   "supportTheDev": "Den Entwickler unterstützen",
   "buyMeACoffee": "Spendier mir einen Kaffee",
   "appVersionFormat": "Absorb v{version}",
-  "@appVersionFormat": { "placeholders": { "version": { "type": "String" } } },
+  "@appVersionFormat": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
   "appVersionWithServerFormat": "Absorb v{version}  -  Server {serverVersion}",
-  "@appVersionWithServerFormat": { "placeholders": { "version": { "type": "String" }, "serverVersion": { "type": "String" } } },
+  "@appVersionWithServerFormat": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      },
+      "serverVersion": {
+        "type": "String"
+      }
+    }
+  },
   "backupAndRestore": "Sichern & Wiederherstellen",
   "backupAndRestoreSubtitle": "Alle Einstellungen in einer Datei speichern oder wiederherstellen",
   "backUp": "Sichern",
@@ -487,7 +725,6 @@
   "switchAccount": "Konto wechseln",
   "addAccount": "Konto hinzufügen",
   "logOut": "Abmelden",
-
   "includeLoginInfoTitle": "Login-Daten einschließen?",
   "includeLoginInfoContent": "Möchtest du die Login-Daten aller deiner gespeicherten Konten in die Sicherung einschließen?\n\nDas erleichtert die Wiederherstellung auf einem neuen Gerät, aber die Datei enthält dann deine Auth-Tokens.",
   "noSettingsOnly": "Nein, nur Einstellungen",
@@ -495,32 +732,78 @@
   "backupSavedWithAccounts": "Sicherung gespeichert (mit Konten)",
   "backupSavedSettingsOnly": "Sicherung gespeichert (nur Einstellungen)",
   "backupFailed": "Sicherung fehlgeschlagen: {error}",
-  "@backupFailed": { "placeholders": { "error": { "type": "String" } } },
+  "@backupFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "restoreBackupTitle": "Sicherung wiederherstellen?",
   "restoreBackupContent": "Dadurch werden alle deine aktuellen Einstellungen durch die Werte aus der Sicherung ersetzt.",
   "fromAbsorbVersion": "Von Absorb v{version}",
-  "@fromAbsorbVersion": { "placeholders": { "version": { "type": "String" } } },
+  "@fromAbsorbVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
   "restoreAccountsChip": "{count} Konto/Konten",
-  "@restoreAccountsChip": { "placeholders": { "count": { "type": "int" } } },
+  "@restoreAccountsChip": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "restoreBookmarksChip": "Lesezeichen für {count} Buch/Bücher",
-  "@restoreBookmarksChip": { "placeholders": { "count": { "type": "int" } } },
+  "@restoreBookmarksChip": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "restoreCustomHeadersChip": "Benutzerdefinierte Header",
   "invalidBackupFile": "Ungültige Sicherungsdatei",
   "settingsRestoredSuccessfully": "Einstellungen erfolgreich wiederhergestellt",
   "restoreFailed": "Wiederherstellung fehlgeschlagen: {error}",
-  "@restoreFailed": { "placeholders": { "error": { "type": "String" } } },
-
+  "@restoreFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "logOutTitle": "Abmelden?",
   "logOutContent": "Du wirst abgemeldet. Deine Downloads bleiben auf diesem Gerät.",
   "signOut": "Abmelden",
   "removeAccountTitle": "Konto entfernen?",
   "removeAccountContent": "{username} auf {server} aus den gespeicherten Konten entfernen?\n\nDu kannst es jederzeit wieder hinzufügen, indem du dich erneut anmeldest.",
-  "@removeAccountContent": { "placeholders": { "username": { "type": "String" }, "server": { "type": "String" } } },
+  "@removeAccountContent": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      },
+      "server": {
+        "type": "String"
+      }
+    }
+  },
   "switchAccountTitle": "Konto wechseln?",
   "switchAccountContent": "Zu {username} auf {server} wechseln?\n\nDie aktuelle Wiedergabe wird gestoppt und die App lädt mit den Daten des anderen Kontos neu.",
-  "@switchAccountContent": { "placeholders": { "username": { "type": "String" }, "server": { "type": "String" } } },
+  "@switchAccountContent": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      },
+      "server": {
+        "type": "String"
+      }
+    }
+  },
   "switchButton": "Wechseln",
-
   "downloadLocationSheetTitle": "Download-Speicherort",
   "downloadLocationSheetSubtitle": "Wähle, wo Hörbücher gespeichert werden",
   "currentLocation": "Aktueller Speicherort",
@@ -532,13 +815,17 @@
   "storagePermissionRequired": "Speicherberechtigung ist für eigene Download-Speicherorte erforderlich",
   "cannotWriteToFolder": "Kann nicht in diesen Ordner schreiben - wähle einen anderen Speicherort oder gewähre in den Systemeinstellungen Dateizugriff",
   "downloadLocationSetTo": "Download-Speicherort gesetzt auf {label}",
-  "@downloadLocationSetTo": { "placeholders": { "label": { "type": "String" } } },
+  "@downloadLocationSetTo": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
   "resetToDefault": "Auf Standard zurücksetzen",
   "resetToDefaultStorage": "Auf Standardspeicher zurücksetzen",
-
   "tipsAndHiddenFeatures": "Tipps & versteckte Funktionen",
   "tipsSubtitle": "Hol das Beste aus Absorb heraus",
-
   "adminTitle": "Server-Admin",
   "adminServer": "Server",
   "adminVersion": "Version",
@@ -548,7 +835,16 @@
   "adminPurgeCache": "Cache leeren",
   "adminManage": "Verwalten",
   "adminUsersSubtitle": "{userCount} Konten - {onlineCount} online",
-  "@adminUsersSubtitle": { "placeholders": { "userCount": { "type": "int" }, "onlineCount": { "type": "int" } } },
+  "@adminUsersSubtitle": {
+    "placeholders": {
+      "userCount": {
+        "type": "int"
+      },
+      "onlineCount": {
+        "type": "int"
+      }
+    }
+  },
   "adminPodcasts": "Podcasts",
   "adminPodcastsSubtitle": "Sendungen suchen, hinzufügen & verwalten",
   "adminScan": "Scannen",
@@ -557,9 +853,21 @@
   "adminMatching": "Gleicht ab...",
   "adminMatchAllTitle": "Alle Elemente abgleichen?",
   "adminMatchAllContent": "Metadaten für alle Elemente in {name} abgleichen? Das kann eine Weile dauern.",
-  "@adminMatchAllContent": { "placeholders": { "name": { "type": "String" } } },
+  "@adminMatchAllContent": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "adminScanStarted": "Scan für {name} gestartet",
-  "@adminScanStarted": { "placeholders": { "name": { "type": "String" } } },
+  "@adminScanStarted": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "adminBackupCreated": "Sicherung erstellt",
   "adminBackupFailed": "Sicherung fehlgeschlagen",
   "adminCachePurged": "Cache geleert",
@@ -578,12 +886,59 @@
   "adminRmabAskAdmin": "Hol dir eine Login-URL von deinem Server-Admin",
   "adminRmabUrlHelpUser": "Hol dir eine Login-URL von deinem Server-Admin. Diese wird in RMAB > Admin > Users generiert.",
   "adminRmabSettingsInfo": "ReadMeABook ist ein selbst gehosteter Dienst zum Anfordern und Herunterladen von Hörbüchern. Es muss von deinem Server-Admin installiert und eingerichtet werden.",
-
+  "rmabConfigTokenLabel": "API-Token",
+  "rmabConfigConnect": "Verbinden",
+  "rmabConfigDisconnect": "Trennen",
+  "rmabConfigOpenWebView": "In der Browseransicht öffnen",
+  "rmabConfigConnectedAs": "Verbunden als {name}",
+  "@rmabConfigConnectedAs": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "rmabConfigErrorInvalidUrl": "Gültige http(s)-URL eingeben",
+  "rmabConfigErrorMissingToken": "API-Token eingeben",
+  "rmabConfigErrorUnauthorized": "Token vom Server abgelehnt",
+  "rmabConfigErrorGeneric": "Verbindung konnte nicht hergestellt werden",
+  "rmabSearchHint": "Nach Titel oder Autor suchen",
+  "rmabBookAlreadyAvailable": "Bereits in deiner Bibliothek",
+  "rmabBookAlreadyRequested": "Bereits angefordert",
+  "rmabRequestSubmitting": "Wird übermittelt…",
+  "rmabRequestSent": "Anfrage gesendet",
+  "rmabRequestErrorAlreadyAvailable": "Bereits in deiner Bibliothek",
+  "rmabRequestErrorBeingProcessed": "Wird bereits bearbeitet",
+  "rmabMyRequestsTab": "Meine Anfragen",
+  "rmabSetupTab": "Einrichtung",
+  "rmabMyRequestsRefresh": "Aktualisieren",
+  "rmabRequestDetailStatus": "Status",
+  "rmabRequestDetailProgress": "Fortschritt",
+  "rmabStatusActive": "Im Gang",
+  "rmabStatusWaiting": "Warten",
+  "rmabStatusAvailable": "Verfügbar",
+  "rmabStatusDownloaded": "Heruntergeladen",
+  "rmabStatusFailed": "Fehlgeschlagen",
+  "rmabStatusCancelled": "Abgebrochen",
+  "rmabStatusDenied": "Verweigert",
+  "rmabStatusUnknown": "Unbekannt",
   "narratedBy": "Gesprochen von {narrator}",
-  "@narratedBy": { "placeholders": { "narrator": { "type": "String" } } },
+  "@narratedBy": {
+    "placeholders": {
+      "narrator": {
+        "type": "String"
+      }
+    }
+  },
   "onAudible": "auf Audible",
   "percentComplete": "{percent}% abgeschlossen",
-  "@percentComplete": { "placeholders": { "percent": { "type": "String" } } },
+  "@percentComplete": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
   "absorbing": "Absorbing...",
   "absorbAgain": "Nochmal Absorb",
   "absorb": "Absorb",
@@ -604,18 +959,49 @@
   "clearLocalMetadata": "Lokale Metadaten löschen",
   "searchOnGoodreads": "Auf Goodreads suchen",
   "editServerDetails": "Server-Details bearbeiten",
+  "encodeTab": "Verschlüsseln",
+  "codec": "Codec",
+  "bitrate": "Bitrate",
+  "channels": "Kanäle",
+  "mono": "Mono",
+  "stereo": "Stereo",
+  "encodeStarted": "M4B Encodierung gestartet",
+  "currentlyLabel": "Momentan:",
   "aboutSection": "Info",
   "chaptersCount": "Kapitel ({count})",
-  "@chaptersCount": { "placeholders": { "count": { "type": "int" } } },
+  "@chaptersCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "chapters": "Kapitel",
   "failedToLoad": "Laden fehlgeschlagen",
   "startedDate": "Begonnen {date}",
-  "@startedDate": { "placeholders": { "date": { "type": "String" } } },
+  "@startedDate": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "finishedDate": "Beendet {date}",
-  "@finishedDate": { "placeholders": { "date": { "type": "String" } } },
+  "@finishedDate": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "andCountMore": "und {count} weitere",
-  "@andCountMore": { "placeholders": { "count": { "type": "int" } } },
-
+  "@andCountMore": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "markAsFullyAbsorbedQuestion": "Als vollständig Absorbed markieren?",
   "markAsFullyAbsorbedContent": "Dadurch wird dein Fortschritt auf 100% gesetzt und die Wiedergabe gestoppt, falls dieses Buch gerade läuft.",
   "markedAsFinishedNiceWork": "Als beendet markiert - gut gemacht!",
@@ -632,11 +1018,16 @@
   "localMetadataCleared": "Lokale Metadaten gelöscht",
   "saveEbook": "eBook speichern",
   "noEbookFileFound": "Keine eBook-Datei gefunden",
-
   "bookmark": "Lesezeichen",
   "bookmarks": "Lesezeichen",
   "bookmarksWithCount": "Lesezeichen ({count})",
-  "@bookmarksWithCount": { "placeholders": { "count": { "type": "int" } } },
+  "@bookmarksWithCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "playbackSpeed": "Wiedergabegeschwindigkeit",
   "noBookmarksYet": "Noch keine Lesezeichen",
   "longPressBookmarkHint": "Lange auf den Lesezeichen-Button drücken zum schnellen Speichern",
@@ -653,14 +1044,37 @@
   "tapEventToJump": "Tippe auf ein Ereignis, um zu dieser Position zu springen",
   "noHistoryYet": "Noch kein Verlauf",
   "jumpedToPosition": "Zu {position} gesprungen",
-  "@jumpedToPosition": { "placeholders": { "position": { "type": "String" } } },
-
+  "@jumpedToPosition": {
+    "placeholders": {
+      "position": {
+        "type": "String"
+      }
+    }
+  },
   "booksInSeriesCount": "{count} Bücher in dieser Serie",
-  "@booksInSeriesCount": { "placeholders": { "count": { "type": "int" } } },
+  "@booksInSeriesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "bookNumber": "Buch {number}",
-  "@bookNumber": { "placeholders": { "number": { "type": "String" } } },
+  "@bookNumber": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
   "downloadRemainingCount": "Restliche herunterladen ({count})",
-  "@downloadRemainingCount": { "placeholders": { "count": { "type": "int" } } },
+  "@downloadRemainingCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "downloadAll": "Alle herunterladen",
   "markAllNotFinished": "Alle als nicht beendet markieren",
   "markAllFinished": "Alle als beendet markieren",
@@ -671,7 +1085,6 @@
   "autoDownloadThisSeries": "Diese Serie automatisch herunterladen?",
   "autoDownloadSeriesContent": "Lädt die nächsten Bücher beim Hören automatisch herunter.",
   "standalone": "Eigenständig",
-
   "episodes": "Episoden",
   "noEpisodesFound": "Keine Episoden gefunden",
   "markFinished": "Als beendet markieren",
@@ -680,7 +1093,13 @@
   "aboutThisEpisode": "Über diese Episode",
   "reversePlayOrder": "Wiedergabereihenfolge umkehren",
   "selectedCount": "{count} ausgewählt",
-  "@selectedCount": { "placeholders": { "count": { "type": "int" } } },
+  "@selectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "selectAll": "Alle auswählen",
   "autoDownloadThisPodcast": "Diesen Podcast automatisch herunterladen?",
   "autoDownloadPodcastContent": "Lädt die nächsten Episoden beim Hören automatisch herunter.",
@@ -688,7 +1107,6 @@
   "deleteDownload": "Download löschen",
   "casting": "Cast läuft",
   "castingTo": "Cast an",
-
   "editDetails": "Details bearbeiten",
   "quickMatch": "Schnellabgleich",
   "custom": "Benutzerdefiniert",
@@ -707,8 +1125,8 @@
   "descriptionLabel": "Beschreibung",
   "publisherLabel": "Verlag",
   "yearLabel": "Jahr",
-  "languageLabel": "Sprache",
   "genresLabel": "Genres",
+  "tagsLabel": "Schlagwörter",
   "commaSeparated": "Komma-getrennt",
   "asinLabel": "ASIN",
   "isbnLabel": "ISBN",
@@ -718,7 +1136,6 @@
   "localMetadata": "Lokale Metadaten",
   "overrideLocalDisplay": "Lokale Anzeige überschreiben",
   "metadataSavedLocally": "Metadaten lokal gespeichert",
-
   "notes": "Notizen",
   "newNote": "Neue Notiz",
   "editNote": "Notiz bearbeiten",
@@ -732,7 +1149,6 @@
   "titleHint": "Titel",
   "noteBodyHint": "Schreibe deine Notiz... (unterstützt Markdown)",
   "nothingToPreview": "Nichts zur Vorschau",
-
   "audioEnhancements": "Audio-Verbesserungen",
   "presets": "VOREINSTELLUNGEN",
   "equalizer": "EQUALIZER",
@@ -743,7 +1159,6 @@
   "monoAudio": "Mono-Audio",
   "skipSilence": "Stille überspringen",
   "resetAll": "Alles zurücksetzen",
-
   "collectionNotFound": "Sammlung nicht gefunden",
   "deleteCollection": "Sammlung löschen",
   "deleteCollectionContent": "Möchtest du diese Sammlung wirklich löschen?",
@@ -753,20 +1168,23 @@
   "newPlaylist": "Neue Playlist",
   "playlistNameHint": "Name der Playlist",
   "addedToName": "Zu \"{name}\" hinzugefügt",
-  "@addedToName": { "placeholders": { "name": { "type": "String" } } },
+  "@addedToName": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "failedToAdd": "Hinzufügen fehlgeschlagen",
   "newCollection": "Neue Sammlung",
   "collectionNameHint": "Name der Sammlung",
-
   "castToDevice": "An Gerät casten",
   "searchingForCastDevices": "Suche nach Cast-Geräten...",
   "castDevice": "Cast-Gerät",
   "stopCasting": "Cast beenden",
   "disconnect": "Trennen",
-
   "audioOutput": "Audioausgabe",
   "noOutputDevicesFound": "Keine Ausgabegeräte gefunden",
-
   "welcomeToAbsorb": "Willkommen bei Absorb",
   "welcomeTagline": "Ein Audiobookshelf-Client.",
   "welcomeAbsorbingTitle": "Absorbing",
@@ -779,7 +1197,6 @@
   "welcomeMakeItYoursTitle": "Mach es zu deinem",
   "welcomeMakeItYoursBody": "Stöbere in den Einstellungen und passe Absorb deinem Geschmack an. Der Bereich Tipps & versteckte Funktionen lohnt sich auf jeden Fall.",
   "getStarted": "Los geht's",
-
   "showMore": "Mehr anzeigen",
   "showLess": "Weniger anzeigen",
   "readMore": "Weiterlesen",
@@ -796,19 +1213,34 @@
   "admin": "Admin",
   "serverAdmin": "Server-Admin",
   "serverAdminSubtitle": "Benutzer, Bibliotheken & Server-Einstellungen verwalten",
-
   "justNow": "Gerade eben",
   "minutesAgo": "vor {count} Min.",
-  "@minutesAgo": { "placeholders": { "count": { "type": "int" } } },
+  "@minutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "hoursAgo": "vor {count} Std.",
-  "@hoursAgo": { "placeholders": { "count": { "type": "int" } } },
+  "@hoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "daysAgo": "vor {count} T.",
-  "@daysAgo": { "placeholders": { "count": { "type": "int" } } },
-
+  "@daysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "audible": "Audible",
   "iTunes": "iTunes",
   "openLibrary": "Open Library",
-
   "root": "Root",
   "coverPlayPause": "Cover Play/Pause",
   "coverPlayPauseOnSubtitle": "An - tippe auf das Cover für Play/Pause",
@@ -829,38 +1261,128 @@
   "chapterBarrierOnRewindOnSubtitle": "An - Zurückspulen springt zum Kapitelanfang",
   "chapterBarrierOnRewindOffSubtitle": "Aus - Zurückspulen überschreitet Kapitelgrenzen",
   "autoRewindOnSubtitleFormat": "An - {min} Sek. bis {max} Sek. je nach Pausenlänge",
-  "@autoRewindOnSubtitleFormat": { "placeholders": { "min": { "type": "String" }, "max": { "type": "String" } } },
+  "@autoRewindOnSubtitleFormat": {
+    "placeholders": {
+      "min": {
+        "type": "String"
+      },
+      "max": {
+        "type": "String"
+      }
+    }
+  },
   "rewindOnSessionStart": "Zurückspulen bei Sitzungsstart",
   "rewindOnSessionStartInfoContent": "Das normale Auto-Zurückspulen wird ausgelöst, wenn du innerhalb einer aktiven Sitzung aus einer Pause fortsetzt. Diese Einstellung fügt ein Zurückspulen beim Start einer komplett neuen Sitzung hinzu - zum Beispiel nach dem Schließen der App, gestoppter Wiedergabe oder beim frischen Öffnen der App.\n\nWenn aktiviert, springt die Wiedergabe zu Beginn jeder neuen Sitzung um den vollen maximalen Zurückspul-Wert zurück, damit du noch einmal hörst, wo du aufgehört hast.",
   "rewindOnSessionStartOnSubtitle": "An - spult bei einer neuen Sitzung um {seconds} Sek. zurück",
-  "@rewindOnSessionStartOnSubtitle": { "placeholders": { "seconds": { "type": "String" } } },
+  "@rewindOnSessionStartOnSubtitle": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
   "rewindActivationDelayValue": "{seconds} Sek.+",
-  "@rewindActivationDelayValue": { "placeholders": { "seconds": { "type": "String" } } },
+  "@rewindActivationDelayValue": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
   "rewindRangeValue": "{min} Sek. - {max} Sek.",
-  "@rewindRangeValue": { "placeholders": { "min": { "type": "String" }, "max": { "type": "String" } } },
+  "@rewindRangeValue": {
+    "placeholders": {
+      "min": {
+        "type": "String"
+      },
+      "max": {
+        "type": "String"
+      }
+    }
+  },
   "rewindSecondsPause": "{seconds} Sek. Pause",
-  "@rewindSecondsPause": { "placeholders": { "seconds": { "type": "String" } } },
+  "@rewindSecondsPause": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
   "rewindMinPause": "{minutes} Min. Pause",
-  "@rewindMinPause": { "placeholders": { "minutes": { "type": "String" } } },
+  "@rewindMinPause": {
+    "placeholders": {
+      "minutes": {
+        "type": "String"
+      }
+    }
+  },
   "rewindHrPause": "{hours} Std. Pause",
-  "@rewindHrPause": { "placeholders": { "hours": { "type": "String" } } },
+  "@rewindHrPause": {
+    "placeholders": {
+      "hours": {
+        "type": "String"
+      }
+    }
+  },
   "rewindOneHrPause": "1 Std. Pause",
   "speedValue": "{speed}x",
-  "@speedValue": { "placeholders": { "speed": { "type": "String" } } },
+  "@speedValue": {
+    "placeholders": {
+      "speed": {
+        "type": "String"
+      }
+    }
+  },
   "secondsValue": "{seconds} Sek.",
-  "@secondsValue": { "placeholders": { "seconds": { "type": "String" } } },
+  "@secondsValue": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
   "minutesValue": "{minutes} Min.",
-  "@minutesValue": { "placeholders": { "minutes": { "type": "int" } } },
+  "@minutesValue": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "chimeBeforeSleep": "Glocke vor Sleep",
   "chimeBeforeSleepOnSubtitle": "Spielt eine sanfte Glocke, bevor der Timer endet",
   "chimeBeforeSleepOffSubtitle": "Keine Tonwarnung vor Sleep",
   "windDownDuration": "Ausklingdauer",
   "windDownDurationSubtitle": "Ausblenden und Glocke beginnen {seconds} Sek. vor Sleep",
-  "@windDownDurationSubtitle": { "placeholders": { "seconds": { "type": "int" } } },
+  "@windDownDurationSubtitle": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
   "fadeVolumeOnSubtitleDynamic": "Senkt die Lautstärke schrittweise über die letzten {seconds} Sek.",
-  "@fadeVolumeOnSubtitleDynamic": { "placeholders": { "seconds": { "type": "int" } } },
+  "@fadeVolumeOnSubtitleDynamic": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
   "autoSleepTimerEnabledSubtitle": "{start} - {end} · {duration}",
-  "@autoSleepTimerEnabledSubtitle": { "placeholders": { "start": { "type": "String" }, "end": { "type": "String" }, "duration": { "type": "String" } } },
+  "@autoSleepTimerEnabledSubtitle": {
+    "placeholders": {
+      "start": {
+        "type": "String"
+      },
+      "end": {
+        "type": "String"
+      },
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
   "endOfChapterShort": "Kapitelende",
   "endOfChapterOnSubtitle": "Am Ende des aktuellen Kapitels stoppen",
   "endOfChapterOffSubtitle": "Zeitgesteuerten Sleep-Timer verwenden",
@@ -880,28 +1402,151 @@
   "updateAvailable": "Update verfügbar",
   "preReleaseAvailable": "Pre-Release verfügbar",
   "updateDialogContent": "Eine neue {kind} von Absorb ist verfügbar: {latest}\n\nDu hast {current}.",
-  "@updateDialogContent": { "placeholders": { "kind": { "type": "String" }, "latest": { "type": "String" }, "current": { "type": "String" } } },
+  "@updateDialogContent": {
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      },
+      "latest": {
+        "type": "String"
+      },
+      "current": {
+        "type": "String"
+      }
+    }
+  },
   "updateKindPreRelease": "Pre-Release-Version",
   "updateKindVersion": "Version",
   "downloadButton": "Herunterladen",
+  "updateDownloading": "Update wird heruntergeladen...",
+  "updateOpeningInBrowser": "Das In-App-Update ist fehlgeschlagen, Browser wird geöffnet",
+  "sendToEreader": "An E-Reader senden",
+  "sendingToEreader": "Sende an {device}...",
+  "@sendingToEreader": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "sendToEreaderSuccess": "Gesendet an {device}",
+  "@sendToEreaderSuccess": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "sendToEreaderFailed": "Das E-Book konnte nicht gesendet werden",
+  "pickEreaderDevice": "Wähle ein Gerät",
+  "adminEmail": "E-Mail",
+  "adminEmailSubtitle": "SMTP und E-Reader-Geräte",
+  "smtpSection": "SMTP",
+  "smtpSetupGuide": "Einrichtungsanleitung",
+  "smtpHost": "Host",
+  "smtpPort": "Port",
+  "smtpSecure": "Sicher",
+  "smtpRejectUnauthorized": "Unzulässiges TLS ablehnen",
+  "smtpUser": "Benutzername",
+  "smtpPass": "Passwort",
+  "smtpFromAddress": "Absenderadresse",
+  "smtpTestAddress": "Testadresse",
+  "smtpSendTest": "Test senden",
+  "smtpSaveSettings": "Speichern",
+  "smtpSaved": "E-Mail-Einstellungen gespeichert",
+  "smtpSaveFailed": "Die E-Mail-Einstellungen konnten nicht gespeichert werden",
+  "smtpTestSent": "Test-E-Mail gesendet",
+  "smtpTestFailed": "Test-E-Mail fehlgeschlagen",
+  "ereaderDevicesTitle": "E-Reader-Geräte",
+  "ereaderDevicesEmpty": "Noch keine Geräte. Füge unten eines hinzu.",
+  "addEreaderDevice": "Gerät hinzufügen",
+  "editEreaderDevice": "Gerät bearbeiten",
+  "deleteEreaderDevice": "Löschen",
+  "ereaderDeviceName": "Name",
+  "ereaderDeviceEmail": "E-Mail",
+  "ereaderAvailability": "Wer kann dieses Gerät verwenden",
+  "ereaderAvailAdminOrUp": "Nur für Administratoren",
+  "ereaderAvailUserOrUp": "Alle Benutzer",
+  "ereaderAvailGuestOrUp": "Jeder",
+  "ereaderAvailSpecificUsers": "Bestimmte Benutzer",
+  "ereaderSpecificUsersN": "Bestimmte Benutzer ({count})",
+  "@ereaderSpecificUsersN": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ereaderDevicesSaved": "Geräte gespeichert",
+  "ereaderDevicesSaveFailed": "Geräte konnten nicht gespeichert werden",
   "libraryCountOne": "{count} Bibliothek",
-  "@libraryCountOne": { "placeholders": { "count": { "type": "int" } } },
+  "@libraryCountOne": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "libraryCountOther": "{count} Bibliotheken",
-  "@libraryCountOther": { "placeholders": { "count": { "type": "int" } } },
+  "@libraryCountOther": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "serverVersionLabel": "Server {version}",
-  "@serverVersionLabel": { "placeholders": { "version": { "type": "String" } } },
+  "@serverVersionLabel": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
   "appVersionServerSuffix": "  ·  Server {version}",
-  "@appVersionServerSuffix": { "placeholders": { "version": { "type": "String" } } },
+  "@appVersionServerSuffix": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
   "backupDateFormat": "{day}.{month}.{year}",
-  "@backupDateFormat": { "placeholders": { "month": { "type": "int" }, "day": { "type": "int" }, "year": { "type": "int" } } },
+  "@backupDateFormat": {
+    "placeholders": {
+      "month": {
+        "type": "int"
+      },
+      "day": {
+        "type": "int"
+      },
+      "year": {
+        "type": "int"
+      }
+    }
+  },
   "backupDetailsSeparator": " · ",
-
   "bookmarksSortedByPositionReversed": "Nach Position sortiert (umgekehrt)",
   "bookmarksJumpShortContent": "\"{title}\" bei {position}",
-  "@bookmarksJumpShortContent": { "placeholders": { "title": { "type": "String" }, "position": { "type": "String" } } },
+  "@bookmarksJumpShortContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      },
+      "position": {
+        "type": "String"
+      }
+    }
+  },
   "deleteBookmarkQuestion": "Lesezeichen löschen?",
   "bookmarkAtPosition": "Lesezeichen bei {position}",
-  "@bookmarkAtPosition": { "placeholders": { "position": { "type": "String" } } },
+  "@bookmarkAtPosition": {
+    "placeholders": {
+      "position": {
+        "type": "String"
+      }
+    }
+  },
   "cardIconsOnlyChip": "Nur Symbole",
   "cardMoreInGridChip": "\"Mehr\" im Raster",
   "cardLayoutHidden": "Ausgeblendet",
@@ -913,30 +1558,88 @@
   "equalizerLabel": "Equalizer",
   "cast": "Cast",
   "castingToDevice": "Cast an {device}",
-  "@castingToDevice": { "placeholders": { "device": { "type": "String" } } },
+  "@castingToDevice": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
   "castToDeviceNamed": "An {device} casten",
-  "@castToDeviceNamed": { "placeholders": { "device": { "type": "String" } } },
+  "@castToDeviceNamed": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
   "historyShort": "Verlauf",
   "atPosition": "bei {position}",
-  "@atPosition": { "placeholders": { "position": { "type": "String" } } },
-
+  "@atPosition": {
+    "placeholders": {
+      "position": {
+        "type": "String"
+      }
+    }
+  },
   "chaptersChip": "{count} Kapitel",
-  "@chaptersChip": { "placeholders": { "count": { "type": "int" } } },
+  "@chaptersChip": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "chapterNumber": "Kapitel {number}",
-  "@chapterNumber": { "placeholders": { "number": { "type": "int" } } },
+  "@chapterNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
   "kbpsValue": "{value} kbps",
-  "@kbpsValue": { "placeholders": { "value": { "type": "int" } } },
+  "@kbpsValue": {
+    "placeholders": {
+      "value": {
+        "type": "int"
+      }
+    }
+  },
   "resetMayNotHaveSynced": "Zurücksetzen wurde möglicherweise nicht synchronisiert - prüfe deinen Server",
   "failedToDownloadEbook": "E-Book konnte nicht heruntergeladen werden ({code})",
-  "@failedToDownloadEbook": { "placeholders": { "code": { "type": "int" } } },
+  "@failedToDownloadEbook": {
+    "placeholders": {
+      "code": {
+        "type": "int"
+      }
+    }
+  },
   "serverReturnedErrorPage": "Der Server hat eine Fehlerseite statt der E-Book-Datei zurückgegeben",
   "ebookSaved": "Gespeichert: {filename}",
-  "@ebookSaved": { "placeholders": { "filename": { "type": "String" } } },
+  "@ebookSaved": {
+    "placeholders": {
+      "filename": {
+        "type": "String"
+      }
+    }
+  },
   "errorSavingEbook": "Fehler beim Speichern des E-Books: {error}",
-  "@errorSavingEbook": { "placeholders": { "error": { "type": "String" } } },
+  "@errorSavingEbook": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "failedToSaveError": "Speichern fehlgeschlagen: {error}",
-  "@failedToSaveError": { "placeholders": { "error": { "type": "String" } } },
-
+  "@failedToSaveError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "adminBackupsLabel": "Backups",
   "adminListeningNow": "Hört gerade",
   "adminLibraries": "Bibliotheken",
@@ -947,19 +1650,36 @@
   "adminLibraryDuration": "Dauer",
   "adminMatchAction": "Abgleichen",
   "adminMatchingStarted": "Abgleich für {name} gestartet",
-  "@adminMatchingStarted": { "placeholders": { "name": { "type": "String" } } },
+  "@adminMatchingStarted": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "adminMatchFailed": "Fehlgeschlagen",
   "adminScanFailed": "Scan von {name} fehlgeschlagen",
-  "@adminScanFailed": { "placeholders": { "name": { "type": "String" } } },
+  "@adminScanFailed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "adminPurgeCacheFailed": "Fehlgeschlagen",
-
   "adminUsersRootBadge": "root",
   "adminUsersAdminBadge": "admin",
   "adminUsersDisabledBadge": "deaktiviert",
   "adminUsersEditUserTooltip": "Benutzer bearbeiten",
   "adminUsersOnlineNow": "Jetzt online",
   "adminUsersLastSeen": "Zuletzt gesehen {time}",
-  "@adminUsersLastSeen": { "placeholders": { "time": { "type": "String" } } },
+  "@adminUsersLastSeen": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "adminUsersNever": "Nie",
   "adminUsersTotal": "Gesamt",
   "adminUsersNoReadingActivity": "Keine Leseaktivität",
@@ -968,9 +1688,21 @@
   "adminUsersNoRecentSessions": "Keine aktuellen Sitzungen",
   "adminUsersLibraryProgress": "Bibliotheksfortschritt",
   "adminUsersLoadMoreRemaining": "Mehr laden ({count} übrig)",
-  "@adminUsersLoadMoreRemaining": { "placeholders": { "count": { "type": "int" } } },
+  "@adminUsersLoadMoreRemaining": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminUsersMonthsAgo": "vor {count} Mon.",
-  "@adminUsersMonthsAgo": { "placeholders": { "count": { "type": "int" } } },
+  "@adminUsersMonthsAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminUsersNewUser": "Neuer Benutzer",
   "adminUsersEditUser": "Benutzer bearbeiten",
   "adminUsersUsername": "Benutzername",
@@ -1008,12 +1740,30 @@
   "adminUsersThisUser": "diesen Benutzer",
   "adminUsersDeleteUserTitle": "Benutzer löschen?",
   "adminUsersDeleteUserContent": "{name} dauerhaft löschen?",
-  "@adminUsersDeleteUserContent": { "placeholders": { "name": { "type": "String" } } },
+  "@adminUsersDeleteUserContent": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "adminUsersUserDeleted": "{name} gelöscht",
-  "@adminUsersUserDeleted": { "placeholders": { "name": { "type": "String" } } },
+  "@adminUsersUserDeleted": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "adminUsersFailedDelete": "Benutzer konnte nicht gelöscht werden",
   "adminUsersByAuthor": "von {author}",
-  "@adminUsersByAuthor": { "placeholders": { "author": { "type": "String" } } },
+  "@adminUsersByAuthor": {
+    "placeholders": {
+      "author": {
+        "type": "String"
+      }
+    }
+  },
   "adminUsersListened": "Gehört",
   "adminUsersStartedAtPosition": "Gestartet bei Position",
   "adminUsersEndedAtPosition": "Beendet bei Position",
@@ -1028,7 +1778,6 @@
   "adminUsersPlayDirectStream": "Direkt-Stream",
   "adminUsersPlayTranscode": "Transcodieren",
   "adminUsersPlayLocal": "Lokal",
-
   "adminPodcastsCheckNewEpisodesTitle": "Auf neue Episoden prüfen",
   "adminPodcastsCheckNewEpisodesContent": "Dies prüft die RSS-Feeds aller Podcasts und lädt alle gefundenen neuen Episoden herunter (sofern Auto-Download aktiviert ist).",
   "adminPodcastsCheckNewEpisodesSubtitle": "RSS-Feed durchsuchen und neue Episoden herunterladen",
@@ -1040,7 +1789,13 @@
   "adminPodcastsNoPodcastsYet": "Noch keine Podcasts",
   "adminPodcastsTapPlusHint": "Tippe auf +, um Sendungen zu suchen und hinzuzufügen",
   "adminPodcastsEpisodesCount": "{count} Episoden",
-  "@adminPodcastsEpisodesCount": { "placeholders": { "count": { "type": "int" } } },
+  "@adminPodcastsEpisodesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminPodcastsAddPodcast": "Podcast hinzufügen",
   "adminPodcastsCouldNotFindFeed": "Podcast-Feed nicht gefunden",
   "adminPodcastsSearchHint": "Podcasts suchen…",
@@ -1048,13 +1803,37 @@
   "adminPodcastsNoPodcastsFound": "Keine Podcasts gefunden",
   "adminPodcastsRelToday": "Heute",
   "adminPodcastsWeeksAgo": "vor {count} Wo.",
-  "@adminPodcastsWeeksAgo": { "placeholders": { "count": { "type": "int" } } },
+  "@adminPodcastsWeeksAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminPodcastsMonthsAgo": "vor {count} Mon.",
-  "@adminPodcastsMonthsAgo": { "placeholders": { "count": { "type": "int" } } },
+  "@adminPodcastsMonthsAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminPodcastsYearsAgo": "vor {count} J.",
-  "@adminPodcastsYearsAgo": { "placeholders": { "count": { "type": "int" } } },
+  "@adminPodcastsYearsAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminPodcastsUpdated": "Aktualisiert {when}",
-  "@adminPodcastsUpdated": { "placeholders": { "when": { "type": "String" } } },
+  "@adminPodcastsUpdated": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
   "adminPodcastsGenreAll": "Alle",
   "adminPodcastsGenreArts": "Kunst",
   "adminPodcastsGenreComedy": "Comedy",
@@ -1078,56 +1857,152 @@
   "adminPodcastsNoFeedFound": "Keine Feed-URL gefunden",
   "adminPodcastsNoFeedAvailable": "Keine Feed-URL verfügbar",
   "adminPodcastsAddedToLibrary": "{title} zur Bibliothek hinzugefügt",
-  "@adminPodcastsAddedToLibrary": { "placeholders": { "title": { "type": "String" } } },
+  "@adminPodcastsAddedToLibrary": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "adminPodcastsFailedToAdd": "{title} konnte nicht hinzugefügt werden",
-  "@adminPodcastsFailedToAdd": { "placeholders": { "title": { "type": "String" } } },
+  "@adminPodcastsFailedToAdd": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "adminPodcastsEpisodesInFeed": "{count} Episoden im Feed",
-  "@adminPodcastsEpisodesInFeed": { "placeholders": { "count": { "type": "int" } } },
+  "@adminPodcastsEpisodesInFeed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminPodcastsMoreEpisodes": "+ {count} weitere Episoden",
-  "@adminPodcastsMoreEpisodes": { "placeholders": { "count": { "type": "int" } } },
+  "@adminPodcastsMoreEpisodes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminPodcastsAdding": "Wird hinzugefügt…",
   "adminPodcastsAddToLibrary": "Zur Bibliothek hinzufügen",
   "adminPodcastsRemoveShowTitle": "Sendung entfernen?",
   "adminPodcastsRemoveShowContent": "\"{title}\" und alle Episoden vom Server entfernen? Dies kann nicht rückgängig gemacht werden.",
-  "@adminPodcastsRemoveShowContent": { "placeholders": { "title": { "type": "String" } } },
+  "@adminPodcastsRemoveShowContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "adminPodcastsRemovedShow": "\"{title}\" entfernt",
-  "@adminPodcastsRemovedShow": { "placeholders": { "title": { "type": "String" } } },
+  "@adminPodcastsRemovedShow": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "adminPodcastsFailedRemoveShow": "Sendung konnte nicht entfernt werden",
   "adminPodcastsRemoveShowTooltip": "Sendung entfernen",
   "adminPodcastsSelectMultipleTooltip": "Mehrere auswählen",
   "adminPodcastsDownloadedCount": "{count} heruntergeladen",
-  "@adminPodcastsDownloadedCount": { "placeholders": { "count": { "type": "int" } } },
+  "@adminPodcastsDownloadedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminPodcastsTabDownloaded": "Heruntergeladen",
   "adminPodcastsTabFeed": "Feed",
   "adminPodcastsTabSettings": "Einstellungen",
   "adminPodcastsDownloadingEpisode": "\"{title}\" wird heruntergeladen",
-  "@adminPodcastsDownloadingEpisode": { "placeholders": { "title": { "type": "String" } } },
+  "@adminPodcastsDownloadingEpisode": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "adminPodcastsFailedDownload": "Download fehlgeschlagen",
   "adminPodcastsDeleteEpisodeTitle": "Episode löschen?",
   "adminPodcastsDeleteEpisodeContent": "\"{title}\" löschen?",
-  "@adminPodcastsDeleteEpisodeContent": { "placeholders": { "title": { "type": "String" } } },
+  "@adminPodcastsDeleteEpisodeContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "adminPodcastsDeleted": "Gelöscht",
   "adminPodcastsFailed": "Fehlgeschlagen",
   "adminPodcastsDeleteEpisodesTitle": "Episoden löschen?",
   "adminPodcastsDeleteEpisodesContent": "{count} Episode(n) vom Server löschen?",
-  "@adminPodcastsDeleteEpisodesContent": { "placeholders": { "count": { "type": "int" } } },
+  "@adminPodcastsDeleteEpisodesContent": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminPodcastsDeletedEpisodes": "{count} Episode(n) gelöscht",
-  "@adminPodcastsDeletedEpisodes": { "placeholders": { "count": { "type": "int" } } },
+  "@adminPodcastsDeletedEpisodes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminPodcastsBrowseFeedToDownload": "Feed durchsuchen, um herunterzuladen",
   "adminPodcastsDownloadingDots": "Wird heruntergeladen...",
   "adminPodcastsDeleteEpisodesCount": "{count} Episode(n) löschen",
-  "@adminPodcastsDeleteEpisodesCount": { "placeholders": { "count": { "type": "int" } } },
+  "@adminPodcastsDeleteEpisodesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminPodcastsDownloadingCount": "{count} Episode(n) werden heruntergeladen",
-  "@adminPodcastsDownloadingCount": { "placeholders": { "count": { "type": "int" } } },
+  "@adminPodcastsDownloadingCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminPodcastsDownloadEpisodesCount": "{count} Episode(n) herunterladen",
-  "@adminPodcastsDownloadEpisodesCount": { "placeholders": { "count": { "type": "int" } } },
+  "@adminPodcastsDownloadEpisodesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminPodcastsLookForEpisodesAfter": "Nach Episoden suchen ab",
   "adminPodcastsSelectDate": "Datum auswählen",
   "adminPodcastsMaxEpisodes": "Max. Episoden zum Herunterladen",
   "adminPodcastsNoNewEpisodesAfter": "Keine neuen Episoden nach {date} gefunden",
-  "@adminPodcastsNoNewEpisodesAfter": { "placeholders": { "date": { "type": "String" } } },
+  "@adminPodcastsNoNewEpisodesAfter": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "adminPodcastsFoundNewEpisodes": "{count} neue Episode(n) gefunden - werden heruntergeladen",
-  "@adminPodcastsFoundNewEpisodes": { "placeholders": { "count": { "type": "int" } } },
+  "@adminPodcastsFoundNewEpisodes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "adminPodcastsFailedToCheckNew": "Suche nach neuen Episoden fehlgeschlagen",
   "adminPodcastsCheckAndDownload": "Prüfen & Herunterladen",
   "adminPodcastsMatchPodcast": "Podcast zuordnen",
@@ -1156,20 +2031,43 @@
   "adminPodcastsDeleting": "Wird gelöscht...",
   "adminPodcastsDeleteEpisode": "Episode löschen",
   "adminPodcastsSeasonChip": "Staffel {season}",
-  "@adminPodcastsSeasonChip": { "placeholders": { "season": { "type": "String" } } },
+  "@adminPodcastsSeasonChip": {
+    "placeholders": {
+      "season": {
+        "type": "String"
+      }
+    }
+  },
   "adminPodcastsEpChip": "Ep. {number}",
-  "@adminPodcastsEpChip": { "placeholders": { "number": { "type": "String" } } },
+  "@adminPodcastsEpChip": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
   "adminPodcastsApplyingMatch": "Zuordnung wird angewendet...",
   "adminPodcastsNoResults": "Keine Ergebnisse",
   "adminPodcastsPodcastMatched": "Podcast zugeordnet und aktualisiert",
   "adminPodcastsFailedMatch": "Podcast konnte nicht zugeordnet werden",
-
   "episodeListEpisodeFallback": "Episode",
   "episodeListUnknownPodcast": "Unbekannter Podcast",
   "episodeListMarkedFinished": "{count, plural, =1{1 Episode als beendet markiert} other{{count} Episoden als beendet markiert}}",
-  "@episodeListMarkedFinished": { "placeholders": { "count": { "type": "int" } } },
+  "@episodeListMarkedFinished": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "episodeListMarkedUnfinished": "{count, plural, =1{1 Episode als unbeendet markiert} other{{count} Episoden als unbeendet markiert}}",
-  "@episodeListMarkedUnfinished": { "placeholders": { "count": { "type": "int" } } },
+  "@episodeListMarkedUnfinished": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "episodeListUnsubscribeFromNewEpisodes": "Neue Episoden abbestellen",
   "episodeListSubscribeToNewEpisodes": "Neue Episoden abonnieren",
   "episodeListSubscribeTitle": "Diesen Podcast abonnieren?",
@@ -1180,15 +2078,26 @@
   "episodeListPlaysNewerToOlder": "Spielt von neueren zu älteren Episoden",
   "episodeListPlaysOlderToNewer": "Spielt von älteren zu neueren Episoden",
   "episodeListEpisodeCount": "{count, plural, =1{1 Episode} other{{count} Episoden}}",
-  "@episodeListEpisodeCount": { "placeholders": { "count": { "type": "int" } } },
+  "@episodeListEpisodeCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "episodeListAutoDownloadChip": "Auto-Download",
   "episodeListSubscribedChip": "Abonniert",
   "episodeListExplicitChip": "Explizit",
   "episodeListSortNewest": "Neueste",
   "episodeListSortOldest": "Älteste",
   "episodeListAddedToAbsorbing": "\"{title}\" zu Absorbing hinzugefügt",
-  "@episodeListAddedToAbsorbing": { "placeholders": { "title": { "type": "String" } } },
-
+  "@episodeListAddedToAbsorbing": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "episodeDetailEpisodeFallback": "Episode",
   "episodeDetailMarkedNotFinished": "Als unbeendet markiert",
   "episodeDetailMarkedFinishedNice": "Als beendet markiert - super!",
@@ -1197,57 +2106,151 @@
   "episodeDetailToday": "Heute",
   "episodeDetailYesterday": "Gestern",
   "episodeDetailDaysAgo": "vor {count} T.",
-  "@episodeDetailDaysAgo": { "placeholders": { "count": { "type": "int" } } },
+  "@episodeDetailDaysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "episodeDetailWeeksAgo": "vor {count} Wo.",
-  "@episodeDetailWeeksAgo": { "placeholders": { "count": { "type": "int" } } },
+  "@episodeDetailWeeksAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "episodeDetailDurationHm": "{hours} Std. {minutes} Min.",
-  "@episodeDetailDurationHm": { "placeholders": { "hours": { "type": "int" }, "minutes": { "type": "int" } } },
+  "@episodeDetailDurationHm": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "episodeDetailDurationM": "{minutes} Min.",
-  "@episodeDetailDurationM": { "placeholders": { "minutes": { "type": "int" } } },
+  "@episodeDetailDurationM": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "episodeDetailResume": "Fortsetzen",
   "episodeDetailPlayEpisode": "Episode abspielen",
   "episodeDetailEpisodeNumber": "Episode {number}",
-  "@episodeDetailEpisodeNumber": { "placeholders": { "number": { "type": "String" } } },
+  "@episodeDetailEpisodeNumber": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
   "episodeDetailSeasonNumber": "Staffel {number}",
-  "@episodeDetailSeasonNumber": { "placeholders": { "number": { "type": "String" } } },
-
+  "@episodeDetailSeasonNumber": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
   "editMetadataUpdatedFromMatch": "Metadaten aus Zuordnung aktualisiert",
   "editMetadataConfirmMatch": "Dies aktualisiert die Server-Metadaten für dieses Buch mit:\n\n\"{title}\"\n\nAlle Felder und das Cover werden auf dem Server überschrieben.",
-  "@editMetadataConfirmMatch": { "placeholders": { "title": { "type": "String" } } },
+  "@editMetadataConfirmMatch": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "editMetadataConfirmMatchWithAuthor": "Dies aktualisiert die Server-Metadaten für dieses Buch mit:\n\n\"{title}\" von {author}\n\nAlle Felder und das Cover werden auf dem Server überschrieben.",
-  "@editMetadataConfirmMatchWithAuthor": { "placeholders": { "title": { "type": "String" }, "author": { "type": "String" } } },
-
+  "@editMetadataConfirmMatchWithAuthor": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      },
+      "author": {
+        "type": "String"
+      }
+    }
+  },
   "seriesBooksFindMissingTitle": "Fehlende Bücher finden",
   "seriesBooksFindMissingContent": "Dies durchsucht Audible nach Büchern dieser Serie, die in deiner Bibliothek fehlen könnten.\n\nBücher werden zuerst über die ASIN abgeglichen (sofern dein Server ASINs für seine Bücher hat) und greifen dann auf den Titelabgleich zurück. Die Ergebnisse sind möglicherweise nicht ganz genau.",
   "seriesBooksCouldNotFindOnAudible": "Diese Serie konnte auf Audible nicht gefunden werden",
   "seriesBooksMarkAllNotFinishedContent": "{count, plural, =1{Damit wird der Beendet-Status für 1 Buch dieser Serie zurückgesetzt.} other{Damit wird der Beendet-Status für alle {count} Bücher dieser Serie zurückgesetzt.}}",
-  "@seriesBooksMarkAllNotFinishedContent": { "placeholders": { "count": { "type": "int" } } },
+  "@seriesBooksMarkAllNotFinishedContent": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "seriesBooksFullyAbsorbContent": "{count, plural, =1{Damit wird 1 Buch dieser Serie als beendet markiert.} other{Damit werden alle {count} Bücher dieser Serie als beendet markiert.}}",
-  "@seriesBooksFullyAbsorbContent": { "placeholders": { "count": { "type": "int" } } },
+  "@seriesBooksFullyAbsorbContent": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "seriesBooksUnmarkAll": "Alle aufheben",
   "seriesBooksShowAllBooks": "Alle Bücher anzeigen",
   "seriesBooksGroupBySubSeries": "Nach Unterserie gruppieren",
   "seriesBooksLoadingSubSeries": "Unterserie wird geladen...",
   "seriesBooksBookCount": "{count, plural, =1{1 Buch} other{{count} Bücher}}",
-  "@seriesBooksBookCount": { "placeholders": { "count": { "type": "int" } } },
+  "@seriesBooksBookCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "seriesBooksDone": "Fertig",
   "seriesBooksExplicitBadge": "E",
-
   "expandedCardStreaming": "Streaming",
   "expandedCardDeviceFallback": "Gerät",
-
   "bookmarksScreenPositionInBook": "{position} in {bookTitle}",
-  "@bookmarksScreenPositionInBook": { "placeholders": { "position": { "type": "String" }, "bookTitle": { "type": "String" } } },
+  "@bookmarksScreenPositionInBook": {
+    "placeholders": {
+      "position": {
+        "type": "String"
+      },
+      "bookTitle": {
+        "type": "String"
+      }
+    }
+  },
   "bookmarksScreenClose": "Schließen",
   "bookmarksScreenSortNewest": "Neueste",
   "bookmarksScreenSortPosition": "Position",
-
   "statsScreenStreakDays": "{count} T.",
-  "@statsScreenStreakDays": { "placeholders": { "count": { "type": "int" } } },
+  "@statsScreenStreakDays": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statsScreenSessionCountOne": "{count} Sitzung",
-  "@statsScreenSessionCountOne": { "placeholders": { "count": { "type": "int" } } },
+  "@statsScreenSessionCountOne": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statsScreenSessionCountOther": "{count} Sitzungen",
-  "@statsScreenSessionCountOther": { "placeholders": { "count": { "type": "int" } } },
+  "@statsScreenSessionCountOther": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statsScreenDayMon": "Mo",
   "statsScreenDayTue": "Di",
   "statsScreenDayWed": "Mi",
@@ -1256,19 +2259,52 @@
   "statsScreenDaySat": "Sa",
   "statsScreenDaySun": "So",
   "statsScreenDurationHm": "{h} Std. {m} Min.",
-  "@statsScreenDurationHm": { "placeholders": { "h": { "type": "int" }, "m": { "type": "int" } } },
+  "@statsScreenDurationHm": {
+    "placeholders": {
+      "h": {
+        "type": "int"
+      },
+      "m": {
+        "type": "int"
+      }
+    }
+  },
   "statsScreenDurationM": "{m} Min.",
-  "@statsScreenDurationM": { "placeholders": { "m": { "type": "int" } } },
+  "@statsScreenDurationM": {
+    "placeholders": {
+      "m": {
+        "type": "int"
+      }
+    }
+  },
   "statsScreenDurationLessThanMin": "<1 Min.",
   "statsScreenDurationZero": "0 Min.",
   "statsScreenDurationShortH": "{h} Std.",
-  "@statsScreenDurationShortH": { "placeholders": { "h": { "type": "int" } } },
+  "@statsScreenDurationShortH": {
+    "placeholders": {
+      "h": {
+        "type": "int"
+      }
+    }
+  },
   "statsScreenDurationShortM": "{m} Min.",
-  "@statsScreenDurationShortM": { "placeholders": { "m": { "type": "int" } } },
+  "@statsScreenDurationShortM": {
+    "placeholders": {
+      "m": {
+        "type": "int"
+      }
+    }
+  },
   "statsScreenCouldNotLoadItem": "Element konnte nicht geladen werden",
   "statsScreenCouldNotFindEpisode": "Episode konnte nicht gefunden werden",
   "statsScreenByAuthor": "von {author}",
-  "@statsScreenByAuthor": { "placeholders": { "author": { "type": "String" } } },
+  "@statsScreenByAuthor": {
+    "placeholders": {
+      "author": {
+        "type": "String"
+      }
+    }
+  },
   "statsScreenListened": "Gehört",
   "statsScreenStartedAtPosition": "Gestartet bei Position",
   "statsScreenEndedAtPosition": "Beendet bei Position",
@@ -1281,7 +2317,13 @@
   "statsScreenPlayMethod": "Wiedergabemethode",
   "statsScreenLoading": "Lädt...",
   "statsScreenJumpToSessionStart": "Zum Sitzungsstart springen ({position})",
-  "@statsScreenJumpToSessionStart": { "placeholders": { "position": { "type": "String" } } },
+  "@statsScreenJumpToSessionStart": {
+    "placeholders": {
+      "position": {
+        "type": "String"
+      }
+    }
+  },
   "statsScreenPlayMethodDirect": "Direktwiedergabe",
   "statsScreenPlayMethodDirectStream": "Direkt-Stream",
   "statsScreenPlayMethodTranscode": "Transcodieren",
@@ -1289,7 +2331,28 @@
   "statsScreenAmLabel": "AM",
   "statsScreenPmLabel": "PM",
   "statsScreenDateAtTime": "{day}. {month} {year} um {hour}:{minute} {ampm}",
-  "@statsScreenDateAtTime": { "placeholders": { "month": { "type": "String" }, "day": { "type": "int" }, "year": { "type": "int" }, "hour": { "type": "int" }, "minute": { "type": "String" }, "ampm": { "type": "String" } } },
+  "@statsScreenDateAtTime": {
+    "placeholders": {
+      "month": {
+        "type": "String"
+      },
+      "day": {
+        "type": "int"
+      },
+      "year": {
+        "type": "int"
+      },
+      "hour": {
+        "type": "int"
+      },
+      "minute": {
+        "type": "String"
+      },
+      "ampm": {
+        "type": "String"
+      }
+    }
+  },
   "statsScreenMonthJan": "Jan.",
   "statsScreenMonthFeb": "Feb.",
   "statsScreenMonthMar": "März",
@@ -1302,81 +2365,232 @@
   "statsScreenMonthOct": "Okt.",
   "statsScreenMonthNov": "Nov.",
   "statsScreenMonthDec": "Dez.",
-
   "upcomingReleasesTitle": "Kommende Veröffentlichungen",
   "upcomingReleasesRescanTitle": "Erneut scannen?",
   "upcomingReleasesRescanContent": "Diese Ergebnisse sind {days} Tage alt. Veröffentlichungstermine könnten sich geändert haben - möchtest du erneut scannen?",
-  "@upcomingReleasesRescanContent": { "placeholders": { "days": { "type": "int" } } },
+  "@upcomingReleasesRescanContent": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
   "upcomingReleasesNotNow": "Nicht jetzt",
   "upcomingReleasesRescan": "Erneut scannen",
   "upcomingReleasesRescanReleaseDate": "Veröffentlichungstermin erneut scannen",
   "upcomingReleasesRescanning": "Wird erneut gescannt...",
   "upcomingReleasesUpdatedWithDate": "Aktualisiert - {date}",
-  "@upcomingReleasesUpdatedWithDate": { "placeholders": { "date": { "type": "String" } } },
+  "@upcomingReleasesUpdatedWithDate": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "upcomingReleasesNoReleaseDateFound": "Kein Veröffentlichungstermin gefunden",
   "upcomingReleasesRescanFailed": "Erneuter Scan fehlgeschlagen",
   "upcomingReleasesDateChip": "Datum",
   "upcomingReleasesCheckingSeries": "Prüfe {name}... ({processed}/{total})",
-  "@upcomingReleasesCheckingSeries": { "placeholders": { "name": { "type": "String" }, "processed": { "type": "int" }, "total": { "type": "int" } } },
+  "@upcomingReleasesCheckingSeries": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "processed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "upcomingReleasesLoadingSeries": "Serien werden geladen...",
   "upcomingReleasesScannedToday": "(heute gescannt)",
   "upcomingReleasesScannedYesterday": "(gestern gescannt)",
   "upcomingReleasesScannedDaysAgo": "(vor {days} Tagen gescannt)",
-  "@upcomingReleasesScannedDaysAgo": { "placeholders": { "days": { "type": "int" } } },
+  "@upcomingReleasesScannedDaysAgo": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
   "upcomingReleasesUpcomingCount": "{count} kommend",
-  "@upcomingReleasesUpcomingCount": { "placeholders": { "count": { "type": "int" } } },
+  "@upcomingReleasesUpcomingCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "upcomingReleasesRecentCount": "{count} kürzlich",
-  "@upcomingReleasesRecentCount": { "placeholders": { "count": { "type": "int" } } },
+  "@upcomingReleasesRecentCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "upcomingReleasesNoneFound": "Keine kommenden oder kürzlichen Veröffentlichungen gefunden",
   "upcomingReleasesAcrossSeries": "{summary} in {count} Serien",
-  "@upcomingReleasesAcrossSeries": { "placeholders": { "summary": { "type": "String" }, "count": { "type": "int" } } },
+  "@upcomingReleasesAcrossSeries": {
+    "placeholders": {
+      "summary": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "upcomingReleasesCheckedSeries": "{count} Serien auf Audible geprüft",
-  "@upcomingReleasesCheckedSeries": { "placeholders": { "count": { "type": "int" } } },
+  "@upcomingReleasesCheckedSeries": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "upcomingReleasesDateFormat": "{day}. {month} {year}",
-  "@upcomingReleasesDateFormat": { "placeholders": { "month": { "type": "String" }, "day": { "type": "int" }, "year": { "type": "int" } } },
+  "@upcomingReleasesDateFormat": {
+    "placeholders": {
+      "month": {
+        "type": "String"
+      },
+      "day": {
+        "type": "int"
+      },
+      "year": {
+        "type": "int"
+      }
+    }
+  },
   "upcomingReleasesSequenceLabel": "#{sequence}",
-  "@upcomingReleasesSequenceLabel": { "placeholders": { "sequence": { "type": "String" } } },
+  "@upcomingReleasesSequenceLabel": {
+    "placeholders": {
+      "sequence": {
+        "type": "String"
+      }
+    }
+  },
   "upcomingReleasesBadgeUpcoming": "KOMMEND",
   "upcomingReleasesBadgeAdded": "HINZUGEFÜGT",
   "upcomingReleasesBadgeMissing": "FEHLT",
-
   "homeScreenEpisodeFallback": "Episode",
   "libraryScreenUnknownTitle": "Unbekannter Titel",
-
   "playlistDetailDefaultName": "Playlist",
   "playlistDetailItemCount": "{count} Einträge",
-  "@playlistDetailItemCount": { "placeholders": { "count": { "type": "int" } } },
+  "@playlistDetailItemCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "playlistDetailUnfinished": "Nicht beendet",
   "playlistDetailRemoveFromPlaylist": "Aus Playlist entfernen",
   "playlistDetailDone": "Fertig",
   "playlistDetailItemsMarkedFinished": "{count} Einträge als beendet markiert",
-  "@playlistDetailItemsMarkedFinished": { "placeholders": { "count": { "type": "int" } } },
+  "@playlistDetailItemsMarkedFinished": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "playlistDetailItemsMarkedUnfinished": "{count} Einträge als nicht beendet markiert",
-  "@playlistDetailItemsMarkedUnfinished": { "placeholders": { "count": { "type": "int" } } },
+  "@playlistDetailItemsMarkedUnfinished": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "playlistDetailItemsRemoved": "{count} Einträge entfernt",
-  "@playlistDetailItemsRemoved": { "placeholders": { "count": { "type": "int" } } },
+  "@playlistDetailItemsRemoved": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "playlistDetailAddedToAbsorbing": "\"{title}\" zu Absorbing hinzugefügt",
-  "@playlistDetailAddedToAbsorbing": { "placeholders": { "title": { "type": "String" } } },
-
+  "@playlistDetailAddedToAbsorbing": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "collectionDetailDefaultName": "Sammlung",
   "collectionDetailBookCount": "{count} Bücher",
-  "@collectionDetailBookCount": { "placeholders": { "count": { "type": "int" } } },
+  "@collectionDetailBookCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "collectionDetailDone": "Fertig",
   "collectionDetailAddedToAbsorbing": "\"{title}\" zu Absorbing hinzugefügt",
-  "@collectionDetailAddedToAbsorbing": { "placeholders": { "title": { "type": "String" } } },
-
+  "@collectionDetailAddedToAbsorbing": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "audibleSeriesNoBooksFound": "Keine Bücher auf Audible gefunden",
   "audibleSeriesFailedToLoad": "Serie konnte nicht von Audible geladen werden",
   "audibleSeriesSummary": "{total} auf Audible · {missing} fehlen",
-  "@audibleSeriesSummary": { "placeholders": { "total": { "type": "int" }, "missing": { "type": "int" } } },
+  "@audibleSeriesSummary": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "missing": {
+        "type": "int"
+      }
+    }
+  },
   "audibleSeriesSummaryWithUpcoming": "{total} auf Audible · {missing} fehlen · {upcoming} kommend",
-  "@audibleSeriesSummaryWithUpcoming": { "placeholders": { "total": { "type": "int" }, "missing": { "type": "int" }, "upcoming": { "type": "int" } } },
+  "@audibleSeriesSummaryWithUpcoming": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "missing": {
+        "type": "int"
+      },
+      "upcoming": {
+        "type": "int"
+      }
+    }
+  },
   "audibleSeriesFilterMissing": "Fehlend ({count})",
-  "@audibleSeriesFilterMissing": { "placeholders": { "count": { "type": "int" } } },
+  "@audibleSeriesFilterMissing": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "audibleSeriesFilterUpcoming": "Kommend ({count})",
-  "@audibleSeriesFilterUpcoming": { "placeholders": { "count": { "type": "int" } } },
+  "@audibleSeriesFilterUpcoming": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "audibleSeriesFilterAll": "Alle ({count})",
-  "@audibleSeriesFilterAll": { "placeholders": { "count": { "type": "int" } } },
+  "@audibleSeriesFilterAll": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "audibleSeriesSearching": "Audible wird durchsucht...",
   "audibleSeriesCompleteSeries": "Du hast die komplette Serie!",
   "audibleSeriesNoUpcoming": "Keine kommenden Veröffentlichungen gefunden",
@@ -1388,22 +2602,43 @@
   "audibleSeriesCouldNotOpenAudible": "Audible konnte nicht geöffnet werden",
   "audibleSeriesCouldNotOpenCalendar": "Kalender konnte nicht geöffnet werden",
   "audibleSeriesCalendarDescription": "Neues Hörbuch in der Serie {seriesName}",
-  "@audibleSeriesCalendarDescription": { "placeholders": { "seriesName": { "type": "String" } } },
-
+  "@audibleSeriesCalendarDescription": {
+    "placeholders": {
+      "seriesName": {
+        "type": "String"
+      }
+    }
+  },
   "authorBooksGroupBySeries": "Nach Serie gruppieren",
   "authorBooksList": "Liste",
   "authorBooksGrid": "Raster",
   "authorBooksBookCount": "{count} Bücher",
-  "@authorBooksBookCount": { "placeholders": { "count": { "type": "int" } } },
-
+  "@authorBooksBookCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "metadataLookupCover": "Cover",
   "metadataLookupChooseFields": "Felder zum Übernehmen wählen",
   "metadataLookupApplyFields": "{count} Felder übernehmen",
-  "@metadataLookupApplyFields": { "placeholders": { "count": { "type": "int" } } },
+  "@metadataLookupApplyFields": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "metadataLookupFieldsSavedLocally": "{count} Felder lokal gespeichert",
-  "@metadataLookupFieldsSavedLocally": { "placeholders": { "count": { "type": "int" } } },
+  "@metadataLookupFieldsSavedLocally": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "metadataLookupOverrideLocalDisplay": "Lokale Anzeige überschreiben",
-
   "equalizerPresetFlat": "Flach",
   "equalizerPresetVoiceBoost": "Stimme verstärken",
   "equalizerPresetBassBoost": "Bass-Boost",
@@ -1413,73 +2648,176 @@
   "equalizerPresetReduceNoise": "Rauschen reduzieren",
   "equalizerPresetLoudness": "Lautheit",
   "equalizerEditingSavedNamed": "Bearbeite gespeicherten EQ für \"{title}\"",
-  "@equalizerEditingSavedNamed": { "placeholders": { "title": { "type": "String" } } },
+  "@equalizerEditingSavedNamed": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "equalizerEditingSavedGeneric": "Bearbeite gespeicherten EQ",
   "equalizerPerBookEq": "EQ pro Buch",
-
   "notesDeleteNoteQuestion": "Notiz löschen?",
   "notesDeleteNoteContent": "\"{title}\" löschen?",
-  "@notesDeleteNoteContent": { "placeholders": { "title": { "type": "String" } } },
+  "@notesDeleteNoteContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "notesExport": "Exportieren",
   "notesNewNote": "Neue Notiz",
-
   "librarySortFilterUpcomingReleases": "Kommende Veröffentlichungen",
   "librarySortFilterUpcomingReleasesSubtitle": "Audible nach neuen Veröffentlichungen in deinen Serien durchsuchen",
-
   "sleepTimerSheetChaptersLeft": "{count, plural, =1{Noch 1 Kapitel} other{Noch {count} Kapitel}}",
-  "@sleepTimerSheetChaptersLeft": { "placeholders": { "count": { "type": "int" } } },
+  "@sleepTimerSheetChaptersLeft": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "sleepTimerSheetAddMinutesChip": "+{minutes} Min",
-  "@sleepTimerSheetAddMinutesChip": { "placeholders": { "minutes": { "type": "int" } } },
+  "@sleepTimerSheetAddMinutesChip": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "sleepTimerSheetAddChaptersChip": "+{count} Kap",
-  "@sleepTimerSheetAddChaptersChip": { "placeholders": { "count": { "type": "int" } } },
+  "@sleepTimerSheetAddChaptersChip": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "sleepTimerSheetMinShort": "{minutes} Min",
-  "@sleepTimerSheetMinShort": { "placeholders": { "minutes": { "type": "int" } } },
+  "@sleepTimerSheetMinShort": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "sleepTimerSheetSecondsShort": "{seconds} Sek",
-  "@sleepTimerSheetSecondsShort": { "placeholders": { "seconds": { "type": "int" } } },
+  "@sleepTimerSheetSecondsShort": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
   "sleepTimerSheetMinSecShort": "{minutes} Min {seconds} Sek",
-  "@sleepTimerSheetMinSecShort": { "placeholders": { "minutes": { "type": "int" }, "seconds": { "type": "int" } } },
+  "@sleepTimerSheetMinSecShort": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
   "sleepTimerSheetChaptersValue": "{count, plural, =1{1 Kapitel} other{{count} Kapitel}}",
-  "@sleepTimerSheetChaptersValue": { "placeholders": { "count": { "type": "int" } } },
+  "@sleepTimerSheetChaptersValue": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "sleepTimerSheetChaptersChip": "{count} Kap",
-  "@sleepTimerSheetChaptersChip": { "placeholders": { "count": { "type": "int" } } },
+  "@sleepTimerSheetChaptersChip": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "sleepTimerSheetStartChapterSleep": "{count, plural, =1{Sleep nach 1 Kapitel} other{Sleep nach {count} Kapiteln}}",
-  "@sleepTimerSheetStartChapterSleep": { "placeholders": { "count": { "type": "int" } } },
+  "@sleepTimerSheetStartChapterSleep": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "sleepTimerSheetRewindOnSleep": "Bei Sleep zurückspulen",
   "sleepTimerSheetShake": "Schütteln",
   "sleepTimerSheetAddsMinutes": "Fügt {minutes} Min hinzu",
-  "@sleepTimerSheetAddsMinutes": { "placeholders": { "minutes": { "type": "int" } } },
+  "@sleepTimerSheetAddsMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "sleepTimerSheetAddsOneChapter": "Fügt 1 Kapitel hinzu",
   "sleepTimerSheetResetsToFull": "Setzt auf volle Dauer zurück",
-
   "sleepTimerSheetTabSpecificChapter": "Kapitel",
   "sleepTimerSheetSpecificNoChapters": "Keine Kapitel verfügbar",
   "sleepTimerSheetSpecificChapterFallback": "Kapitel {number}",
-  "@sleepTimerSheetSpecificChapterFallback": { "placeholders": { "number": { "type": "int" } } },
+  "@sleepTimerSheetSpecificChapterFallback": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
   "sleepTimerSheetSpecificPassedShort": "vorbei",
   "sleepTimerSheetSpecificStart": "Kapitelanfang",
   "sleepTimerSheetSpecificEnd": "Kapitelende",
   "sleepTimerSheetSpecificEndsAt": "Sleep-Timer endet um",
   "sleepTimerSheetSpecificCountdown": "in {countdown}",
-  "@sleepTimerSheetSpecificCountdown": { "placeholders": { "countdown": { "type": "String" } } },
+  "@sleepTimerSheetSpecificCountdown": {
+    "placeholders": {
+      "countdown": {
+        "type": "String"
+      }
+    }
+  },
   "sleepTimerSheetSpecificAlreadyPassed": "Dieser Zeitpunkt ist bereits vorbei",
   "sleepTimerSheetSpecificStartButton": "Timer starten",
   "sleepTimerSheetSpecificStartButtonPassed": "Bereits vorbei",
   "timeAm": "AM",
   "timePm": "PM",
-
   "collectionPickerCollectionFallback": "Sammlung",
   "collectionPickerNameWithCount": "{name} ({count})",
-  "@collectionPickerNameWithCount": { "placeholders": { "name": { "type": "String" }, "count": { "type": "int" } } },
-
+  "@collectionPickerNameWithCount": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "playlistPickerPlaylistFallback": "Playlist",
   "playlistPickerNameWithCount": "{name} ({count})",
-  "@playlistPickerNameWithCount": { "placeholders": { "name": { "type": "String" }, "count": { "type": "int" } } },
-
+  "@playlistPickerNameWithCount": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "cardChaptersPlayFromChapterTitle": "Ab Kapitel abspielen?",
   "cardChaptersPlayFromChapterContent": "Wiedergabe ab \"{title}\" starten?",
-  "@cardChaptersPlayFromChapterContent": { "placeholders": { "title": { "type": "String" } } },
+  "@cardChaptersPlayFromChapterContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "cardChaptersPlay": "Abspielen",
-
   "absorbingSharedToday": "Heute",
   "absorbingSharedYesterday": "Gestern",
   "absorbingSharedMonday": "Montag",
@@ -1491,16 +2829,18 @@
   "absorbingSharedSunday": "Sonntag",
   "absorbingSharedAm": "AM",
   "absorbingSharedPm": "PM",
-
   "sectionDetailAddedToAbsorbing": "\"{title}\" zu Absorbing hinzugefügt",
-  "@sectionDetailAddedToAbsorbing": { "placeholders": { "title": { "type": "String" } } },
+  "@sectionDetailAddedToAbsorbing": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "sectionDetailDoneBadge": "Fertig",
-
   "homeCustomizeAddGenreTitle": "Genre-Bereich hinzufügen",
   "homeCustomizeAddGenreSubtitle": "Wähle ein Genre für deinen Startbildschirm",
-
   "homeSectionDoneBadge": "Fertig",
-
   "tipsSheetQuickBookmarksTitle": "Schnelle Lesezeichen",
   "tipsSheetQuickBookmarksDesc": "Halte den Lesezeichen-Button auf einer Karte gedrückt, um sofort ein Lesezeichen an der aktuellen Position zu setzen, ohne das Lesezeichen-Menü zu öffnen.",
   "tipsSheetCoverPlayPauseTitle": "Cover zum Pausieren",
@@ -1528,7 +2868,6 @@
   "tipsSheetOfflineModeTitle": "Offline-Modus",
   "tipsSheetOfflineModeDesc": "Tippe auf dem Absorbing-Bildschirm auf den Flugzeug-Button, um in den Offline-Modus zu wechseln. Das stoppt die Synchronisierung, spart Daten und zeigt nur deine heruntergeladenen Bücher. Ideal für Flüge oder schlechten Empfang.",
   "tipsSheetUpcomingReleasesTitle": "Kommende Veröffentlichungen",
-  "tipsSheetUpcomingReleasesDesc": "Öffne das Menü oben rechts in der Bibliothek, um neue und kommende Bücher aus allen Serien deiner Bibliothek nach Erscheinungsdatum sortiert zu sehen.",
   "tipsSheetPerBookEqTitle": "Equalizer pro Buch",
   "tipsSheetPerBookEqDesc": "Jedes Buch merkt sich seine eigenen EQ-Einstellungen. Stell den EQ einmal für ein Sci-Fi-Epos ein und beim nächsten Mal klingt es genauso.",
   "tipsSheetPerBookSpeedTitle": "Geschwindigkeit pro Buch",
@@ -1540,63 +2879,129 @@
   "tipsSheetCarModeTitle": "Auto-Modus",
   "tipsSheetCarModeDesc": "Tippe auf das Auto-Symbol, um in den Modus mit großen Buttons zu wechseln, der für sicherere Bedienung beim Fahren gedacht ist.",
   "tipsSheetAudibleSeriesTitle": "Audible-Serien-Suche",
-  "tipsSheetAudibleSeriesDesc": "Öffne eine Serie und tippe auf das Such-Symbol, um die komplette Serienliste von Audible zu laden, inklusive fehlender Einträge und noch nicht gestarteter Bücher.",
-
   "bookCardUnknownTitle": "Unbekannter Titel",
   "bookCardExplicitBadge": "E",
   "bookCardDone": "Fertig",
   "bookCardSaved": "Gespeichert",
-
   "episodeRowEpisode": "Episode",
   "episodeRowToday": "Heute",
   "episodeRowYesterday": "Gestern",
   "episodeRowDaysAgo": "vor {count} T",
-  "@episodeRowDaysAgo": { "placeholders": { "count": { "type": "int" } } },
+  "@episodeRowDaysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "episodeRowWeeksAgo": "vor {count} W",
-  "@episodeRowWeeksAgo": { "placeholders": { "count": { "type": "int" } } },
+  "@episodeRowWeeksAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "episodeRowDurationHm": "{hours} Std {minutes} Min",
-  "@episodeRowDurationHm": { "placeholders": { "hours": { "type": "int" }, "minutes": { "type": "int" } } },
+  "@episodeRowDurationHm": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "episodeRowDurationM": "{minutes} Min",
-  "@episodeRowDurationM": { "placeholders": { "minutes": { "type": "int" } } },
+  "@episodeRowDurationM": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "episodeRowSeasonShort": "S{number}",
-  "@episodeRowSeasonShort": { "placeholders": { "number": { "type": "String" } } },
+  "@episodeRowSeasonShort": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
   "episodeRowEpisodeShort": "E{number}",
-  "@episodeRowEpisodeShort": { "placeholders": { "number": { "type": "String" } } },
-
+  "@episodeRowEpisodeShort": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
   "librarySearchResultsExplicitBadge": "E",
   "librarySearchResultsDone": "Fertig",
   "librarySearchResultsSaved": "Gespeichert",
   "librarySearchResultsSequence": "#{number}",
-  "@librarySearchResultsSequence": { "placeholders": { "number": { "type": "String" } } },
+  "@librarySearchResultsSequence": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
   "librarySearchResultsUnknownSeries": "Unbekannte Serie",
   "librarySearchResultsUnknownEpisode": "Unbekannte Episode",
   "librarySearchResultsBookCount": "{count, plural, =1{1 Buch} other{{count} Bücher}}",
-  "@librarySearchResultsBookCount": { "placeholders": { "count": { "type": "int" } } },
-
+  "@librarySearchResultsBookCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "libraryGridTilesExplicitBadge": "E",
   "libraryGridTilesDone": "Fertig",
   "libraryGridTilesSaved": "Gespeichert",
   "libraryGridTilesSequence": "#{number}",
-  "@libraryGridTilesSequence": { "placeholders": { "number": { "type": "String" } } },
+  "@libraryGridTilesSequence": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
   "libraryGridTilesUnknownSeries": "Unbekannte Serie",
-
   "seriesCardUnknownSeries": "Unbekannte Serie",
   "seriesCardBookCount": "{count, plural, =1{1 Buch} other{{count} Bücher}}",
-  "@seriesCardBookCount": { "placeholders": { "count": { "type": "int" } } },
-
+  "@seriesCardBookCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "cardProgressFineScrubbing": "Feines Spulen",
   "cardProgressQuarterSpeed": "Viertelgeschwindigkeit",
   "cardProgressHalfSpeed": "Halbe Geschwindigkeit",
   "cardProgressChapterPrefix": "Kapitel {number}",
-  "@cardProgressChapterPrefix": { "placeholders": { "number": { "type": "String" } } },
-
+  "@cardProgressChapterPrefix": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
   "cardEdgeProgressFineScrubbing": "Feines Spulen",
   "cardEdgeProgressQuarterSpeed": "Viertelgeschwindigkeit",
   "cardEdgeProgressHalfSpeed": "Halbe Geschwindigkeit",
-
   "authSessionExpired": "Sitzung abgelaufen. Bitte melde dich erneut an.",
   "authCannotReachServer": "Server unter {url} nicht erreichbar",
-  "@authCannotReachServer": { "placeholders": { "url": { "type": "String" } } },
+  "@authCannotReachServer": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
   "authInvalidUsernameOrPassword": "Ungültiger Benutzername oder Passwort",
   "authInvalidApiKey": "Ungültiger API-Schlüssel",
   "authLoginFailedDetail": "Anmeldung fehlgeschlagen - prüfe Serveradresse und Zugangsdaten",
@@ -1604,42 +3009,104 @@
   "authSsoUnexpectedResponse": "SSO hat eine unerwartete Antwort zurückgegeben",
   "authSwitchedToLocalServer": "Zu lokalem Server gewechselt",
   "authSwitchedToRemoteServer": "Zu Remote-Server gewechselt",
-
   "lpDeletedFinishedDownload": "Beendeten Download gelöscht",
   "lpSubscribedPodcastDownloading": "{showTitle}: {count, plural, =1{1 neue Episode wird heruntergeladen} other{{count} neue Episoden werden heruntergeladen}}",
-  "@lpSubscribedPodcastDownloading": { "placeholders": { "showTitle": { "type": "String" }, "count": { "type": "int" } } },
+  "@lpSubscribedPodcastDownloading": {
+    "placeholders": {
+      "showTitle": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "lpQueueDownloadingItems": "{count, plural, =1{Warteschlange: 1 Eintrag wird heruntergeladen} other{Warteschlange: {count} Einträge werden heruntergeladen}}",
-  "@lpQueueDownloadingItems": { "placeholders": { "count": { "type": "int" } } },
+  "@lpQueueDownloadingItems": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "lpDownloadingBooks": "{count, plural, =1{1 Buch wird heruntergeladen} other{{count} Bücher werden heruntergeladen}}",
-  "@lpDownloadingBooks": { "placeholders": { "count": { "type": "int" } } },
+  "@lpDownloadingBooks": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "lpDownloadingEpisodes": "{count, plural, =1{1 Episode wird heruntergeladen} other{{count} Episoden werden heruntergeladen}}",
-  "@lpDownloadingEpisodes": { "placeholders": { "count": { "type": "int" } } },
-
+  "@lpDownloadingEpisodes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "downloadNotifProgressChannelName": "Download-Fortschritt",
   "downloadNotifProgressChannelDesc": "Zeigt den Fortschritt während Hörbuch-Downloads",
   "downloadNotifAlertChannelName": "Download-Benachrichtigungen",
   "downloadNotifAlertChannelDesc": "Benachrichtigungen, wenn Downloads beendet werden oder fehlschlagen",
   "downloadNotifDownloadingTitle": "Wird heruntergeladen…",
   "downloadNotifActiveCount": "{count, plural, =1{1 Download aktiv} other{{count} Downloads aktiv}}",
-  "@downloadNotifActiveCount": { "placeholders": { "count": { "type": "int" } } },
+  "@downloadNotifActiveCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "downloadNotifSlotTitle": "Wird heruntergeladen: {title}",
-  "@downloadNotifSlotTitle": { "placeholders": { "title": { "type": "String" } } },
+  "@downloadNotifSlotTitle": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "downloadNotifStartingLabel": "Wird gestartet…",
   "downloadNotifCompleteTitle": "Download abgeschlossen",
   "downloadNotifCompleteBody": "{title} ist offline verfügbar",
-  "@downloadNotifCompleteBody": { "placeholders": { "title": { "type": "String" } } },
+  "@downloadNotifCompleteBody": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "downloadNotifFailedTitle": "Download fehlgeschlagen",
-
   "upcomingNotifChannelName": "Suche nach kommenden Veröffentlichungen",
   "upcomingNotifChannelDesc": "Zeigt den Fortschritt beim Scannen nach kommenden Veröffentlichungen",
   "upcomingNotifScanTitle": "Suche nach kommenden Veröffentlichungen",
   "upcomingNotifStartingScan": "Suche wird gestartet…",
   "upcomingNotifCheckingSeries": "Prüfe {seriesName}… ({current}/{total})",
-  "@upcomingNotifCheckingSeries": { "placeholders": { "seriesName": { "type": "String" }, "current": { "type": "int" }, "total": { "type": "int" } } },
+  "@upcomingNotifCheckingSeries": {
+    "placeholders": {
+      "seriesName": {
+        "type": "String"
+      },
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "upcomingNotifFoundTitle": "Kommende Veröffentlichungen gefunden!",
   "upcomingNotifFoundBody": "{books} kommend in {series, plural, =1{1 Serie} other{{series} Serien}}",
-  "@upcomingNotifFoundBody": { "placeholders": { "books": { "type": "int" }, "series": { "type": "int" } } },
-
+  "@upcomingNotifFoundBody": {
+    "placeholders": {
+      "books": {
+        "type": "int"
+      },
+      "series": {
+        "type": "int"
+      }
+    }
+  },
   "androidAutoTabContinue": "Weiterhören",
   "androidAutoTabLibrary": "Bibliothek",
   "androidAutoTabDownloads": "Downloads",
@@ -1651,5 +3118,32 @@
   "tipsRestored": "Tipps wiederhergestellt",
   "resetSpeedPresets": "Geschwindigkeits-Voreinstellungen zurücksetzen",
   "resetSpeedPresetsSubtitle": "Standard-Wiedergabegeschwindigkeiten wiederherstellen",
-  "speedPresetsReset": "Geschwindigkeits-Voreinstellungen zurückgesetzt"
+  "speedPresetsReset": "Geschwindigkeits-Voreinstellungen zurückgesetzt",
+  "editAuthor": "Autor bearbeiten",
+  "authorName": "Name",
+  "authorImage": "Autorenbild",
+  "authorRemoveImage": "Bild entfernen",
+  "authorRemoveImageTitle": "Autorenbild entfernen?",
+  "authorRemoveImageConfirm": "Dadurch wird das Bild auf dem Server gelöscht.",
+  "authorImageRemoved": "Bild entfernt",
+  "authorImageFailed": "Das Autorenbild konnte nicht aktualisiert werden",
+  "authorUpdated": "Autor aktualisiert",
+  "authorUpdateFailed": "Der Autor konnte nicht aktualisiert werden",
+  "authorNoMatchFound": "Kein Treffer gefunden",
+  "authorMergedInto": "Zusammengeführt in {name}",
+  "@authorMergedInto": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "region": "Region",
+  "chapterAddHint": "Kapitel hinzufügen (z.B. \"Kapitel 01\")",
+  "chapterRemoveAll": "Alle entfernen",
+  "chapterShiftTimes": "Zeiten verschieben",
+  "chapterShowSeconds": "Sekunden anzeigen",
+  "chapterShiftBySeconds": "Verschieben um (Sekunden)",
+  "coverSearchTitle": "Nach einem Cover suchen",
+  "coverEnterTitleFirst": "Gebe zuerst einen Titel ein"
 }

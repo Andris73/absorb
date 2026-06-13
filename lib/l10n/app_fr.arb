@@ -1,0 +1,152 @@
+{
+  "@@locale": "fr",
+  "appTitle": "A B S O R B",
+  "online": "Connecté",
+  "offline": "Déconnecté",
+  "stillOffline": "Toujours déconnecté. Touchez pour essayer encore.",
+  "retry": "Réessayer",
+  "cancel": "Annuler",
+  "delete": "Effacer",
+  "remove": "Retirer",
+  "save": "Enregistrer",
+  "done": "Fait",
+  "edit": "Modifier",
+  "search": "Rechercher",
+  "apply": "Appliquer",
+  "enable": "Activé",
+  "clear": "Effacer",
+  "off": "Arrêt",
+  "disabled": "Désactivé",
+  "later": "Plus tard",
+  "gotIt": "Ok",
+  "preview": "Aperçu",
+  "or": "ou",
+  "file": "Fichier",
+  "more": "Plus",
+  "unknown": "Inconnu",
+  "untitled": "Sans titre",
+  "noThanks": "Non merci",
+  "homeTitle": "Accueil",
+  "continueListening": "Continuer l'écoute",
+  "continueSeries": "Continuer les séries",
+  "recentlyAdded": "Ajouté récemment",
+  "listenAgain": "Écouter à nouveau",
+  "discover": "Découvrir",
+  "newEpisodes": "Nouveaux épisodes",
+  "downloads": "Téléchargements",
+  "noDownloadedBooks": "Aucun livre téléchargé",
+  "yourLibraryIsEmpty": "Votre bibliothèque est vide",
+  "customizeHome": "Personnaliser l'accueil",
+  "loginConnectToServer": "Se connecter au serveur",
+  "loginServerAddress": "Adresse du serveur",
+  "loginServerHint": "mon.serveur.fr",
+  "loginServerHelper": "IP + port (ex : 192.168.1.5:13378)",
+  "loginCouldNotReachServer": "Impossible de se connecter au serveur",
+  "loginAdvanced": "Avancé",
+  "loginCustomHttpHeaders": "Entêtes HTTP personnalisés",
+  "loginHeaderValue": "Valeur",
+  "loginSelfSignedCertificates": "Certificat auto-signé",
+  "loginApiKey": "Clé API",
+  "loginUsername": "Utilisateur",
+  "loginUsernameRequired": "Entrez votre nom d'utilisateur",
+  "loginPassword": "Mot de passe",
+  "loginSignIn": "Se connecter",
+  "loginFailed": "Échec de connexion",
+  "loginRestoreFromBackup": "Restaurer depuis une sauvegarde",
+  "loginInvalidBackupFile": "Fichier de sauvegarde invalide",
+  "loginRestoreBackupTitle": "Restaurer la sauvegarde ?",
+  "loginRestore": "Restaurer",
+  "loginSettingsRestored": "Paramètres restaurés",
+  "loginRestoreFailed": "Échec de la restauration : {error}",
+  "@loginRestoreFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "libraryTitle": "Bibliothèque",
+  "librarySearchBooksHint": "Rechercher par livres, séries, auteurs, narrateurs ...",
+  "libraryTabLibrary": "Bibliothèque",
+  "libraryTabSeries": "Séries",
+  "libraryTabAuthors": "Auteurs",
+  "libraryTabNarrators": "Narrateurs",
+  "libraryNoBooks": "Aucun livre trouvé",
+  "libraryNoBooksInProgress": "Aucun livre en cours de lecture",
+  "libraryNoFinishedBooks": "Aucun livre achevé",
+  "libraryNoDownloadedBooks": "Aucun livre téléchargé",
+  "libraryNoSeriesFound": "Aucune série trouvée",
+  "libraryNoBooksInGenre": "Aucun livre du genre \"{genre}\"",
+  "@libraryNoBooksInGenre": {
+    "placeholders": {
+      "genre": {
+        "type": "String"
+      }
+    }
+  },
+  "libraryClearFilter": "Effacer le filtre",
+  "libraryNoAuthorsFound": "Aucun auteur trouvé",
+  "libraryNoNarratorsFound": "Aucun narrateur trouvé",
+  "libraryNoResults": "Aucun résultat",
+  "librarySearchBooks": "Livres",
+  "librarySearchEpisodes": "Épisodes",
+  "librarySearchSeries": "Séries",
+  "librarySearchAuthors": "Auteurs",
+  "librarySeriesCount": "{count} séries",
+  "@librarySeriesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "libraryAuthorsCount": "{count} auteurs",
+  "@libraryAuthorsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "libraryNarratorsCount": "{count} narrateurs",
+  "@libraryNarratorsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "libraryBooksCount": "{loaded}/{total} livres",
+  "@libraryBooksCount": {
+    "placeholders": {
+      "loaded": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "sort": "Trier",
+  "filter": "Filtrer",
+  "name": "Nom",
+  "title": "Titre",
+  "author": "Auteur",
+  "dateAdded": "Date d'ajout",
+  "numberOfBooks": "Nombre de livres",
+  "publishedYear": "Année de publication",
+  "duration": "Durée",
+  "random": "Aléatoire",
+  "inProgress": "En cours",
+  "filterFinished": "Fini",
+  "notStarted": "Non commencé",
+  "downloaded": "Téléchargé",
+  "genre": "Genre",
+  "clearFilter": "Supprimer le filtre",
+  "noGenresFound": "Aucun genre trouvé",
+  "asc": "Croissant",
+  "desc": "Décroissant",
+  "absorbingTitle": "Lecture",
+  "absorbingStop": "Stop",
+  "absorbingDone": "Fait"
+}

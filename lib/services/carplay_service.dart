@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_carplay/flutter_carplay.dart';
 import 'android_auto_service.dart';
 import 'api_service.dart';
@@ -15,6 +17,15 @@ class CarPlayService {
 
   final _autoService = AndroidAutoService();
   final _flutterCarplay = FlutterCarplay();
+
+  /// Bridges CarPlay Now Playing button taps to/from native. The buttons live
+  /// only on CPNowPlayingTemplate, so the iOS lock screen is never affected.
+  static const _nowPlayingChannel = MethodChannel('com.absorb.carplay');
+
+  double _lastPushedSpeed = -1;
+  bool _bannerShowing = false;
+  Timer? _bannerDismissTimer;
+
   bool _initialized = false;
   bool _buildingRoot = false;
   DateTime? _lastRootBuilt;
@@ -25,6 +36,10 @@ class CarPlayService {
     if (!Platform.isIOS || _initialized) return;
     _initialized = true;
     _flutterCarplay.addListenerOnConnectionChange(_onConnectionChange);
+    _nowPlayingChannel.setMethodCallHandler(_handleNativeCall);
+    // Keep the CarPlay speed button label in sync with rate changes from
+    // anywhere (the phone speed sheet, a per-book default, etc.).
+    AudioPlayerService().addListener(_onPlayerChanged);
     debugPrint('[CarPlay] Initialized');
     // Re-render the root template when the background server refresh
     // completes. AutoBrowse.refresh() returns immediately after downloads
@@ -80,6 +95,8 @@ class CarPlayService {
 
   void dispose() {
     _flutterCarplay.removeListenerOnConnectionChange();
+    AudioPlayerService().removeListener(_onPlayerChanged);
+    _bannerDismissTimer?.cancel();
   }
 
   void _onConnectionChange(ConnectionStatusTypes status) {
@@ -198,9 +215,92 @@ class CarPlayService {
           ' continue=${_autoService.continueListening.length}'
           ' downloads=${_autoService.downloaded.length}'
           ' libraries=${_autoService.libraries.length}');
+      // Configure the Now Playing buttons here too: on a cold CarPlay launch
+      // the `connected` event can fire before our listener registers (see the
+      // eager-init note above), but the root template always gets built, so
+      // this is the reliable hook. Re-running it is idempotent.
+      await _configureNowPlayingButtons();
     } finally {
       _buildingRoot = false;
     }
+  }
+
+  // ─── Now Playing custom buttons ─────────────────────────────────────
+
+  /// Ask the native side to (re)attach the custom buttons to
+  /// CPNowPlayingTemplate.shared. Safe to call when not connected — it just
+  /// primes the shared template for the next time CarPlay presents it.
+  Future<void> _configureNowPlayingButtons() async {
+    try {
+      final speed = AudioPlayerService().speed;
+      _lastPushedSpeed = speed;
+      await _nowPlayingChannel
+          .invokeMethod('setupNowPlayingButtons', {'speed': speed});
+    } catch (e) {
+      debugPrint('[CarPlay] setupNowPlayingButtons failed: $e');
+    }
+  }
+
+  /// Refresh the CarPlay speed button when the rate changes anywhere. No
+  /// "connected" gate on purpose: on a cold CarPlay launch the connected event
+  /// fires before our listener registers and is missed, so that flag can stay
+  /// false the whole session and would freeze the badge at its initial value.
+  /// The speed-diff check keeps this cheap; re-pushing while disconnected just
+  /// primes the shared Now Playing template, which is harmless.
+  void _onPlayerChanged() {
+    final speed = AudioPlayerService().speed;
+    if ((speed - _lastPushedSpeed).abs() < 0.001) return;
+    _configureNowPlayingButtons();
+  }
+
+  /// Briefly confirm a saved bookmark. CarPlay has no toast, so we present an
+  /// auto-dismissing modal alert (the closest thing to a banner it offers). The
+  /// OK action lets the driver dismiss early; otherwise it clears itself.
+  Future<void> _showBookmarkBanner() async {
+    try {
+      _bannerDismissTimer?.cancel();
+      if (_bannerShowing) {
+        await FlutterCarplay.popModal();
+        _bannerShowing = false;
+      }
+      await FlutterCarplay.showAlert(
+        template: CPAlertTemplate(
+          titleVariants: const ['Bookmark added'],
+          actions: [
+            CPAlertAction(
+              title: 'OK',
+              onPress: () {
+                _bannerDismissTimer?.cancel();
+                _bannerShowing = false;
+                FlutterCarplay.popModal();
+              },
+            ),
+          ],
+        ),
+      );
+      _bannerShowing = true;
+      _bannerDismissTimer = Timer(const Duration(milliseconds: 1800), () {
+        if (!_bannerShowing) return;
+        _bannerShowing = false;
+        FlutterCarplay.popModal();
+      });
+    } catch (e) {
+      debugPrint('[CarPlay] bookmark banner failed: $e');
+    }
+  }
+
+  /// Route a Now Playing button tap from native into the audio handler's
+  /// customAction, which owns the chapter/speed/bookmark logic.
+  Future<dynamic> _handleNativeCall(MethodCall call) async {
+    if (call.method != 'carPlayButton') return null;
+    final action = (call.arguments as Map?)?['action'] as String?;
+    if (action == null) return null;
+    debugPrint('[CarPlay] Now Playing button: $action');
+    final result = await AudioPlayerService.handler?.customAction(action);
+    if (action == 'bookmark' && result == true) {
+      await _showBookmarkBanner();
+    }
+    return null;
   }
 
   // ─── Continue Listening tab ─────────────────────────────────────────
@@ -323,13 +423,54 @@ class CarPlayService {
 
   // ─── Books list ────────────────────────────────────────────────────
 
+  /// CarPlay books browse. Unlike Android Auto, CarPlay caps the navigation
+  /// stack (~5 pushed templates), so a recursive letter drilldown (T -> Th ->
+  /// The -> ...) pushes too deep and iOS kills the app. Instead we show ONE
+  /// flat level of letter/prefix buckets (each <= bucketThreshold) and then
+  /// the book list - a fixed depth of two pushes.
   Future<CPListTemplate> _buildBooksList(String libraryId) async {
     final api = await _autoService.getApi();
-    final entries = await _autoService.fetchLibraryBooksData(libraryId);
-    final items = entries.map((e) => _playableListItem(e, api)).toList();
+    final all = await _autoService.fetchAllBooks(libraryId);
+
+    // Small library: skip the bucket level, list the books directly.
+    if (all.length <= AndroidAutoService.bucketThreshold) {
+      final items = all.map((e) => _playableListItem(e, api)).toList();
+      return CPListTemplate(
+        sections: [CPListSection(items: items)],
+        title: 'Books',
+        systemIcon: 'book.fill',
+      );
+    }
+
+    final buckets = _autoService.flattenedBookBuckets(all);
+    final items = buckets.map((b) {
+      return CPListItem(
+        text: b.prefix.isEmpty ? '#' : b.prefix,
+        detailText: '${b.count}',
+        accessoryType: CPListItemAccessoryTypes.disclosureIndicator,
+        onPress: (complete, self) async {
+          final template = await _buildBooksLeaf(libraryId, b.prefix);
+          FlutterCarplay.push(template: template);
+          complete();
+        },
+      );
+    }).toList();
     return CPListTemplate(
       sections: [CPListSection(items: items)],
       title: 'Books',
+      systemIcon: 'book.fill',
+    );
+  }
+
+  /// Leaf book list for one flat bucket [prefix].
+  Future<CPListTemplate> _buildBooksLeaf(String libraryId, String prefix) async {
+    final api = await _autoService.getApi();
+    final all = await _autoService.fetchAllBooks(libraryId);
+    final books = _autoService.booksForPrefix(all, prefix);
+    final items = books.map((e) => _playableListItem(e, api)).toList();
+    return CPListTemplate(
+      sections: [CPListSection(items: items)],
+      title: prefix.isEmpty ? 'Books' : prefix,
       systemIcon: 'book.fill',
     );
   }
@@ -499,5 +640,9 @@ class CarPlayService {
     // deprecated compat shim wired only in the old AudioService.start() flow;
     // with the modern AudioService.init() it routes to a no-op BaseAudioHandler.
     AudioPlayerService.handler?.playFromMediaId(mediaId);
+    // Jump straight to Now Playing on tap, like the native apps, instead of
+    // making the user find the Now Playing button. pushIfNotExist on the native
+    // side means it's a no-op if Now Playing is already on screen.
+    FlutterCarplay.showSharedNowPlaying();
   }
 }

@@ -114,7 +114,7 @@ class _RmabBookDetailContentState extends State<_RmabBookDetailContent> {
       if (!mounted) return;
       debugPrint('[RMAB] detail submit exception: ${e.kind} ${e.message}');
       setState(() => _submitting = false);
-      _toast(_messageForException(e, l));
+      _toast(e.localizedMessage(l, l.rmabRequestErrorGeneric));
     } catch (e) {
       if (!mounted) return;
       debugPrint('[RMAB] detail submit unexpected: $e');
@@ -140,17 +140,6 @@ class _RmabBookDetailContentState extends State<_RmabBookDetailContent> {
         return l.rmabRequestErrorValidation;
       case RmabCreateErrorKind.requestError:
         return l.rmabRequestErrorGeneric;
-    }
-  }
-
-  String _messageForException(RmabException e, AppLocalizations l) {
-    switch (e.kind) {
-      case RmabErrorKind.unauthorized:
-        return l.rmabRequestErrorTokenRejected;
-      case RmabErrorKind.network:
-        return l.rmabConfigErrorNetwork;
-      default:
-        return '${l.rmabRequestErrorGeneric}: ${e.message}';
     }
   }
 

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:palette_generator/palette_generator.dart';
+import '../utils/cover_accent.dart';
 import '../widgets/absorbing_shared.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
@@ -26,6 +27,7 @@ import '../widgets/scroll_reveal.dart';
 import '../widgets/section_labels.dart';
 import 'app_shell.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/duration_format.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -677,11 +679,8 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
 
   static String _fmtRemaining(double s) {
     if (s <= 0) return '';
-    final h = (s / 3600).floor();
-    final m = ((s % 3600) / 60).floor();
-    if (h > 0) return '${h}h ${m}m left';
-    if (m > 0) return '${m}m left';
-    return '<1m left';
+    if (s < 60) return '<1m left';
+    return '${formatHm(s)} left';
   }
 
   Widget _buildCoverImage(String? coverUrl, ColorScheme cs, Map<String, String> headers) {
@@ -748,11 +747,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
     }
     PaletteGenerator.fromImageProvider(provider, maximumColorCount: 16)
         .then((palette) {
-          final picked = palette.vibrantColor?.color
-              ?? palette.lightVibrantColor?.color
-              ?? palette.darkVibrantColor?.color
-              ?? palette.dominantColor?.color
-              ?? palette.colors.firstOrNull;
+          final picked = accentFromCoverPalette(palette);
           if (picked == null) return;
           _accentCache[coverUrl] = picked;
           if (!mounted) return;
@@ -861,6 +856,19 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       }
     }
 
+    // Long-press opens the quick-actions sheet: book quick sheet for books,
+    // episode quick sheet for a podcast episode. A bare podcast show falls back
+    // to opening details.
+    void openQuickActions() {
+      if (recentEpisode != null) {
+        EpisodeDetailSheet.showQuick(context, item, recentEpisode);
+      } else if (lib.isPodcastLibrary) {
+        openDetails();
+      } else {
+        showQuickActionsSheet(context, itemId, initialItem: item);
+      }
+    }
+
     return Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(14),
@@ -876,7 +884,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
         ),
         child: InkWell(
           onTap: resume,
-          onLongPress: openDetails,
+          onLongPress: openQuickActions,
           borderRadius: BorderRadius.circular(14),
           child: SizedBox(
             width: 150,

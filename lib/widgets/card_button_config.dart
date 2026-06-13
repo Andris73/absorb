@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../services/chromecast_service.dart';
 import '../services/wording.dart';
 
 class CardButtonDef {
@@ -44,8 +45,14 @@ String localizedCardButtonLabel(AppLocalizations l, CardButtonDef def) {
   return def.label;
 }
 
-/// Button IDs that are hidden on iOS (features not yet supported).
-final Set<String> _iosHiddenButtons = Platform.isIOS ? const {'cast'} : const {};
+/// Button IDs hidden in this build / on this platform.
+/// - iOS: cast UI not supported through the plugin yet.
+/// - F-Droid (GMS-free): Chromecast needs Google Play Services, so the stub
+///   service reports castSupported=false and the button is dropped entirely.
+final Set<String> _hiddenButtons = {
+  if (Platform.isIOS) 'cast',
+  if (!ChromecastService.castSupported) 'cast',
+};
 
 const _allCardButtons = [
   CardButtonDef('chapters', 'Chapters', Icons.list_rounded),
@@ -65,7 +72,7 @@ const _allCardButtons = [
 
 /// Card buttons filtered for the current platform.
 final List<CardButtonDef> allCardButtons =
-    _allCardButtons.where((b) => !_iosHiddenButtons.contains(b.id)).toList();
+    _allCardButtons.where((b) => !_hiddenButtons.contains(b.id)).toList();
 
 /// Look up a button definition by ID.
 CardButtonDef? buttonDefById(String id) {

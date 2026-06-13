@@ -8,13 +8,14 @@ import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import 'book_detail_sheet.dart';
+import 'overlay_toast.dart';
 import 'stackable_sheet.dart';
 
 /// Show a modal sheet listing every book the user has finished in the
 /// current calendar year. Loads full item metadata on demand so it can
 /// render covers + metadata + still-in-library detection for each one.
-void showFinishedBooksThisYearSheet(BuildContext context) {
-  showStackableSheet(
+Future<void> showFinishedBooksThisYearSheet(BuildContext context) async {
+  await showStackableSheet(
     context: context,
     useSafeArea: true,
     showHandle: true,
@@ -41,6 +42,7 @@ class _FinishedBooksThisYearSheetState
     extends State<FinishedBooksThisYearSheet> {
   bool _isLoading = true;
   bool _gridView = false;
+  bool _showHidden = false;
   List<Map<String, dynamic>> _items = [];
 
   @override
@@ -56,7 +58,17 @@ class _FinishedBooksThisYearSheetState
     final auth = context.read<AuthProvider>();
     final lib = context.read<LibraryProvider>();
     final api = auth.apiService;
-    final ids = lib.finishedBooksThisYearIds;
+    final List<String> ids;
+    if (_showHidden) {
+      ids = lib.yearHiddenIds.toList()
+        ..sort((a, b) {
+          final fa = (lib.getProgressData(a)?['finishedAt'] as num?)?.toInt() ?? 0;
+          final fb = (lib.getProgressData(b)?['finishedAt'] as num?)?.toInt() ?? 0;
+          return fb.compareTo(fa);
+        });
+    } else {
+      ids = lib.finishedBooksThisYearIds;
+    }
 
     if (api == null || ids.isEmpty) {
       if (mounted) setState(() => _isLoading = false);
@@ -84,6 +96,62 @@ class _FinishedBooksThisYearSheetState
     PlayerSettings.setSectionGridView(_gridView);
   }
 
+  void _toggleShowHidden() {
+    setState(() {
+      _showHidden = !_showHidden;
+      _isLoading = true;
+      _items = [];
+    });
+    _load();
+  }
+
+  /// Long-press action: hide this book from Absorb's local "finished this year"
+  /// list. Spells out that the server's finished date is left alone.
+  Future<void> _confirmRemove(String itemId, String title, int? finishedAtMs) async {
+    final l = AppLocalizations.of(context)!;
+    final dateStr = finishedAtMs != null ? _fmtDate(finishedAtMs) : null;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.statsRemoveFromYearTitle),
+        content: Text(dateStr != null
+            ? l.statsRemoveFromYearWithDate(dateStr, title)
+            : l.statsRemoveFromYearNoDate(title)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.remove)),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await context.read<LibraryProvider>().hideFromThisYear(itemId);
+    if (!mounted) return;
+    setState(() => _items.removeWhere((it) => (it['id'] as String?) == itemId));
+    showOverlayToast(context, l.statsRemovedFromYear, icon: Icons.remove_circle_outline_rounded);
+  }
+
+  /// Long-press action while viewing hidden books: add one back so it counts
+  /// toward this year again.
+  Future<void> _confirmRestore(String itemId, String title) async {
+    final l = AppLocalizations.of(context)!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.statsAddBackToYearTitle),
+        content: Text(l.statsAddBackToYearBody(title)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.statsAddBack)),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await context.read<LibraryProvider>().unhideFromThisYear(itemId);
+    if (!mounted) return;
+    setState(() => _items.removeWhere((it) => (it['id'] as String?) == itemId));
+    showOverlayToast(context, l.statsAddedBackToYear, icon: Icons.check_circle_outline_rounded);
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -98,13 +166,24 @@ class _FinishedBooksThisYearSheetState
           Icon(Icons.auto_stories_rounded, size: 20, color: cs.primary),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(l.statsBooksThisYear,
+            child: Text(_showHidden ? l.statsHiddenFromYear : l.statsBooksThisYear,
                 style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis),
           ),
           Text('${_items.length}',
               style: tt.labelMedium?.copyWith(color: cs.onSurfaceVariant)),
+          if (lib.yearHiddenIds.isNotEmpty || _showHidden) ...[
+            const SizedBox(width: 12),
+            GestureDetector(
+              onTap: _toggleShowHidden,
+              child: Icon(
+                _showHidden ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                size: 20,
+                color: _showHidden ? cs.primary : cs.onSurfaceVariant,
+              ),
+            ),
+          ],
           const SizedBox(width: 12),
           GestureDetector(
             onTap: _toggleGridView,
@@ -122,7 +201,7 @@ class _FinishedBooksThisYearSheetState
             ? const Center(child: CircularProgressIndicator())
             : _items.isEmpty
                 ? Center(
-                    child: Text(l.noBooksFound,
+                    child: Text(_showHidden ? l.statsNothingHidden : l.noBooksFound,
                         style: tt.bodyLarge
                             ?.copyWith(color: cs.onSurfaceVariant)))
                 : _gridView
@@ -165,6 +244,10 @@ class _FinishedBooksThisYearSheetState
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               onTap: () => showBookDetailSheet(context, itemId),
+              onLongPress: () => _showHidden
+                  ? _confirmRestore(itemId, title)
+                  : _confirmRemove(itemId, title,
+                      finishedAt is num ? finishedAt.toInt() : null),
               borderRadius: BorderRadius.circular(14),
               child: SizedBox(
                 height: 128,
@@ -247,6 +330,10 @@ class _FinishedBooksThisYearSheetState
 
         return GestureDetector(
           onTap: () => showBookDetailSheet(context, itemId),
+          onLongPress: () => _showHidden
+              ? _confirmRestore(itemId, title)
+              : _confirmRemove(
+                  itemId, title, finishedAt is num ? finishedAt.toInt() : null),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

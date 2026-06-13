@@ -82,6 +82,10 @@ class _GridBookTileState extends State<GridBookTile> {
           }
         }
       },
+      // Long-press a book cover for the quick-actions sheet (podcasts skipped).
+      onLongPress: (itemId.isNotEmpty && !lib.isPodcastLibrary)
+          ? () => showQuickActionsSheet(context, itemId, initialItem: widget.item)
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -1,7 +1,7 @@
 name: absorb
 description: An Audiobookshelf Client
 publish_to: 'none'
-version: 1.8.89+133
+version: 1.9.1+174
 
 environment:
   sdk: '>=3.1.0 <4.0.0'
@@ -23,15 +23,9 @@ dependencies:
   # Storage
   shared_preferences: ^2.2.2
   
-  # Dynamic Color (Material You)
-  dynamic_color: ^1.6.8
-  
   # Image caching
   cached_network_image: ^3.3.0
-  
-  # Icons
-  material_design_icons_flutter: ^7.0.7296
-  
+
   # Audio playback
   just_audio:
     path: packages/just_audio
@@ -39,15 +33,22 @@ dependencies:
   audio_service:
     path: packages/audio_service
 
-  # CarPlay
-  flutter_carplay: ^1.2.11
+  # CarPlay - vendored copy of 1.2.11 with a patched image loader (downsampled +
+  # cached list thumbnails) so large browse lists don't run CarPlay out of memory.
+  flutter_carplay:
+    path: packages/flutter_carplay
   
   # Permissions
   permission_handler: ^12.0.1
-  
+
   # Downloads & offline
   path_provider: ^2.1.1
   connectivity_plus: ^6.0.3
+  # Native background downloads (iOS background URLSession, Android foreground service)
+  background_downloader: ^9.0.0
+
+  # In-app APK install (GitHub flavor updater)
+  open_filex: ^4.5.0
   
   # Shake detection for sleep timer
   sensors_plus: ^4.0.2
@@ -81,6 +82,9 @@ dependencies:
 
   # App icon long-press shortcuts (Continue Listening / Downloads)
   quick_actions: ^1.0.8
+
+  # One-time store review prompt (stripped for the F-Droid build)
+  in_app_review: ^2.0.9
 
   # Splash screen (preserve during init)
   flutter_native_splash: ^2.4.4

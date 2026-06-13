@@ -20,6 +20,7 @@ import '../services/scoped_prefs.dart';
 import '../screens/login_screen.dart';
 import '../screens/app_shell.dart';
 import '../services/update_checker_service.dart';
+import '../widgets/update_dialog.dart';
 import '../screens/admin_screen.dart';
 import '../screens/downloads_screen.dart';
 import '../screens/bookmarks_screen.dart';
@@ -33,7 +34,6 @@ import '../widgets/tips_sheet.dart';
 import '../widgets/feature_hint.dart';
 import '../widgets/welcome_sheet.dart';
 import '../widgets/rmab_config_sheet.dart';
-import '../widgets/queue_playlist_picker_sheet.dart';
 import '../l10n/app_localizations.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -46,19 +46,34 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   static const _isPlayStoreBuild = bool.fromEnvironment('PLAYSTORE_BUILD');
   static const _isGithubBuild = bool.fromEnvironment('GITHUB_BUILD');
+  // Distribution label shown next to the version. The F-Droid build passes
+  // neither define, so it falls through here.
+  static String get _flavorLabel =>
+      _isGithubBuild ? 'GitHub' : _isPlayStoreBuild ? 'Play Store' : 'F-Droid';
   AutoRewindSettings _rewindSettings = const AutoRewindSettings();
   double _defaultSpeed = 1.0;
+
+  void _setDefaultSpeed(double v) {
+    final s = ((v * 20).round() / 20.0).clamp(0.5, 3.0);
+    setState(() => _defaultSpeed = s);
+    PlayerSettings.setDefaultSpeed(s);
+  }
+
   bool _wifiOnlyDownloads = false;
   bool _autoDownloadOnStream = false;
   int _rollingDownloadCount = 3;
   bool _rollingDownloadDeleteFinished = false;
   bool _showBookSlider = false;
   bool _notifChapterProgress = false;
+  bool _notifSpeedBookmark = false;
+  bool _lockSeekBar = false;
   bool _speedAdjustedTime = true;
   int _forwardSkip = 30;
   int _backSkip = 10;
   bool _skipChapterBarrier = true;
   String _shakeMode = 'addTime';
+  int _sleepRewindSeconds = 0;
+  static const _maxRewindMinutes = 120;
   bool _resetSleepOnPause = false;
   bool _sleepFadeOut = true;
   int _sleepFadeDuration = 30;
@@ -95,9 +110,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _classicWording = false;
   bool _rectangleCovers = false;
   bool _coverPlayButton = false;
+  String _cardBackground = 'blurred';
+  double _progressTextScale = 1.0;
   String _themeMode = 'dark';
   String _language = '';
   int _startScreen = 2;
+  String _statsGoalType = 'off';
+  int _statsGoalMinutes = 30;
+  int _statsBookGoal = 0;
+  String _statsChartStyle = 'bar';
+  int _statsChartRange = 7;
+  List<String> _statsSectionOrder = [];
+  Set<String> _statsHiddenSections = {};
+
+  // Recent sessions is intentionally absent: it infinite-scrolls, so it is
+  // pinned to the bottom of the stats page and can't be reordered or hidden.
+  static const _statsSectionIds = [
+    'hero', 'goals', 'periods', 'activity', 'chart', 'dayofweek', 'top',
+  ];
   int _streamingCacheSizeMb = 0;
   bool _localServerEnabled = false;
   String _localServerUrl = '';
@@ -217,48 +247,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     PlayerSettings.notifySettingsChanged();
   }
 
-  Widget _buildActivePlaylistRow(
-    ColorScheme cs,
-    TextTheme tt,
-    LibraryProvider lib,
-    AppLocalizations l,
-  ) {
-    String name = l.queuePlaylistNone;
-    if (_queuePlaylistId != null) {
-      final match = lib.playlists.cast<Map<String, dynamic>>().where(
-        (p) => p['id'] == _queuePlaylistId,
-      ).firstOrNull;
-      final n = match?['name'] as String?;
-      if (n != null && n.isNotEmpty) name = n;
-    }
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 4, 4, 4),
-      decoration: BoxDecoration(
-        color: cs.primaryContainer.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: cs.primary.withValues(alpha: 0.25), width: 0.5),
-      ),
-      child: Row(children: [
-        Icon(Icons.playlist_play_rounded, size: 16, color: cs.primary),
-        const SizedBox(width: 8),
-        Expanded(child: Text(
-          name,
-          style: tt.bodySmall?.copyWith(color: cs.onPrimaryContainer, fontWeight: FontWeight.w600),
-          maxLines: 1, overflow: TextOverflow.ellipsis,
-        )),
-        IconButton(
-          icon: const Icon(Icons.close_rounded, size: 16),
-          color: cs.onPrimaryContainer.withValues(alpha: 0.7),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          visualDensity: VisualDensity.compact,
-          tooltip: l.exit,
-          onPressed: () => PlayerSettings.clearQueueModePlaylist(),
-        ),
-      ]),
-    );
-  }
-
   Future<void> _setMergedQueueMode(String mode) async {
     if (mode == 'playlist') return _enterPlaylistMode();
     await PlayerSettings.setBookQueueMode(mode);
@@ -269,6 +257,213 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _podcastQueueMode = mode;
     });
     PlayerSettings.notifySettingsChanged();
+  }
+
+  Widget _statsStepperRow(ColorScheme cs, TextTheme tt, String label, String value,
+      {VoidCallback? onMinus, VoidCallback? onPlus, VoidCallback? onTapValue}) {
+    return Row(children: [
+      Expanded(child: Text(label, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant))),
+      IconButton(
+        onPressed: _loaded ? onMinus : null,
+        icon: const Icon(Icons.remove_circle_outline_rounded),
+        color: cs.primary,
+        visualDensity: VisualDensity.compact,
+      ),
+      InkWell(
+        onTap: _loaded ? onTapValue : null,
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 72,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Text(value,
+                textAlign: TextAlign.center,
+                style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+          ),
+        ),
+      ),
+      IconButton(
+        onPressed: _loaded ? onPlus : null,
+        icon: const Icon(Icons.add_circle_outline_rounded),
+        color: cs.primary,
+        visualDensity: VisualDensity.compact,
+      ),
+    ]);
+  }
+
+  String _statsMinutesLabel(AppLocalizations l, int minutes) {
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    return h > 0 ? l.statsScreenDurationHm(h, m) : l.statsScreenDurationM(m);
+  }
+
+  /// Accepts plain minutes ("90") or h:mm ("1:30").
+  int? _parseGoalMinutes(String input) {
+    final t = input.trim();
+    if (t.isEmpty) return null;
+    int? minutes;
+    if (t.contains(':')) {
+      final parts = t.split(':');
+      if (parts.length != 2) return null;
+      final h = int.tryParse(parts[0].trim());
+      final m = int.tryParse(parts[1].trim());
+      if (h == null || m == null || h < 0 || m < 0 || m >= 60) return null;
+      minutes = h * 60 + m;
+    } else {
+      minutes = int.tryParse(t);
+    }
+    if (minutes == null || minutes < 1) return null;
+    return minutes.clamp(1, 1440);
+  }
+
+  Future<String?> _promptStatsValue(String hint, TextInputType keyboard) async {
+    final l = AppLocalizations.of(context)!;
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.statsGoalEnterTitle),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: keyboard,
+          decoration: InputDecoration(hintText: hint),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l.cancel)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: Text(l.save)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editStatsTimeTarget() async {
+    final l = AppLocalizations.of(context)!;
+    final input = await _promptStatsValue(l.statsGoalEnterTimeHint, TextInputType.datetime);
+    if (input == null) return;
+    final minutes = _parseGoalMinutes(input);
+    if (minutes == null) return;
+    setState(() => _statsGoalMinutes = minutes);
+    PlayerSettings.setStatsGoalMinutes(minutes);
+  }
+
+  Future<void> _editStatsBookTarget() async {
+    final input = await _promptStatsValue('', TextInputType.number);
+    if (input == null) return;
+    final books = int.tryParse(input.trim());
+    if (books == null || books < 0) return;
+    setState(() => _statsBookGoal = books.clamp(0, 500));
+    PlayerSettings.setStatsBookGoal(_statsBookGoal);
+  }
+
+  List<String> get _mergedStatsOrder => [
+        ..._statsSectionOrder.where(_statsSectionIds.contains),
+        ..._statsSectionIds.where((id) => !_statsSectionOrder.contains(id)),
+      ];
+
+  String _statsSectionLabel(AppLocalizations l, String id) {
+    switch (id) {
+      case 'hero': return l.statsTotalListeningTime;
+      case 'goals': return l.statsGoalTitle;
+      case 'periods': return l.statsSectionTimePeriods;
+      case 'activity': return l.statsActivity;
+      case 'chart': return l.statsChartTitle;
+      case 'dayofweek': return l.statsDayOfWeek;
+      case 'top': return l.statsMostListened;
+    }
+    return id;
+  }
+
+  IconData _statsSectionIcon(String id) {
+    switch (id) {
+      case 'hero': return Icons.headphones_rounded;
+      case 'goals': return Icons.flag_rounded;
+      case 'periods': return Icons.date_range_rounded;
+      case 'activity': return Icons.local_fire_department_rounded;
+      case 'chart': return Icons.bar_chart_rounded;
+      case 'dayofweek': return Icons.view_week_rounded;
+      case 'top': return Icons.star_outline_rounded;
+    }
+    return Icons.widgets_outlined;
+  }
+
+  Widget _statsSectionsList(ColorScheme cs, TextTheme tt, AppLocalizations l) {
+    final order = _mergedStatsOrder;
+    return ReorderableListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      itemCount: order.length,
+      onReorderStart: (_) => HapticFeedback.mediumImpact(),
+      onReorder: (oldIndex, newIndex) {
+        final list = List<String>.from(order);
+        if (newIndex > oldIndex) newIndex--;
+        final item = list.removeAt(oldIndex);
+        list.insert(newIndex, item);
+        setState(() => _statsSectionOrder = list);
+        PlayerSettings.setStatsSectionOrder(list);
+      },
+      itemBuilder: (context, index) {
+        final id = order[index];
+        final isHidden = _statsHiddenSections.contains(id);
+        return Container(
+          key: ValueKey(id),
+          margin: const EdgeInsets.symmetric(vertical: 3),
+          decoration: BoxDecoration(
+            color: cs.onSurface.withValues(alpha: isHidden ? 0.02 : 0.05),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+          ),
+          child: ListTile(
+            dense: true,
+            leading: Icon(_statsSectionIcon(id), size: 18,
+                color: isHidden
+                    ? cs.onSurfaceVariant.withValues(alpha: 0.3)
+                    : cs.onSurfaceVariant),
+            title: Text(_statsSectionLabel(l, id),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: isHidden
+                      ? cs.onSurface.withValues(alpha: 0.35)
+                      : cs.onSurface,
+                )),
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              GestureDetector(
+                onTap: () {
+                  final updated = Set<String>.from(_statsHiddenSections);
+                  if (!updated.add(id)) updated.remove(id);
+                  setState(() => _statsHiddenSections = updated);
+                  PlayerSettings.setStatsHiddenSections(updated.toList());
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(
+                    isHidden
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_rounded,
+                    size: 18,
+                    color: isHidden
+                        ? cs.onSurfaceVariant.withValues(alpha: 0.3)
+                        : cs.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              ReorderableDragStartListener(
+                index: index,
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(Icons.drag_handle_rounded,
+                      size: 18,
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                ),
+              ),
+            ]),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _loadSettings() async {
@@ -322,8 +517,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       PlayerSettings.getLanguage(),                                           // 49
       PlayerSettings.getClassicWording(),                                     // 50
       PlayerSettings.getQueuePlaylistId(),                                    // 51
+      PlayerSettings.getMediaControlsSpeedBookmark(),                         // 52
+      PlayerSettings.getLockSeekBar(),                                        // 53
+      PlayerSettings.getCardBackground(),                                     // card background
+      PlayerSettings.getProgressTextScale(),                                  // 54 (kept last — read via results.last)
     ]);
     final s = results[0] as AutoRewindSettings;
+    final progressScale = results.last as double;
+    final statsGoalType = await PlayerSettings.getStatsGoalType();
+    final statsGoalMinutes = await PlayerSettings.getStatsGoalMinutes();
+    final statsBookGoal = await PlayerSettings.getStatsBookGoal();
+    final statsChartStyle = await PlayerSettings.getStatsChartStyle();
+    final statsChartRange = await PlayerSettings.getStatsChartRange();
+    final statsSectionOrder = await PlayerSettings.getStatsSectionOrder();
+    final statsHiddenSections = await PlayerSettings.getStatsHiddenSections();
     final speed = results[1] as double;
     final wifiOnly = results[2] as bool;
     final rollingCount = results[3] as int;
@@ -372,9 +579,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final language = results[46] as String;
     final classicWording = results[47] as bool;
     final qpId = results[48] as String?;
+    final notifSpeedBookmark = results[49] as bool;
+    final lockSeek = results[50] as bool;
+    final cardBg = results[51] as String;
     final rmabBaseUrl = await ScopedPrefs.getString(kRmabBaseUrlKey);
     final rmabApiToken = await ScopedPrefs.getString(kRmabApiTokenKey);
+    final sleepRewind = await PlayerSettings.getSleepRewindSeconds();
     if (mounted) setState(() {
+      _sleepRewindSeconds = sleepRewind;
       _rmabBaseUrl = rmabBaseUrl;
       _rmabApiToken = rmabApiToken;
       _rewindSettings = s;
@@ -385,6 +597,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _rollingDownloadDeleteFinished = rollingDelete;
       _showBookSlider = bookSlider;
       _notifChapterProgress = notifChapter;
+      _notifSpeedBookmark = notifSpeedBookmark;
+      _lockSeekBar = lockSeek;
       _speedAdjustedTime = speedAdj;
       _forwardSkip = fwd;
       _backSkip = bk;
@@ -421,6 +635,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // cardBtnLayout removed (now managed in edit sheet)
       _rectangleCovers = rectCovers;
       _coverPlayButton = coverPlay;
+      _cardBackground = cardBg;
+      _progressTextScale = progressScale;
       _skipChapterBarrier = skipBarrier;
       _trustAllCerts = trustCerts;
       _showExplicitBadge = showExplicit;
@@ -431,6 +647,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _shakeSensitivity = shakeSens;
       _language = language;
       _canPickDownloadLocation = !_isPlayStoreBuild;
+      _statsGoalType = statsGoalType;
+      _statsGoalMinutes = statsGoalMinutes;
+      _statsBookGoal = statsBookGoal;
+      _statsChartStyle = statsChartStyle;
+      _statsChartRange = statsChartRange;
+      _statsSectionOrder = statsSectionOrder;
+      _statsHiddenSections = statsHiddenSections.toSet();
 
       _loaded = true;
     });
@@ -556,6 +779,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _saveRewind(AutoRewindSettings s) async {
     setState(() => _rewindSettings = s);
     await s.save();
+  }
+
+  String _rewindLabel(int seconds, AppLocalizations l) {
+    if (seconds == 0) return l.off;
+    if (seconds < 60) return l.sleepTimerSheetSecondsShort(seconds);
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return s > 0
+        ? l.sleepTimerSheetMinSecShort(m, s)
+        : l.sleepTimerSheetMinShort(m);
+  }
+
+  Future<void> _saveLocalServerUrl(AuthProvider auth, AppLocalizations l) async {
+    final url = _localServerController.text.trim();
+    if (url.isEmpty) return;
+    _localServerUrl = url;
+    await auth.setLocalServerConfig(enabled: _localServerEnabled, url: _localServerUrl);
+    if (!mounted) return;
+    FocusScope.of(context).unfocus();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(l.localServerUrlSetSnackbar),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+    await auth.checkLocalServer();
+    if (mounted) setState(() {});
   }
 
   @override
@@ -689,7 +938,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
 
                 // ── Admin Controls ──
-                if (auth.isRoot)
+                if (auth.isAdmin)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                     child: Material(
@@ -824,6 +1073,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(l.progressTextSize, style: tt.titleSmall),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: SegmentedButton<double>(
+                              showSelectedIcon: false,
+                              segments: const [
+                                ButtonSegment(value: 1.0, label: Text('A', style: TextStyle(fontSize: 13))),
+                                ButtonSegment(value: 1.5, label: Text('A', style: TextStyle(fontSize: 17))),
+                                ButtonSegment(value: 2.0, label: Text('A', style: TextStyle(fontSize: 21))),
+                              ],
+                              selected: {_progressTextScale},
+                              onSelectionChanged: _loaded ? (selected) {
+                                final v = selected.first;
+                                setState(() => _progressTextScale = v);
+                                PlayerSettings.setProgressTextScale(v);
+                              } : null,
+                              style: const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
                     SwitchListTile(
                       title: Text(l.disablePageFade),
                       subtitle: Text(
@@ -867,6 +1147,152 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 16),
 
+                // ── Customize Stats ──
+                CollapsibleSection(
+                  key: _keyFor('Customize Stats'),
+                  icon: Icons.bar_chart_rounded,
+                  title: l.settingsCustomizeStats,
+                  cs: cs,
+                  isExpanded: _expandedSection == 'Customize Stats',
+                  onExpansionChanged: (v) => _onSectionExpanded('Customize Stats', v),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(l.statsGoalTitle, style: tt.titleSmall),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: SegmentedButton<String>(
+                              showSelectedIcon: false,
+                              segments: [
+                                ButtonSegment(value: 'off', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsGoalOff, maxLines: 1))),
+                                ButtonSegment(value: 'daily', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsGoalDaily, maxLines: 1))),
+                                ButtonSegment(value: 'weekly', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsGoalWeekly, maxLines: 1))),
+                                ButtonSegment(value: 'monthly', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsGoalMonthly, maxLines: 1))),
+                              ],
+                              selected: {_statsGoalType},
+                              onSelectionChanged: _loaded ? (selected) {
+                                setState(() => _statsGoalType = selected.first);
+                                PlayerSettings.setStatsGoalType(_statsGoalType);
+                              } : null,
+                              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                            ),
+                          ),
+                          if (_statsGoalType != 'off')
+                            _statsStepperRow(cs, tt, l.statsGoalTarget,
+                                _statsMinutesLabel(l, _statsGoalMinutes),
+                                onTapValue: _editStatsTimeTarget,
+                                onMinus: _statsGoalMinutes > 5
+                                    ? () {
+                                        setState(() => _statsGoalMinutes -= 5);
+                                        PlayerSettings.setStatsGoalMinutes(_statsGoalMinutes);
+                                      }
+                                    : null,
+                                onPlus: _statsGoalMinutes < 600
+                                    ? () {
+                                        setState(() => _statsGoalMinutes += 5);
+                                        PlayerSettings.setStatsGoalMinutes(_statsGoalMinutes);
+                                      }
+                                    : null),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(l.statsBookChallengeTitle, style: tt.titleSmall),
+                          _statsStepperRow(cs, tt, l.statsBookChallengeDesc,
+                              _statsBookGoal == 0 ? l.statsGoalOff : l.statsBooksShort(_statsBookGoal),
+                              onTapValue: _editStatsBookTarget,
+                              onMinus: _statsBookGoal > 0
+                                  ? () {
+                                      setState(() => _statsBookGoal--);
+                                      PlayerSettings.setStatsBookGoal(_statsBookGoal);
+                                    }
+                                  : null,
+                              onPlus: _statsBookGoal < 500
+                                  ? () {
+                                      setState(() => _statsBookGoal++);
+                                      PlayerSettings.setStatsBookGoal(_statsBookGoal);
+                                    }
+                                  : null),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(l.statsChartTitle, style: tt.titleSmall),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: SegmentedButton<String>(
+                              showSelectedIcon: false,
+                              segments: [
+                                ButtonSegment(value: 'bar', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsChartBar, maxLines: 1))),
+                                ButtonSegment(value: 'line', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsChartLine, maxLines: 1))),
+                                ButtonSegment(value: 'heatmap', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsChartHeatmap, maxLines: 1))),
+                              ],
+                              selected: {_statsChartStyle},
+                              onSelectionChanged: _loaded ? (selected) {
+                                setState(() => _statsChartStyle = selected.first);
+                                PlayerSettings.setStatsChartStyle(_statsChartStyle);
+                              } : null,
+                              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                            ),
+                          ),
+                          if (_statsChartStyle != 'heatmap') ...[
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: SegmentedButton<int>(
+                                showSelectedIcon: false,
+                                segments: [
+                                  ButtonSegment(value: 7, label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsChartDays7, maxLines: 1))),
+                                  ButtonSegment(value: 30, label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsChartDays30, maxLines: 1))),
+                                ],
+                                selected: {_statsChartRange},
+                                onSelectionChanged: _loaded ? (selected) {
+                                  setState(() => _statsChartRange = selected.first);
+                                  PlayerSettings.setStatsChartRange(_statsChartRange);
+                                } : null,
+                                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(l.statsSectionsTitle, style: tt.titleSmall),
+                          const SizedBox(height: 4),
+                          Text(
+                            l.dragToReorderTapEye,
+                            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                          const SizedBox(height: 8),
+                          _statsSectionsList(cs, tt, l),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
                 // ── Absorbing Cards ──
                 CollapsibleSection(
                   key: _keyFor('Absorbing Cards'),
@@ -898,6 +1324,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         setState(() => _coverPlayButton = v);
                         PlayerSettings.setCoverPlayButton(v);
                       } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(l.cardBackground, style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+                        const SizedBox(height: 8),
+                        SizedBox(width: double.infinity, child: SegmentedButton<String>(
+                          showSelectedIcon: false,
+                          segments: [
+                            ButtonSegment(value: 'blurred', icon: const Icon(Icons.blur_on_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardBackgroundBlurred))),
+                            ButtonSegment(value: 'gradient', icon: const Icon(Icons.gradient_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardBackgroundGradient))),
+                            ButtonSegment(value: 'off', icon: const Icon(Icons.block_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.off))),
+                          ],
+                          selected: {_cardBackground},
+                          onSelectionChanged: _loaded ? (s) {
+                            if (s.isEmpty) return;
+                            setState(() => _cardBackground = s.first);
+                            PlayerSettings.setCardBackground(s.first);
+                          } : null,
+                          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                        )),
+                      ]),
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     SwitchListTile(
@@ -968,7 +1417,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     const SizedBox(height: 12),
                                     Text(l.queueModeInfoManual, style: const TextStyle(fontWeight: FontWeight.w600)),
                                     const SizedBox(height: 4),
-                                    Text(l.queueModeInfoManualDesc),
+                                    Text(Wording.of(ctx).queueModeInfoManualDesc),
                                     const SizedBox(height: 12),
                                     Text(l.queueModeInfoSeries, style: const TextStyle(fontWeight: FontWeight.w600)),
                                     const SizedBox(height: 4),
@@ -1121,15 +1570,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Text(l.defaultSpeedSubtitle,
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant, fontSize: 11)),
                     ),
-                    AbsorbSlider(
-                      value: _defaultSpeed,
-                      min: 0.5,
-                      max: 3.0,
-                      divisions: 25,
-                      onChanged: _loaded ? (v) {
-                        setState(() => _defaultSpeed = double.parse(v.toStringAsFixed(2)));
-                        PlayerSettings.setDefaultSpeed(double.parse(v.toStringAsFixed(2)));
-                      } : null,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                      child: Row(children: [
+                        GestureDetector(
+                          onTap: _loaded ? () => _setDefaultSpeed(_defaultSpeed - 0.05) : null,
+                          child: Container(
+                            width: 36, height: 36,
+                            decoration: BoxDecoration(shape: BoxShape.circle, color: cs.onSurface.withValues(alpha: 0.08)),
+                            child: Icon(Icons.remove_rounded, size: 20, color: cs.onSurface.withValues(alpha: 0.7)),
+                          ),
+                        ),
+                        Expanded(child: AbsorbSlider(
+                          value: _defaultSpeed,
+                          min: 0.5,
+                          max: 3.0,
+                          divisions: 50,
+                          activeColor: cs.primary,
+                          onChanged: _loaded ? _setDefaultSpeed : null,
+                        )),
+                        GestureDetector(
+                          onTap: _loaded ? () => _setDefaultSpeed(_defaultSpeed + 0.05) : null,
+                          child: Container(
+                            width: 36, height: 36,
+                            decoration: BoxDecoration(shape: BoxShape.circle, color: cs.onSurface.withValues(alpha: 0.08)),
+                            child: Icon(Icons.add_rounded, size: 20, color: cs.onSurface.withValues(alpha: 0.7)),
+                          ),
+                        ),
+                      ]),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(52, 0, 52, 0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('0.5x', style: TextStyle(color: cs.onSurface.withValues(alpha: 0.3), fontSize: 11)),
+                          Text('3.0x', style: TextStyle(color: cs.onSurface.withValues(alpha: 0.3), fontSize: 11)),
+                        ],
+                      ),
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -1146,10 +1624,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               )),
                             backgroundColor: isActive ? cs.primary : cs.surfaceContainerHighest,
                             side: BorderSide.none,
-                            onPressed: () {
-                              setState(() => _defaultSpeed = s);
-                              PlayerSettings.setDefaultSpeed(s);
-                            },
+                            onPressed: _loaded ? () => _setDefaultSpeed(s) : null,
                           );
                         }).toList(),
                       ),
@@ -1233,18 +1708,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onChanged: _loaded ? (v) {
                         setState(() => _skipChapterBarrier = v);
                         PlayerSettings.setSkipChapterBarrier(v);
-                      } : null,
-                    ),
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    SwitchListTile(
-                      title: Text(l.chapterProgressInNotification),
-                      subtitle: Text(
-                        _notifChapterProgress ? l.chapterProgressOnSubtitle : l.chapterProgressOffSubtitle,
-                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                      value: _notifChapterProgress,
-                      onChanged: _loaded ? (v) {
-                        setState(() => _notifChapterProgress = v);
-                        PlayerSettings.setNotificationChapterProgress(v);
                       } : null,
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
@@ -1398,6 +1861,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 16),
 
+                // ── Media Controls ──
+                CollapsibleSection(
+                  key: _keyFor('Media Controls'),
+                  icon: Icons.dvr_rounded,
+                  title: l.sectionMediaControls,
+                  cs: cs,
+                  isExpanded: _expandedSection == 'Media Controls',
+                  onExpansionChanged: (v) => _onSectionExpanded('Media Controls', v),
+                  children: [
+                    SwitchListTile(
+                      title: Text(Platform.isIOS
+                          ? l.chapterProgressInNotificationIos
+                          : l.chapterProgressInNotification),
+                      subtitle: Text(
+                        _notifChapterProgress
+                            ? (Platform.isIOS
+                                ? l.chapterProgressOnSubtitleIos
+                                : l.chapterProgressOnSubtitle)
+                            : l.chapterProgressOffSubtitle,
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _notifChapterProgress,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _notifChapterProgress = v);
+                        PlayerSettings.setNotificationChapterProgress(v);
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    // Cross-platform: drops the seek action so the scrubber in the
+                    // notification / lockscreen / car can't be dragged.
+                    SwitchListTile(
+                      title: Text(l.lockSeekBar),
+                      subtitle: Text(
+                        _lockSeekBar ? l.lockSeekBarOnSubtitle : l.lockSeekBarOffSubtitle,
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _lockSeekBar,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _lockSeekBar = v);
+                        PlayerSettings.setLockSeekBar(v);
+                      } : null,
+                    ),
+                    // Android only: chooses which pair fills the phone media
+                    // player's two extra slots. iOS uses CarPlay's own buttons.
+                    if (Platform.isAndroid) ...[
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      SwitchListTile(
+                        title: Text(l.speedBookmarkInControls),
+                        subtitle: Text(
+                          _notifSpeedBookmark
+                              ? l.speedBookmarkOnSubtitle
+                              : l.speedBookmarkOffSubtitle,
+                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                        value: _notifSpeedBookmark,
+                        onChanged: _loaded ? (v) {
+                          setState(() => _notifSpeedBookmark = v);
+                          PlayerSettings.setMediaControlsSpeedBookmark(v);
+                        } : null,
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 16),
+
                 // ── Sleep Timer ──
                 CollapsibleSection(
                   key: _keyFor('Sleep Timer'),
@@ -1492,6 +2017,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         setState(() => _resetSleepOnPause = v);
                         PlayerSettings.setResetSleepOnPause(v);
                       } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      child: Row(children: [
+                        Icon(Icons.replay_rounded, size: 18,
+                          color: _sleepRewindSeconds > 0 ? cs.primary : cs.onSurfaceVariant),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text(l.sleepTimerSheetRewindOnSleep,
+                          style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant))),
+                        Text(_rewindLabel(_sleepRewindSeconds, l),
+                          style: tt.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: _sleepRewindSeconds > 0 ? cs.primary : cs.onSurfaceVariant)),
+                      ]),
+                    ),
+                    AbsorbSlider(
+                      value: (_sleepRewindSeconds / 60).clamp(0.0, _maxRewindMinutes.toDouble()),
+                      min: 0,
+                      max: _maxRewindMinutes.toDouble(),
+                      divisions: _maxRewindMinutes,
+                      onChanged: _loaded ? (v) {
+                        final seconds = (v * 60).round();
+                        setState(() => _sleepRewindSeconds = seconds);
+                        PlayerSettings.setSleepRewindSeconds(seconds);
+                      } : null,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(28, 0, 28, 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(l.off, style: TextStyle(color: cs.onSurface.withValues(alpha: 0.3), fontSize: 11)),
+                          Text(l.sleepTimerSheetMinShort(_maxRewindMinutes),
+                            style: TextStyle(color: cs.onSurface.withValues(alpha: 0.3), fontSize: 11)),
+                        ],
+                      ),
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     SwitchListTile(
@@ -1681,16 +2243,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   isExpanded: _expandedSection == 'Downloads & Storage',
                   onExpansionChanged: (v) => _onSectionExpanded('Downloads & Storage', v),
                   children: [
-                    SwitchListTile(
-                      title: Text(l.downloadOverWifiOnly),
-                      subtitle: Text(
-                        _wifiOnlyDownloads ? l.downloadOverWifiOnSubtitle : l.downloadOverWifiOffSubtitle,
-                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                      value: _wifiOnlyDownloads,
-                      onChanged: _loaded ? (v) {
-                        setState(() => _wifiOnlyDownloads = v);
-                        PlayerSettings.setWifiOnlyDownloads(v);
-                      } : null,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 12),
+                          Text(l.downloadOverWifiOnly, style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+                          const SizedBox(height: 8),
+                          SizedBox(width: double.infinity, child: SegmentedButton<bool>(
+                            showSelectedIcon: false,
+                            segments: [
+                              ButtonSegment(value: true, label: Text(l.downloadOverWifiOnSubtitle)),
+                              ButtonSegment(value: false, label: Text(l.downloadOverWifiOffSubtitle)),
+                            ],
+                            selected: {_wifiOnlyDownloads},
+                            onSelectionChanged: _loaded ? (v) {
+                              setState(() => _wifiOnlyDownloads = v.first);
+                              PlayerSettings.setWifiOnlyDownloads(v.first);
+                            } : null,
+                          )),
+                          const SizedBox(height: 8),
+                        ],
+                      ),
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     SwitchListTile(
@@ -2171,33 +2746,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (_localServerEnabled) ...[
                       const Divider(height: 1, indent: 16, endIndent: 16),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                         child: TextField(
                           controller: _localServerController,
                           decoration: InputDecoration(
                             labelText: l.localServerUrlLabel,
                             hintText: l.localServerUrlHint,
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.check_rounded),
-                              tooltip: l.setTooltip,
-                              onPressed: () async {
-                                final url = _localServerController.text.trim();
-                                if (url.isEmpty) return;
-                                _localServerUrl = url;
-                                await auth.setLocalServerConfig(enabled: _localServerEnabled, url: _localServerUrl);
-                                FocusScope.of(context).unfocus();
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                  content: Text(l.localServerUrlSetSnackbar),
-                                  behavior: SnackBarBehavior.floating,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ));
-                                // Try connecting right away
-                                await auth.checkLocalServer();
-                                if (mounted) setState(() {});
-                              },
-                            ),
+                          ),
+                          onSubmitted: (_) => _saveLocalServerUrl(auth, l),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: FilledButton.icon(
+                            icon: const Icon(Icons.check_rounded, size: 18),
+                            label: Text(l.setTooltip),
+                            onPressed: () => _saveLocalServerUrl(auth, l),
                           ),
                         ),
                       ),
@@ -2362,7 +2929,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      l.appVersionFormat(_appVersion),
+                      // Flavor prefix is an Android distribution concept
+                      // (GitHub / Play Store / F-Droid). iOS has no flavor, so
+                      // it keeps the plain version.
+                      Platform.isIOS
+                          ? l.appVersionFormat(_appVersion)
+                          : '$_flavorLabel - $_appVersion',
                       style: tt.bodySmall?.copyWith(
                           color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
                     ),
@@ -2393,30 +2965,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         );
                         return;
                       }
-                      showDialog(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: Text(info.isPreRelease ? l.preReleaseAvailable : l.updateAvailable),
-                          content: Text(l.updateDialogContent(
-                            info.isPreRelease ? l.updateKindPreRelease : l.updateKindVersion,
-                            info.latestVersion,
-                            info.currentVersion,
-                          )),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              child: Text(l.later),
-                            ),
-                            FilledButton(
-                              onPressed: () {
-                                Navigator.pop(ctx);
-                                launchUrl(Uri.parse(info.downloadUrl), mode: LaunchMode.externalApplication);
-                              },
-                              child: Text(l.downloadButton),
-                            ),
-                          ],
-                        ),
-                      );
+                      await UpdateDialog.show(context, info);
                     },
                     icon: const Icon(Icons.system_update_rounded, size: 16),
                     label: Text(l.checkForUpdate),
@@ -2918,6 +3467,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final otherAccounts = accounts.where((a) =>
       !(a.serverUrl == auth.serverUrl && a.username == auth.username)
     ).toList();
+    SavedAccount? activeAccount;
+    for (final a in accounts) {
+      if (a.serverUrl == auth.serverUrl && a.username == auth.username) {
+        activeAccount = a;
+        break;
+      }
+    }
 
     final shortServer = auth.serverUrl?.replaceAll(RegExp(r'^https?://'), '').replaceAll(RegExp(r'/+$'), '') ?? '';
     final userType = auth.isRoot ? l.rootAdmin : auth.isAdmin ? l.admin : l.userFallback;
@@ -2948,6 +3504,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(width: 6),
                 Expanded(child: Text(shortServer, style: tt.labelSmall?.copyWith(
                   color: cs.onSurfaceVariant.withValues(alpha: 0.5)), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                if (activeAccount != null)
+                  InkResponse(
+                    onTap: () { Navigator.pop(ctx); _editServerUrl(context, activeAccount!); },
+                    radius: 22,
+                    child: Padding(padding: const EdgeInsets.all(6),
+                      child: Icon(Icons.edit_rounded, size: 18, color: cs.onSurfaceVariant.withValues(alpha: 0.7))),
+                  ),
               ]),
               const SizedBox(height: 3),
               Row(children: [
@@ -2988,7 +3551,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   .replaceAll(RegExp(r'/+$'), '');
               return InkWell(
                 onTap: () { Navigator.pop(ctx); _switchAccount(context, account); },
-                onLongPress: () { Navigator.pop(ctx); _removeAccount(context, account); },
+                onLongPress: () { Navigator.pop(ctx); _accountOptions(context, account); },
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                   child: Row(children: [
@@ -3117,6 +3680,88 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await lib.refresh();
       if (context.mounted) AppShell.goToAbsorbingGlobal();
     }
+  }
+
+  /// Long-press menu for a saved (non-active) account: edit its server
+  /// address or remove it.
+  void _accountOptions(BuildContext context, SavedAccount account) {
+    final cs = Theme.of(context).colorScheme;
+    final l = AppLocalizations.of(context)!;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: cs.surfaceContainerHigh,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const SizedBox(height: 10),
+        Center(child: Container(width: 36, height: 4,
+          decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(2)))),
+        const SizedBox(height: 8),
+        ListTile(
+          leading: Icon(Icons.dns_rounded, color: cs.primary),
+          title: Text(l.editServerAddressAction),
+          onTap: () { Navigator.pop(ctx); _editServerUrl(context, account); }),
+        ListTile(
+          leading: Icon(Icons.delete_outline_rounded, color: cs.error),
+          title: Text(l.removeAccountAction, style: TextStyle(color: cs.error)),
+          onTap: () { Navigator.pop(ctx); _removeAccount(context, account); }),
+        const SizedBox(height: 8),
+      ])),
+    );
+  }
+
+  /// Edit the server URL of a saved account in place (dynamic-DNS hostname
+  /// changed, etc.) without losing the account's data. See
+  /// [AuthProvider.editServerUrl].
+  void _editServerUrl(BuildContext context, SavedAccount account) {
+    final l = AppLocalizations.of(context)!;
+    final ctrl = TextEditingController(text: account.serverUrl);
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return AlertDialog(
+          title: Text(l.editServerAddressTitle),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(l.editServerAddressSubtitle(account.username),
+              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+            const SizedBox(height: 14),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              decoration: InputDecoration(
+                labelText: l.editServerAddressField,
+                hintText: 'https://example.com',
+                border: const OutlineInputBorder()),
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l.cancel)),
+            FilledButton(
+              onPressed: () async {
+                final newUrl = ctrl.text.trim();
+                Navigator.pop(ctx);
+                if (newUrl.isEmpty) return;
+                final auth = context.read<AuthProvider>();
+                final wasActive = account.serverUrl == auth.serverUrl && account.username == auth.username;
+                final ok = await auth.editServerUrl(account, newUrl);
+                if (!context.mounted) return;
+                // Re-pull the active library from the new address.
+                if (ok && wasActive) context.read<LibraryProvider>().refresh();
+                if (context.mounted) setState(() {});
+                ScaffoldMessenger.of(context)
+                  ..clearSnackBars()
+                  ..showSnackBar(SnackBar(
+                    content: Text(ok ? l.editServerAddressUpdated : l.editServerAddressFailed),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+              },
+              child: Text(l.save)),
+          ],
+        );
+      },
+    );
   }
 
   void _removeAccount(BuildContext context, SavedAccount account) async {

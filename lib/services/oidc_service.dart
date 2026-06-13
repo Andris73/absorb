@@ -22,6 +22,10 @@ class OidcService {
   /// The raw cookie strings from the /auth/openid response.
   List<String> _rawCookies = [];
 
+  /// Custom headers (e.g. Cloudflare Access) carried across the flow so the
+  /// callback request can pass the same proxy as the pre-flight.
+  Map<String, String> _customHeaders = const {};
+
   /// Diagnostic message from the most recent failure. Cleared on each
   /// startLogin() call. Null when the last attempt succeeded or the user
   /// simply cancelled the popup. Surface to the UI so SSO failures aren't
@@ -57,11 +61,12 @@ class OidcService {
   /// Returns the callback [Uri] on success, or null on failure/cancellation.
   /// On failure, [lastError] holds a diagnostic message and [lastWasUserCancel]
   /// distinguishes user-dismissed popups from real errors.
-  Future<Uri?> startLogin(String serverUrl) async {
+  Future<Uri?> startLogin(String serverUrl, {Map<String, String> customHeaders = const {}}) async {
     _serverUrl = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
     _generatePkce();
     _state = _generateRandom(16);
     _rawCookies = [];
+    _customHeaders = customHeaders;
     _lastError = null;
     _lastWasUserCancel = false;
 
@@ -85,6 +90,7 @@ class OidcService {
       try {
         final request = await client.getUrl(Uri.parse(authUrl));
         request.followRedirects = false;
+        _customHeaders.forEach(request.headers.set);
         request.headers.set('x-return-tokens', 'true');
         final response = await request.close();
 
@@ -233,6 +239,7 @@ class OidcService {
       try {
         final request = await client.getUrl(Uri.parse(callbackUrl));
         request.followRedirects = false;
+        _customHeaders.forEach(request.headers.set);
         request.headers.set('x-return-tokens', 'true');
 
         if (_rawCookies.isNotEmpty) {
@@ -272,16 +279,18 @@ class OidcService {
     _codeChallenge = null;
     _state = null;
     _rawCookies = [];
+    _customHeaders = const {};
   }
 
   /// Cancel any in-progress flow.
   void cancel() => _cleanup();
 
   /// Fetch server status to check if OIDC is available.
-  static Future<Map<String, dynamic>?> getServerAuthConfig(String serverUrl) async {
+  static Future<Map<String, dynamic>?> getServerAuthConfig(String serverUrl, {Map<String, String> customHeaders = const {}}) async {
     final url = serverUrl.endsWith('/') ? '${serverUrl}status' : '$serverUrl/status';
     try {
-      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
+      final response = await http.get(Uri.parse(url), headers: customHeaders.isNotEmpty ? customHeaders : null)
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
@@ -292,8 +301,8 @@ class OidcService {
   }
 
   /// Check if a server has OIDC enabled.
-  static Future<OidcConfig?> checkOidcEnabled(String serverUrl) async {
-    final status = await getServerAuthConfig(serverUrl);
+  static Future<OidcConfig?> checkOidcEnabled(String serverUrl, {Map<String, String> customHeaders = const {}}) async {
+    final status = await getServerAuthConfig(serverUrl, customHeaders: customHeaders);
     if (status == null) return null;
 
     final authMethods = status['authMethods'] as List<dynamic>? ?? [];

@@ -381,6 +381,12 @@ static void tapProcess(MTAudioProcessingTapRef tap,
 - (void)attachTapToPlayerItem:(AVPlayerItem *)item {
     if (!item) return;
 
+    if (!atomic_load_explicit(&sParams.enabled, memory_order_relaxed)) {
+        NSLog(@"[AudioEQProcessor] EQ disabled, skipping tap attach");
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"JustAudioDiag" object:nil userInfo:@{@"message": @"[AudioEQProcessor] EQ disabled, skipping tap attach"}];
+        return;
+    }
+
     // Build tap callbacks struct
     MTAudioProcessingTapCallbacks callbacks;
     callbacks.version = kMTAudioProcessingTapCallbacksVersion_0;

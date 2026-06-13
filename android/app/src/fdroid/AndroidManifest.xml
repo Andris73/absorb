@@ -1,0 +1,27 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- F-Droid (GMS-free) overlay. MANAGE_EXTERNAL_STORAGE is kept on purpose
+         so custom download locations still work. Everything below is removed
+         because it depends on Google Play Services or is superseded by
+         F-Droid's own update mechanism. -->
+
+    <!-- In-app APK updater: F-Droid updates apps itself -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" tools:node="remove"/>
+
+    <application>
+        <!-- Chromecast (GMS) -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            tools:node="remove"/>
+        <service android:name=".CastForegroundService" tools:node="remove"/>
+
+        <!-- Android Auto (GMS) -->
+        <meta-data android:name="com.google.android.gms.car.application" tools:node="remove"/>
+        <meta-data android:name="com.google.android.gms.car.notification.SmallIcon" tools:node="remove"/>
+
+        <!-- Wear OS Data Layer (GMS) -->
+        <service android:name=".WearAuthListenerService" tools:node="remove"/>
+        <service android:name=".WearPlayerCommandListenerService" tools:node="remove"/>
+    </application>
+</manifest>

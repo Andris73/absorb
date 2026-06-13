@@ -11,11 +11,11 @@ import '../services/scoped_prefs.dart';
 import '../widgets/absorb_page_header.dart';
 import '../main.dart' show oledNotifier, rootNavigatorKey;
 import '../widgets/absorbing_card.dart';
-import '../widgets/feature_hint.dart';
 import '../widgets/offline_status_icon.dart';
 import '../widgets/overlay_toast.dart';
 import '../widgets/series_books_sheet.dart';
 import '../widgets/playlist_detail_sheet.dart';
+import '../widgets/episode_list_sheet.dart';
 import '../l10n/app_localizations.dart';
 import '../services/wording.dart';
 
@@ -59,6 +59,12 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
   final _cast = ChromecastService();
   String _queueMode = 'off';
+  // Raw per-type modes behind the derived _queueMode. peekUpNext keys off these
+  // (and the merge flag) directly, so the Up Next stamp must too - otherwise a
+  // change to the podcast mode that leaves the derived mode unchanged (e.g. the
+  // second of two sequential writes when merged) never triggers a recompute.
+  String _bookQueueMode = 'off';
+  String _podcastQueueMode = 'off';
   String? _queuePlaylistId;
 
   @override
@@ -119,6 +125,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     if (mounted) {
       setState(() {
         _queueMode = mode;
+        _bookQueueMode = bm;
+        _podcastQueueMode = pm;
         _queuePlaylistId = qpId;
         _showUpNextLabel = showUpNext;
       });
@@ -134,8 +142,12 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     final currentId = _player.currentEpisodeId != null
         ? '${_player.currentItemId}-${_player.currentEpisodeId}'
         : _player.currentItemId;
-    final firstKey = lib.absorbingBookIds.isNotEmpty ? lib.absorbingBookIds.first : '';
-    final stamp = '$_queueMode|$_queuePlaylistId|$currentId|$firstKey';
+    // Key off the whole queue order, not just the first item - manual mode
+    // walks the queue from the current item forward, so reordering items after
+    // the front changes what's up next without changing the first key.
+    final queueOrder = lib.absorbingBookIds.join(',');
+    final stamp = '$_queueMode|$_bookQueueMode|$_podcastQueueMode|$_mergeLibraries'
+        '|$_queuePlaylistId|$currentId|$queueOrder';
     if (stamp == _upNextComputedFor) return;
     _upNextComputedFor = stamp;
     final label = await lib.peekUpNext(currentItemId: currentId);
@@ -167,6 +179,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   bool _mergeLibraries = false;
   bool? _lastSeenHasBook;
   bool? _lastSeenIsPlaying;
+  bool? _lastSeenActiveSession;
   String? _lastSeenLibraryId;
 
   void _rebuild() {
@@ -174,9 +187,14 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
     final hasBookChanged = _player.hasBook != _lastSeenHasBook;
     final isPlayingChanged = _player.isPlaying != _lastSeenIsPlaying;
+    // Stopping while already paused changes neither hasBook nor isPlaying, so
+    // track the active-session flag too or the Up Next label can linger.
+    final activeSessionChanged =
+        _player.hasActiveSession != _lastSeenActiveSession;
     _lastSeenHasBook = _player.hasBook;
     _lastSeenIsPlaying = _player.isPlaying;
-    var shouldRebuild = hasBookChanged || isPlayingChanged;
+    _lastSeenActiveSession = _player.hasActiveSession;
+    var shouldRebuild = hasBookChanged || isPlayingChanged || activeSessionChanged;
 
     // Detect item or episode change (same show, different episode counts as a change)
     final itemChanged = _player.currentItemId != _lastPlayingId;
@@ -750,7 +768,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             // Phone landscape uses the compact single-row header; everything
             // else (portrait, tablets in any orientation) keeps the full header.
             if (isPhoneLandscape) landscapeHeader else portraitHeader,
-            if (_showUpNextLabel && _queueMode != 'off' && books.isNotEmpty)
+            // Hide Up Next when the session is stopped (not merely paused) -
+            // hasActiveSession stays true while paused but goes false once the
+            // engine is stopped, so a stopped session with items still in the
+            // queue won't show a confusing "Nothing is up next".
+            if (_player.hasActiveSession && _showUpNextLabel && _queueMode != 'off' && books.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 2),
                 child: Align(
@@ -1044,10 +1066,26 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
     PlayerSettings.getShowUpNextLabel().then((v) {
       if (mounted) setState(() => _showUpNext = v);
     });
+    final showId = _currentPodcastShowId;
+    if (showId != null) {
+      PlayerSettings.getPodcastAdvanceDir(showId).then((v) {
+        if (mounted) setState(() => _podcastAdvanceDir = v);
+      });
+    }
     _loadModeContent();
   }
 
   bool _showUpNext = true;
+  String _podcastAdvanceDir = 'oldest_first';
+
+  // Show id of the currently playing podcast, or null if a book (or nothing)
+  // is playing. currentItemId is the compound "<itemId>-<episodeId>" key for
+  // podcasts, so a length past 36 means an episode is playing.
+  String? get _currentPodcastShowId {
+    final id = widget.currentItemId;
+    if (id == null || id.length <= 36) return null;
+    return id.substring(0, 36);
+  }
 
   // Stage 3: mode-aware rendering. For auto_next we show the active series'
   // books; for playlist we show the active playlist's items. Cached here so
@@ -1058,13 +1096,44 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
   List<Map<String, dynamic>>? _playlistItems;
   String? _playlistId;
   String? _playlistName;
+  // Podcast auto_next: the current show's episodes (unsorted - the list sorts
+  // by _podcastAdvanceDir at build so flipping the toggle reorders live).
+  List<Map<String, dynamic>>? _showEpisodes;
+  Map<String, dynamic>? _showItem;
+  String? _showName;
 
   Future<void> _loadModeContent() async {
-    if (_queueMode == 'auto_next' && !widget.isPodcast) {
-      await _loadSeriesBooks();
+    if (_queueMode == 'auto_next') {
+      // Discriminate on the playing item, not the library: a podcast can be
+      // playing inside a book library (and vice versa). Podcast auto advances
+      // within the current show; books advance through the series.
+      if (_currentPodcastShowId != null) {
+        await _loadShowEpisodes();
+      } else if (!widget.isPodcast) {
+        await _loadSeriesBooks();
+      }
     } else if (_queueMode == 'playlist') {
       await _loadPlaylistContent();
     }
+  }
+
+  Future<void> _loadShowEpisodes() async {
+    final showId = _currentPodcastShowId;
+    if (showId == null) return;
+    // The absorbing cache only holds per-episode synthetic entries, so fetch
+    // the show fresh to get the full episode list.
+    final item = await widget.lib.fetchLibraryItem(showId);
+    if (!mounted || item == null) return;
+    final media = item['media'] as Map<String, dynamic>? ?? const {};
+    final eps = (media['episodes'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    final metadata = media['metadata'] as Map<String, dynamic>? ?? const {};
+    setState(() {
+      _showItem = item;
+      _showEpisodes = eps;
+      _showName = metadata['title'] as String?;
+    });
   }
 
   Future<void> _loadSeriesBooks() async {
@@ -1223,12 +1292,33 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
               ),
             ]),
           ),
-        FeatureHint(
-          prefKey: 'hint_playlist_queue_mode',
-          message: l.queueModePlaylistHint,
-          icon: Icons.playlist_play_rounded,
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-        ),
+        if (_queueMode == 'auto_next' && _currentPodcastShowId != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(l.reversePlayOrder,
+                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                Text(
+                  _podcastAdvanceDir == 'newest_first'
+                      ? l.episodeListPlaysNewerToOlder
+                      : l.episodeListPlaysOlderToNewer,
+                  style: tt.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant, fontSize: 11.5),
+                ),
+              ])),
+              Switch(
+                value: _podcastAdvanceDir == 'newest_first',
+                onChanged: (v) {
+                  final dir = v ? 'newest_first' : 'oldest_first';
+                  setState(() => _podcastAdvanceDir = dir);
+                  PlayerSettings.setPodcastAdvanceDir(
+                      _currentPodcastShowId!, dir);
+                },
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ]),
+          ),
         if (_queueMode == 'auto_next' && !widget.isPodcast && _seriesId != null)
           _modeHeaderButton(
             cs, tt,
@@ -1248,6 +1338,18 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
                 token: auth.token,
                 libraryId: widget.lib.selectedLibraryId,
               );
+            },
+          ),
+        if (_queueMode == 'auto_next' && _currentPodcastShowId != null && _showItem != null)
+          _modeHeaderButton(
+            cs, tt,
+            label: l.allEpisodes,
+            subtitle: _showName,
+            icon: Icons.podcasts_rounded,
+            onTap: () {
+              final outer = rootNavigatorKey.currentContext ?? context;
+              Navigator.pop(context);
+              EpisodeListSheet.show(outer, _showItem!);
             },
           ),
         if (_queueMode == 'playlist' && _playlistId != null)
@@ -1314,13 +1416,59 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
   }
 
   Widget _buildQueueList(ColorScheme cs, TextTheme tt, AppLocalizations l, double bottomInset) {
-    if (_queueMode == 'auto_next' && !widget.isPodcast) {
-      return _buildSeriesList(cs, tt, l, bottomInset);
+    if (_queueMode == 'auto_next') {
+      if (_currentPodcastShowId != null) {
+        return _buildShowEpisodesList(cs, tt, l, bottomInset);
+      }
+      // A book library with nothing playing has no series context to load, so
+      // fall through to the manual queue rather than spinning forever.
+      if (!widget.isPodcast && widget.currentItemId != null) {
+        return _buildSeriesList(cs, tt, l, bottomInset);
+      }
+      return _buildManualList(cs, tt, l, bottomInset);
     }
     if (_queueMode == 'playlist') {
       return _buildPlaylistList(cs, tt, l, bottomInset);
     }
     return _buildManualList(cs, tt, l, bottomInset);
+  }
+
+  Widget _buildShowEpisodesList(ColorScheme cs, TextTheme tt, AppLocalizations l, double bottomInset) {
+    final eps = _showEpisodes;
+    if (eps == null) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    if (eps.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(l.absorbingNothingAbsorbingYet,
+              style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+        ),
+      );
+    }
+    final showId = _currentPodcastShowId;
+    final newestFirst = _podcastAdvanceDir == 'newest_first';
+    final sorted = [...eps]..sort((a, b) {
+        final at = (a['publishedAt'] as num?)?.toInt() ?? 0;
+        final bt = (b['publishedAt'] as num?)?.toInt() ?? 0;
+        return newestFirst ? bt.compareTo(at) : at.compareTo(bt);
+      });
+    return ListView.builder(
+      padding: EdgeInsets.only(bottom: bottomInset + 16),
+      itemCount: sorted.length,
+      itemBuilder: (context, i) {
+        final ep = sorted[i];
+        final epId = ep['id'] as String? ?? '';
+        return _readOnlyQueueItem(
+          cs, tt, l,
+          key: '$showId-$epId',
+          book: _showItem ?? const {},
+          index: i,
+          episodeOverride: ep,
+        );
+      },
+    );
   }
 
   Widget _buildSeriesList(ColorScheme cs, TextTheme tt, AppLocalizations l, double bottomInset) {

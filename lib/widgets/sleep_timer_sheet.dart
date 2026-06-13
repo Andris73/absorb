@@ -45,7 +45,7 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
       PlayerSettings.getShakeAddMinutes(),
       PlayerSettings.getSleepTimerMinutes(),
       PlayerSettings.getSleepTimerChapters(),
-      PlayerSettings.getSleepRewindSeconds(),
+      PlayerSettings.getEffectiveSleepRewindSeconds(AudioPlayerService().currentItemId),
       PlayerSettings.getSleepTimerTab(),
     ]);
     if (mounted)
@@ -56,6 +56,11 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
         _customChapters = results[3] as int;
         _sleepRewindSeconds = results[4] as int;
         _tabIndex = results[5] as int;
+        // Podcast episodes only have Timer + End-of-Episode tabs; clamp a saved
+        // "specific chapter" tab index (2) so it doesn't fall off the end.
+        if (AudioPlayerService().currentEpisodeId != null && _tabIndex > 1) {
+          _tabIndex = 1;
+        }
         final currentIdx = _getCurrentChapterIndexFromPlayer();
         if (currentIdx >= 0) _selectedChapterIndex = currentIdx;
       });
@@ -86,6 +91,7 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
       builder: (_, __) {
         final sleep = SleepTimerService();
         final isActive = sleep.isActive;
+        final isEpisode = AudioPlayerService().currentEpisodeId != null;
 
         final navBarPad = MediaQuery.of(context).viewPadding.bottom;
 
@@ -125,9 +131,16 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
                     _tab(l.timer, Icons.timer_outlined, 0, accent),
                     const SizedBox(width: 4),
                     _tab(
-                        l.endOfChapter, Icons.auto_stories_outlined, 1, accent),
-                    const SizedBox(width: 4),
-                    _tab(l.sleepTimerSheetTabSpecificChapter, Icons.bookmark_outlined, 2, accent),
+                        isEpisode ? l.endOfEpisode : l.endOfChapter,
+                        isEpisode
+                            ? Icons.podcasts_outlined
+                            : Icons.auto_stories_outlined,
+                        1,
+                        accent),
+                    if (!isEpisode) ...[
+                      const SizedBox(width: 4),
+                      _tab(l.sleepTimerSheetTabSpecificChapter, Icons.bookmark_outlined, 2, accent),
+                    ],
                   ]),
                 ),
                 const SizedBox(height: 20),
@@ -136,7 +149,9 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
                 if (_tabIndex == 0)
                   _buildTimerTab(accent, tt, l)
                 else if (_tabIndex == 1)
-                  _buildChapterTab(accent, tt, l)
+                  (isEpisode
+                      ? _buildEpisodeTab(accent, tt, l)
+                      : _buildChapterTab(accent, tt, l))
                 else
                   _buildSpecificChapterTab(accent, tt, l),
                 const SizedBox(height: 16),
@@ -166,6 +181,7 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
       SleepTimerService sleep, Color accent, TextTheme tt, AppLocalizations l) {
     final cs = Theme.of(context).colorScheme;
     final isTime = sleep.mode == SleepTimerMode.time;
+    final isEpisode = sleep.mode == SleepTimerMode.episodes;
 
     String countdownLabel;
     if (isTime) {
@@ -174,6 +190,8 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
       final s = r.inSeconds % 60;
       countdownLabel =
           '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    } else if (isEpisode) {
+      countdownLabel = l.endOfEpisode;
     } else {
       countdownLabel = l.sleepTimerSheetChaptersLeft(sleep.chaptersRemaining);
     }
@@ -199,7 +217,7 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
           ),
         ),
       ] else ...[
-        Icon(Icons.auto_stories_outlined,
+        Icon(isEpisode ? Icons.podcasts_outlined : Icons.auto_stories_outlined,
             size: 28, color: accent.withValues(alpha: 0.6)),
         const SizedBox(height: 8),
         Text(countdownLabel,
@@ -208,35 +226,37 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
       ],
       const SizedBox(height: 20),
 
-      // Quick add buttons
-      Text(l.addMoreTime,
-          style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
-      const SizedBox(height: 10),
-      if (isTime)
-        Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: [
-              for (final mins in [5, 10, 15, 30])
-                _presetChip(
-                    accent, l.sleepTimerSheetAddMinutesChip(mins), false, () {
-                  sleep.addTime(Duration(minutes: mins));
-                }),
-            ])
-      else
-        Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: [
-              for (final ch in [1, 2, 3])
-                _presetChip(accent, l.sleepTimerSheetAddChaptersChip(ch), false,
-                    () {
-                  for (int i = 0; i < ch; i++) sleep.addChapter();
-                }),
-            ]),
-      const SizedBox(height: 20),
+      // Quick add buttons (not applicable to "end of episode")
+      if (!isEpisode) ...[
+        Text(l.addMoreTime,
+            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
+        const SizedBox(height: 10),
+        if (isTime)
+          Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                for (final mins in [5, 10, 15, 30])
+                  _presetChip(
+                      accent, l.sleepTimerSheetAddMinutesChip(mins), false, () {
+                    sleep.addTime(Duration(minutes: mins));
+                  }),
+              ])
+        else
+          Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                for (final ch in [1, 2, 3])
+                  _presetChip(accent, l.sleepTimerSheetAddChaptersChip(ch), false,
+                      () {
+                    for (int i = 0; i < ch; i++) sleep.addChapter();
+                  }),
+              ]),
+        const SizedBox(height: 20),
+      ],
 
       // Cancel button
       SizedBox(
@@ -612,6 +632,34 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
     ]);
   }
 
+  Widget _buildEpisodeTab(Color accent, TextTheme tt, AppLocalizations l) {
+    final cs = Theme.of(context).colorScheme;
+    return Column(children: [
+      Icon(Icons.podcasts_outlined,
+          size: 40, color: accent.withValues(alpha: 0.5)),
+      const SizedBox(height: 16),
+      // Stops at the end of the current episode (no counter — episodes only roll
+      // forward when a queue mode is feeding the next one).
+      SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: accent,
+                foregroundColor: cs.surface,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
+            onPressed: () {
+              SleepTimerService().setEpisodeSleep();
+              Navigator.pop(context);
+            },
+            child: Text(l.sleepTimerSheetEpisodeSleepStart,
+                style:
+                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+          )),
+    ]);
+  }
+
   /// Format seconds as a human-readable label (e.g. "30s", "5m", "1m 30s").
   String _rewindLabel(int seconds, AppLocalizations l) {
     if (seconds == 0) return l.off;
@@ -666,7 +714,13 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
           onChanged: (v) {
             final seconds = (v * 60).round();
             setState(() => _sleepRewindSeconds = seconds);
-            PlayerSettings.setSleepRewindSeconds(seconds);
+            // Modal edits the current book only; settings sets the default.
+            final itemId = AudioPlayerService().currentItemId;
+            if (itemId != null) {
+              PlayerSettings.setBookSleepRewindSeconds(itemId, seconds);
+            } else {
+              PlayerSettings.setSleepRewindSeconds(seconds);
+            }
           },
         ),
       ),

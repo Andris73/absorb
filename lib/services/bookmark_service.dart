@@ -64,9 +64,12 @@ class Bookmark {
   }
 
   String get formattedPosition {
-    final h = positionSeconds ~/ 3600;
-    final m = (positionSeconds % 3600) ~/ 60;
-    final s = positionSeconds.toInt() % 60;
+    // Guard against a negative stored position (e.g. a stray -1): Dart's modulo
+    // on negatives would otherwise render -1s as "59:59".
+    final p = positionSeconds < 0 ? 0.0 : positionSeconds;
+    final h = p ~/ 3600;
+    final m = (p % 3600) ~/ 60;
+    final s = p.toInt() % 60;
     if (h > 0) {
       return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
     }
@@ -252,6 +255,64 @@ class BookmarkService {
     }
   }
 
+  /// Move a bookmark to a new time. Updates locally and re-points the server
+  /// entry - ABS keys bookmarks by time, so moving is delete-old + create-new.
+  /// Falls back to the offline pending queues when the server can't be reached.
+  Future<void> moveBookmark({
+    required String itemId,
+    required String bookmarkId,
+    required double newPositionSeconds,
+    ApiService? api,
+  }) async {
+    final newPos = newPositionSeconds < 0 ? 0.0 : newPositionSeconds;
+    final key = '$_keyPrefix$itemId';
+    final stored = await ScopedPrefs.getStringList(key);
+
+    double? oldTime;
+    String? serverTitle;
+    final updated = <String>[];
+    for (final json in stored) {
+      try {
+        final bm = Bookmark.fromJson(jsonDecode(json));
+        if (bm.id == bookmarkId) {
+          oldTime = bm.positionSeconds;
+          serverTitle = bm.serverTitle;
+          updated.add(jsonEncode(Bookmark(
+            id: bm.id,
+            positionSeconds: newPos,
+            created: bm.created,
+            title: bm.title,
+            note: bm.note,
+          ).toJson()));
+        } else {
+          updated.add(json);
+        }
+      } catch (_) {
+        updated.add(json);
+      }
+    }
+    if (oldTime == null) return; // bookmark not found
+    await ScopedPrefs.setStringList(key, updated);
+    if ((oldTime - newPos).abs() < 0.05) return; // no real change
+
+    await _ensureHydrated();
+
+    // The old position's pending-create (if any) no longer applies.
+    _unpushed.remove('$itemId::${oldTime.toStringAsFixed(1)}');
+
+    bool deletedOk = false;
+    bool createdOk = false;
+    if (api != null) {
+      deletedOk = await api.deleteBookmark(itemId, time: oldTime);
+      createdOk = await api.createBookmark(itemId, time: newPos, title: serverTitle ?? '');
+    }
+    if (!deletedOk) _pendingDeletes.putIfAbsent(itemId, () => {}).add(oldTime);
+    if (!createdOk) _unpushed.add('$itemId::${newPos.toStringAsFixed(1)}');
+    await _persistUnpushed();
+    await _persistPendingDeletes();
+    debugPrint('[Bookmarks] Moved $bookmarkId: ${oldTime}s -> ${newPos}s');
+  }
+
   /// Delete a bookmark.
   Future<void> deleteBookmark({
     required String itemId,
@@ -418,7 +479,18 @@ class BookmarkService {
     for (final key in prefs.getKeys()) {
       if (!key.startsWith(scopedPrefix)) continue;
       final itemId = key.substring(scopedPrefix.length);
-      final stored = prefs.getStringList(key) ?? [];
+      // The service's own offline-sync keys (bookmarks_pending_creates /
+      // bookmarks_pending_deletes) live under the same "bookmarks_" prefix but
+      // are Strings, not String lists. getStringList() throws on them, which
+      // used to leave the Bookmarks screen spinning forever for any account
+      // that had made offline bookmark changes. Skip them (and guard defensively).
+      if (itemId == 'pending_creates' || itemId == 'pending_deletes') continue;
+      final List<String> stored;
+      try {
+        stored = prefs.getStringList(key) ?? [];
+      } catch (_) {
+        continue;
+      }
       final bookmarks = <Bookmark>[];
       for (final json in stored) {
         try {

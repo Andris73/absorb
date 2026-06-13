@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../services/player_settings.dart';
 import '../services/rmab_service.dart';
 import '../services/scoped_prefs.dart';
+import '../services/upcoming_releases_service.dart';
 import 'overlay_toast.dart';
 import 'rmab_book_detail_sheet.dart';
 import 'rmab_config_sheet.dart' show kRmabBaseUrlKey, kRmabApiTokenKey;
@@ -165,12 +166,29 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
     // Surface the RMAB Request action only for missing-but-released books,
     // and only when the user has RMAB configured.
     final showRequest = _rmabConfigured && !owned && !upcoming;
+    // Let upcoming or recently-released books be pushed onto the upcoming page
+    // without rescanning the whole library.
+    final canAddToUpcoming = upcoming || _isRecent(book);
     showAudibleBookMenu(
       context,
       book: book,
       seriesName: widget.seriesName,
       region: _region,
       extraActions: [
+        if (canAddToUpcoming)
+          ListTile(
+            leading: Icon(Icons.event_available_rounded,
+                color: cs.primary, size: 22),
+            title: Text(l.audibleSeriesAddToUpcoming,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w500)),
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            onTap: () {
+              Navigator.pop(context);
+              _addToUpcoming(book, owned: owned);
+            },
+          ),
         if (showRequest)
           ListTile(
             leading: Icon(Icons.menu_book_rounded,
@@ -194,6 +212,35 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
           ),
       ],
     );
+  }
+
+  Future<void> _addToUpcoming(Map<String, dynamic> book, {required bool owned}) async {
+    final l = AppLocalizations.of(context)!;
+    final added = await UpcomingReleasesService().addBook(
+      book,
+      seriesName: widget.seriesName,
+      audibleAsin: widget.seriesAsin,
+      region: _region,
+      owned: owned,
+    );
+    if (!mounted) return;
+    showOverlayToast(
+      context,
+      added ? l.audibleSeriesAddedToUpcoming : l.audibleSeriesAlreadyInUpcoming,
+      icon: added ? Icons.event_available_rounded : Icons.info_outline_rounded,
+    );
+  }
+
+  /// Released within the last 30 days - mirrors UpcomingReleasesService so the
+  /// "Add to upcoming releases" action only shows for books that page accepts.
+  bool _isRecent(Map<String, dynamic> book) {
+    final dateStr = book['releaseDate'] as String? ?? '';
+    if (dateStr.isEmpty) return false;
+    final date = DateTime.tryParse(dateStr);
+    if (date == null) return false;
+    final now = DateTime.now();
+    if (date.isAfter(now)) return false;
+    return now.difference(date).inDays <= 30;
   }
 
   String _formatRuntime(dynamic minutes) {

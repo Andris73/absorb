@@ -139,9 +139,10 @@ class _RmabSearchSheetContentState extends State<_RmabSearchSheetContent> {
     } on RmabException catch (e) {
       if (!mounted) return;
       debugPrint('[RMAB] search sheet error: ${e.kind} ${e.message}');
+      final l = AppLocalizations.of(context)!;
       setState(() {
         _searching = false;
-        _error = _errorTextFor(e);
+        _error = e.localizedMessage(l, l.rmabSearchError);
       });
     } catch (e) {
       if (!mounted) return;
@@ -150,18 +151,6 @@ class _RmabSearchSheetContentState extends State<_RmabSearchSheetContent> {
         _searching = false;
         _error = e.toString();
       });
-    }
-  }
-
-  String _errorTextFor(RmabException e) {
-    final l = AppLocalizations.of(context)!;
-    switch (e.kind) {
-      case RmabErrorKind.unauthorized:
-        return l.rmabRequestErrorTokenRejected;
-      case RmabErrorKind.network:
-        return l.rmabConfigErrorNetwork;
-      default:
-        return '${l.rmabSearchError}: ${e.message}';
     }
   }
 

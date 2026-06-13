@@ -69,8 +69,17 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
       ),
     );
     if (confirmed == true && context.mounted) {
-      await lib.deleteCollection(widget.collectionId);
-      if (context.mounted) Navigator.pop(context);
+      final status = await lib.deleteCollection(widget.collectionId);
+      if (!context.mounted) return;
+      if (status == 200) {
+        Navigator.pop(context);
+      } else if (status == 403) {
+        showOverlayToast(context, l.deletePermissionRequired,
+            icon: Icons.lock_outline_rounded);
+      } else {
+        showOverlayToast(context, l.deleteCollectionFailed,
+            icon: Icons.error_outline_rounded);
+      }
     }
   }
 
@@ -107,7 +116,11 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
     final tt = Theme.of(context).textTheme;
     final l = AppLocalizations.of(context)!;
     final lib = context.watch<LibraryProvider>();
-    final isRoot = context.read<AuthProvider>().isRoot;
+    final auth = context.read<AuthProvider>();
+    // Both gated at isAdmin in the UI; server returns 403 when admin lacks
+    // the `delete` permission flag and we show a friendly toast then.
+    final canEditCollection = auth.isAdmin;
+    final canDeleteCollection = auth.isAdmin;
 
     final collection = lib.collections.cast<Map<String, dynamic>>().where(
       (c) => c['id'] == widget.collectionId,
@@ -145,7 +158,7 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
               )),
             ),
           ] else ...[
-            if (isRoot) ...[
+            if (canDeleteCollection) ...[
               GestureDetector(
                 onTap: () => _deleteCollection(context, lib),
                 child: Icon(Icons.delete_outline_rounded, size: 20,
@@ -170,7 +183,7 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
                 _gridView ? Icons.view_list_rounded : Icons.grid_view_rounded,
                 size: 20, color: cs.onSurfaceVariant),
             ),
-            if (isRoot && books.length > 1) ...[
+            if (canEditCollection && books.length > 1) ...[
               const SizedBox(width: 12),
               GestureDetector(
                 onTap: () => _startReorder(books),
@@ -200,7 +213,7 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
             ? _buildReorderList(cs, tt, lib, l)
             : _gridView
                 ? _buildGrid(cs, tt, lib, books, l)
-                : _buildItemList(cs, tt, lib, books, l, isRoot: isRoot),
+                : _buildItemList(cs, tt, lib, books, l, canEditCollection: canEditCollection),
       ),
     ]);
   }
@@ -270,7 +283,7 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
     );
   }
 
-  Widget _buildItemList(ColorScheme cs, TextTheme tt, LibraryProvider lib, List<dynamic> books, AppLocalizations l, {required bool isRoot}) {
+  Widget _buildItemList(ColorScheme cs, TextTheme tt, LibraryProvider lib, List<dynamic> books, AppLocalizations l, {required bool canEditCollection}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final doneColor = isDark ? Colors.greenAccent[400]! : Colors.green.shade700;
 
@@ -401,7 +414,7 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
 
         final isOnAbsorbing = lib.isOnAbsorbingList(itemId);
 
-        if (!isRoot) {
+        if (!canEditCollection) {
           return Dismissible(
             key: ValueKey('absorb-$itemId'),
             direction: isOnAbsorbing ? DismissDirection.none : DismissDirection.startToEnd,

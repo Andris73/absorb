@@ -1,0 +1,91 @@
+Categories:
+  - Podcast
+License: GPL-3.0-or-later
+AuthorName: Nathan Poulson
+SourceCode: https://github.com/pounat/absorb
+IssueTracker: https://github.com/pounat/absorb/issues
+
+AutoName: Absorb
+
+RepoType: git
+Repo: https://github.com/pounat/absorb.git
+
+Builds:
+  - versionName: 1.9.0
+    versionCode: 1731
+    commit: 29be20c4bcc2121b812312e96349d148df4463e1
+    output: build/app/outputs/flutter-apk/app-armeabi-v7a-fdroid-release.apk
+    srclibs:
+      - flutter@stable
+    prebuild:
+      - flutterVersion=$(cat .flutter-version)
+      - '[[ $flutterVersion ]]'
+      - git -C $$flutter$$ checkout -f $flutterVersion
+      - mv lib/services/chromecast_service_stub.dart lib/services/chromecast_service.dart
+      - mv lib/widgets/chromecast_button_stub.dart lib/widgets/chromecast_button.dart
+      - sed -i '/flutter_chrome_cast:/d' pubspec.yaml
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get
+    scandelete:
+      - .pub-cache
+    build:
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter build apk --release --flavor fdroid --split-per-abi
+        --target-platform android-arm
+
+  - versionName: 1.9.0
+    versionCode: 1732
+    commit: 29be20c4bcc2121b812312e96349d148df4463e1
+    output: build/app/outputs/flutter-apk/app-arm64-v8a-fdroid-release.apk
+    srclibs:
+      - flutter@stable
+    prebuild:
+      - flutterVersion=$(cat .flutter-version)
+      - '[[ $flutterVersion ]]'
+      - git -C $$flutter$$ checkout -f $flutterVersion
+      - mv lib/services/chromecast_service_stub.dart lib/services/chromecast_service.dart
+      - mv lib/widgets/chromecast_button_stub.dart lib/widgets/chromecast_button.dart
+      - sed -i '/flutter_chrome_cast:/d' pubspec.yaml
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get
+    scandelete:
+      - .pub-cache
+    build:
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter build apk --release --flavor fdroid --split-per-abi
+        --target-platform android-arm64
+
+  - versionName: 1.9.0
+    versionCode: 1733
+    commit: 29be20c4bcc2121b812312e96349d148df4463e1
+    output: build/app/outputs/flutter-apk/app-x86_64-fdroid-release.apk
+    srclibs:
+      - flutter@stable
+    prebuild:
+      - flutterVersion=$(cat .flutter-version)
+      - '[[ $flutterVersion ]]'
+      - git -C $$flutter$$ checkout -f $flutterVersion
+      - mv lib/services/chromecast_service_stub.dart lib/services/chromecast_service.dart
+      - mv lib/widgets/chromecast_button_stub.dart lib/widgets/chromecast_button.dart
+      - sed -i '/flutter_chrome_cast:/d' pubspec.yaml
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get
+    scandelete:
+      - .pub-cache
+    build:
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter build apk --release --flavor fdroid --split-per-abi
+        --target-platform android-x64
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^v\d+\.\d+\.\d+$
+VercodeOperation:
+  - 10*%c + 1
+  - 10*%c + 2
+  - 10*%c + 3
+UpdateCheckData: pubspec.yaml|version:\s.+\+(\d+)|.|version:\s(.+)\+
+CurrentVersion: 1.9.0
+CurrentVersionCode: 1733
