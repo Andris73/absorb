@@ -97,6 +97,7 @@ mixin _StateMixin on ChangeNotifier {
   final Set<String> _locallyFinishedItems = {};
 
   StreamSubscription? _connectivitySub;
+  Timer? _connectivityDebounce;
   bool _listeningToDownloads = false;
   String? _lastAuthKey;
   bool? _lastUseLocalServer;

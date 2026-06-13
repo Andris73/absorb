@@ -131,6 +131,7 @@ class LibraryProvider extends ChangeNotifier
         _lastRssHydrationLibraryId = null;
         _networkOffline = false;
         _connectivitySub?.cancel();
+        _connectivityDebounce?.cancel();
         _stopServerPingTimer();
         _stopHealthCheckTimer();
         _isLoading = true;
@@ -215,6 +216,7 @@ class LibraryProvider extends ChangeNotifier
       _selectedLibraryId = null;
       _errorMessage = null;
       _connectivitySub?.cancel();
+      _connectivityDebounce?.cancel();
       _progressRefreshDebounce?.cancel();
       _stopServerPingTimer();
       _stopHealthCheckTimer();
