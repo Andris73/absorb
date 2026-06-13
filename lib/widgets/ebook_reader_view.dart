@@ -33,6 +33,11 @@ class EbookReaderView extends StatefulWidget {
   /// Fires whenever the reader's position changes. Used by hosts to mirror
   /// position across paired reader instances.
   final ValueChanged<String>? onPositionChanged;
+  /// When set, the WebView is laid out at exactly this logical size and
+  /// scaled to fit the available space. Paired embedded + full-screen readers
+  /// pass the same size so epub.js paginates identically in both - a handed
+  /// off CFI then lands on a page starting at the same word.
+  final Size? viewerSize;
 
   const EbookReaderView({
     super.key,
@@ -44,6 +49,7 @@ class EbookReaderView extends StatefulWidget {
     this.onExpand,
     this.initialCfi,
     this.onPositionChanged,
+    this.viewerSize,
   });
 
   @override
@@ -84,14 +90,11 @@ class EbookReaderViewState extends State<EbookReaderView> {
   bool _hasBookmarkAtCurrent = false;
   String? _currentCfi;
 
-  // Search state — persisted across screen opens so the user keeps their results
+  // Search state - persisted across screen opens so the user keeps their results
   String _searchQuery = '';
   List<EpubSearchResult> _searchResults = [];
   List<String?> _resultChapters = []; // parallel to _searchResults
   String _lastSearchedQuery = '';
-
-  // cfiBase ("/6/12") → chapter title, built once after the book loads.
-  Map<String, String> _cfiBaseToChapter = {};
 
   // Selection state for highlight menu
   String? _selectionText;
@@ -130,8 +133,14 @@ class EbookReaderViewState extends State<EbookReaderView> {
   }
 
   EpubTheme _buildTheme(bool isDark) {
+    // No foregroundColor on purpose: all colors live in customCss. The
+    // plugin's loadBook ends with updateTheme(background, foreground) WITHOUT
+    // the customCss arg - if a foreground color is set, that call re-registers
+    // the theme with just a body color and wipes every customCss rule (text
+    // color inherit, line height, margins, scroll smoothness). With no colors
+    // passed, that wipe call builds zero rules and becomes a no-op, so the
+    // full theme from load survives and no post-load re-apply is needed.
     return EpubTheme.custom(
-      foregroundColor: isDark ? Colors.white : Colors.black,
       backgroundDecoration: BoxDecoration(
         color: isDark ? Colors.black : Colors.white,
       ),
@@ -450,8 +459,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
       opacity: 0.35,
     );
     _annotations.insert(0, annotation);
-    _clearSelection();
-    if (mounted) setState(() {});
+    if (mounted) _dismissSelection();
   }
 
   Future<void> _removeHighlight(EbookAnnotation annotation) async {
@@ -503,6 +511,14 @@ class EbookReaderViewState extends State<EbookReaderView> {
     _selectionRect = null;
   }
 
+  /// Clears both our toolbar state and the WebView's native selection. The
+  /// plugin's JS blocks page-turn taps while a selection is active, so leaving
+  /// the native selection behind locks the user on the page.
+  void _dismissSelection() {
+    _epubController?.clearSelection();
+    setState(() => _clearSelection());
+  }
+
   Widget _divider(ColorScheme cs) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 2),
     child: Container(width: 1, height: 24, color: cs.onSurface.withValues(alpha: 0.15)),
@@ -511,7 +527,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
   void _copySelection() {
     if (_selectionText == null) return;
     Clipboard.setData(ClipboardData(text: _selectionText!));
-    setState(() => _clearSelection());
+    _dismissSelection();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Copied to clipboard'), duration: Duration(seconds: 1)),
     );
@@ -521,7 +537,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
     if (_selectionText == null) return;
     final query = Uri.encodeComponent(_selectionText!.trim());
     launchUrl(Uri.parse('https://www.google.com/search?q=$query'), mode: LaunchMode.externalApplication);
-    setState(() => _clearSelection());
+    _dismissSelection();
   }
 
   void _defineSelection() {
@@ -529,7 +545,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
     final word = _selectionText!.trim().split(RegExp(r'\s+')).first;
     final query = Uri.encodeComponent('define $word');
     launchUrl(Uri.parse('https://www.google.com/search?q=$query'), mode: LaunchMode.externalApplication);
-    setState(() => _clearSelection());
+    _dismissSelection();
   }
 
   void _onSelection(String text, String cfi, Rect selRect, Rect vRect) {
@@ -742,101 +758,72 @@ class EbookReaderViewState extends State<EbookReaderView> {
     );
   }
 
-  /// Look up the chapter title for each result via the precomputed
-  /// [_cfiBaseToChapter] map. No JS roundtrip — we extract the spine prefix
-  /// from the result CFI in Dart and use it as a map key. Returns a list
-  /// parallel to [results].
-  List<String?> _resolveResultChapters(List<EpubSearchResult> results) {
-    if (results.isEmpty || _cfiBaseToChapter.isEmpty) {
-      debugPrint('[Search] _resolveResultChapters: results=${results.length} map=${_cfiBaseToChapter.length}');
-      return List<String?>.filled(results.length, null);
+  /// Maps a spine item href to its TOC chapter title. Match heuristic: first
+  /// TOC entry whose path is a suffix of the section's path (or vice versa).
+  /// Chapters pointing at sub-fragments of the same spine item all map to the
+  /// same label, which is fine for a search result subtitle.
+  String? _chapterForHref(String href) {
+    if (href.isEmpty || _chapters.isEmpty) return null;
+    final path = href.split('#').first;
+    for (final ch in _chapters) {
+      final tocPath = ch.href.split('#').first;
+      if (tocPath.isEmpty) continue;
+      if (path.endsWith(tocPath) || tocPath.endsWith(path)) return ch.title;
     }
-    final out = <String?>[];
-    for (final r in results) {
-      final base = _cfiBaseFromResult(r.cfi);
-      final title = base != null ? _cfiBaseToChapter[base] : null;
-      if (title == null) {
-        debugPrint('[Search] no chapter for cfi=${r.cfi} extracted base=$base');
-      }
-      out.add(title);
-    }
-    return out;
+    return null;
   }
 
-  /// Extracts the spine prefix from a CFI string. A CFI looks like
-  /// "epubcfi(/6/12!/4/2/4,/1:42,/1:50)"; we want "/6/12" so we can match it
-  /// against `section.cfiBase` values.
-  String? _cfiBaseFromResult(String cfi) {
-    var s = cfi;
-    if (s.startsWith('epubcfi(')) s = s.substring('epubcfi('.length);
-    final bang = s.indexOf('!');
-    if (bang == -1) return null;
-    return s.substring(0, bang);
-  }
-
-  /// Walks the spine once after the book loads and builds the
-  /// `cfiBase → chapter title` map. The match heuristic: for each spine
-  /// section, find the first TOC entry whose href is contained in the
-  /// section's href (or vice versa). Good enough for v1; chapters that point
-  /// at sub-fragments of the same spine item all map to the same label.
-  Future<void> _buildChapterMap() async {
+  /// Searches the whole book. Bypasses the plugin's search(): that one runs
+  /// Promise.all over the spine with no error handling, so a single chapter
+  /// that fails to load means the result handler never fires and the await
+  /// hangs forever. This version searches chapter by chapter, skips broken
+  /// ones, and tags each hit with the spine href so we can label it with a
+  /// chapter title.
+  Future<_SearchPayload> _searchBook(String q) async {
     final wc = _epubController?.webViewController;
-    if (wc == null || _chapters.isEmpty) {
-      debugPrint('[Search] _buildChapterMap skipped: wc=$wc chapters=${_chapters.length}');
-      return;
-    }
-    final raw = await wc.evaluateJavascript(
-      source: '''
-        (function() {
+    if (wc == null) return _SearchPayload(query: q, results: const [], chapters: const []);
+    final res = await wc.callAsyncJavaScript(
+      functionBody: '''
+        var out = [];
+        var items = (book && book.spine && book.spine.spineItems) ? book.spine.spineItems : [];
+        for (var i = 0; i < items.length; i++) {
+          var item = items[i];
           try {
-            var items = (book && book.spine && book.spine.spineItems) ? book.spine.spineItems : [];
-            var out = [];
-            for (var i = 0; i < items.length; i++) {
-              var it = items[i];
-              // cfiBase fallback: epub.js stores it on the section, but compute
-              // from index just in case ("/6/{(idx+1)*2}").
-              var base = it.cfiBase;
-              if (!base && typeof it.index === 'number') base = '/6/' + ((it.index + 1) * 2);
-              out.push({ base: base || null, href: it.href || it.url || null, idx: it.index });
+            await item.load(book.load.bind(book));
+            var found = (typeof item.search === 'function') ? item.search(query) : item.find(query);
+            found = found || [];
+            for (var j = 0; j < found.length; j++) {
+              out.push({ cfi: found[j].cfi, excerpt: found[j].excerpt || '', href: item.href || '' });
             }
-            return JSON.stringify(out);
-          } catch (e) { return '[]'; }
-        })();
+          } catch (e) {
+          } finally {
+            try { item.unload(); } catch (e2) {}
+          }
+        }
+        return JSON.stringify(out);
       ''',
-    );
-    debugPrint('[Search] spine JS returned: $raw');
+      arguments: {'query': q},
+    ).timeout(const Duration(seconds: 60), onTimeout: () => null);
+    final raw = res?.value;
+    if (raw is! String || raw.isEmpty) {
+      return _SearchPayload(query: q, results: const [], chapters: const []);
+    }
     List<dynamic> list;
     try {
-      list = jsonDecode(raw?.toString() ?? '[]') as List<dynamic>;
-    } catch (e) {
-      debugPrint('[Search] spine JSON parse failed: $e');
-      return;
+      list = jsonDecode(raw) as List<dynamic>;
+    } catch (_) {
+      return _SearchPayload(query: q, results: const [], chapters: const []);
     }
-    debugPrint('[Search] TOC chapters (${_chapters.length}): ${_chapters.map((c) => '${c.title} @ ${c.href}').take(5).toList()}');
-    final map = <String, String>{};
+    final results = <EpubSearchResult>[];
+    final chapters = <String?>[];
     for (final entry in list) {
       final m = entry as Map<String, dynamic>;
-      final base = m['base'] as String?;
-      final href = m['href'] as String?;
-      if (base == null || href == null) continue;
-      final sectionPath = href.split('#').first;
-      String? matchedTitle;
-      for (final ch in _chapters) {
-        final tocPath = ch.href.split('#').first;
-        if (tocPath.isEmpty) continue;
-        if (sectionPath.endsWith(tocPath) || tocPath.endsWith(sectionPath)) {
-          matchedTitle = ch.title;
-          break;
-        }
-      }
-      if (matchedTitle != null) {
-        map[base] = matchedTitle;
-      } else {
-        debugPrint('[Search] no TOC match for spine href=$href base=$base');
-      }
+      final cfi = m['cfi'] as String? ?? '';
+      if (cfi.isEmpty) continue;
+      results.add(EpubSearchResult(cfi: cfi, excerpt: (m['excerpt'] as String? ?? '').trim()));
+      chapters.add(_chapterForHref(m['href'] as String? ?? ''));
     }
-    debugPrint('[Search] built cfiBase→chapter map with ${map.length} entries: $map');
-    if (mounted) setState(() => _cfiBaseToChapter = map);
+    return _SearchPayload(query: q, results: results, chapters: chapters);
   }
 
   void _jumpToSearchResult(EpubSearchResult result) {
@@ -866,20 +853,18 @@ class EbookReaderViewState extends State<EbookReaderView> {
           initialChapters: _resultChapters,
           initialLastQuery: _lastSearchedQuery,
           runSearch: (q) async {
-            if (_epubController == null) return _SearchPayload(query: q, results: const [], chapters: const []);
-            final results = await _epubController!.search(query: q);
-            final chapters = _resolveResultChapters(results);
+            final payload = await _searchBook(q);
             // Persist back on the parent state so reopening the search screen
             // restores the same list.
             if (mounted) {
               setState(() {
                 _searchQuery = q;
-                _searchResults = results;
-                _resultChapters = chapters;
+                _searchResults = payload.results;
+                _resultChapters = payload.chapters;
                 _lastSearchedQuery = q;
               });
             }
-            return _SearchPayload(query: q, results: results, chapters: chapters);
+            return payload;
           },
         ),
       ),
@@ -1067,6 +1052,32 @@ class EbookReaderViewState extends State<EbookReaderView> {
     return SafeArea(top: top, bottom: bottom, child: child);
   }
 
+  /// Lays out the viewer. With a locked viewerSize the WebView always renders
+  /// at that exact logical size: full screen shows it ~1:1, the embedded card
+  /// scales it down. BoxFit.scaleDown never scales up, so the full-screen
+  /// instance stays unscaled and sharp.
+  ///
+  /// Wrapped in SafeArea (full-screen only) so the page never slides under the
+  /// camera cutout. Aligned to the top so any letterbox gap from the card's
+  /// different aspect ratio lands BELOW the text - the first line stays at the
+  /// top of the card rather than getting pushed to the bottom.
+  Widget _buildViewerArea(Widget viewer) {
+    final lock = widget.viewerSize;
+    if (lock != null) {
+      return _maybeSafeArea(
+        child: SizedBox.expand(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.topCenter,
+            clipBehavior: Clip.hardEdge,
+            child: SizedBox(width: lock.width, height: lock.height, child: viewer),
+          ),
+        ),
+      );
+    }
+    return _maybeSafeArea(child: SizedBox.expand(child: viewer));
+  }
+
   void _handleClose() {
     if (widget.onClose != null) {
       widget.onClose!();
@@ -1111,9 +1122,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
     final viewerBody = Stack(
       children: [
           // Epub viewer with safe area padding for camera cutouts
-          _maybeSafeArea(
-            child: SizedBox.expand(
-              child: EpubViewer(
+          _buildViewerArea(EpubViewer(
               key: ValueKey(_viewerKey),
               epubSource: EpubSource.fromFile(_cachedFile!),
               epubController: _epubController!,
@@ -1122,11 +1131,15 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 flow: EpubFlow.paginated,
                 snap: true,
                 useSnapAnimationAndroid: false,
+                // Font size at load time, not applied after: a post-load
+                // setFontSize reflows the text after initialCfi has displayed,
+                // which drifts the position and breaks the embedded/full-screen
+                // handoff landing on the same page.
+                fontSize: _fontSize,
                 theme: _buildTheme(isDark),
               ),
               onChaptersLoaded: (chapters) {
                 if (mounted) setState(() => _chapters = _flattenChapters(chapters));
-                _buildChapterMap();
               },
               suppressNativeContextMenu: true,
               onSelection: _onSelection,
@@ -1140,10 +1153,11 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 if (match != null) _addNoteToAnnotation(match);
               },
               onEpubLoaded: () {
-                _applySettings();
-                // Re-anchor to the requested CFI after settings reflow the text.
-                // Consume _initialCfi so this only happens once — otherwise any
-                // re-fire of onEpubLoaded would yank the user back to the start.
+                // Re-display the initial CFI once. The plugin already displays
+                // it at load, but in the small embedded viewport that first
+                // display can come up blank; this second display is the rescue.
+                // Position-safe: font size and theme are already in
+                // displaySettings, so nothing reflows after this.
                 final once = _initialCfi;
                 if (once != null && once.isNotEmpty) {
                   _initialCfi = null;
@@ -1152,7 +1166,6 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 _loadAnnotations().then((_) => _restoreHighlights());
                 _setupPageInfoHandler();
                 _setupLocations();
-                _buildChapterMap();
               },
               onRelocated: (value) {
                 if (mounted) {
@@ -1181,7 +1194,6 @@ class EbookReaderViewState extends State<EbookReaderView> {
                   _toggleControls();
                 }
               },
-            ),
           )),
 
           // Top bar overlay
@@ -1365,7 +1377,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                         _divider(cs),
                         IconButton(
                           icon: Icon(Icons.close_rounded, size: 20, color: cs.onSurfaceVariant),
-                          onPressed: () => setState(() => _clearSelection()),
+                          onPressed: _dismissSelection,
                           visualDensity: VisualDensity.compact,
                         ),
                       ],

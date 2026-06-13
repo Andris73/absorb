@@ -41,6 +41,20 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   // CFI to seed the embedded reader on mount. Updated when the full-screen
   // reader closes so the re-mounted embedded picks up wherever the user left off.
   String? _readerInitialCfi;
+  // Shared layout size for the embedded + full-screen reader pair, locked on
+  // first use. Both render the WebView at this exact logical size (the card
+  // scales it down) so pagination matches word for word across the handoff.
+  // Locked once because viewPadding flickers while immersive mode toggles.
+  Size? _readerSizeLock;
+  Size _lockReaderSize(BuildContext context) {
+    if (_readerSizeLock != null) return _readerSizeLock!;
+    final mq = MediaQuery.of(context);
+    final vp = mq.viewPadding;
+    return _readerSizeLock = Size(
+      mq.size.width - vp.left - vp.right,
+      mq.size.height - vp.top - vp.bottom,
+    );
+  }
   void _toggleFlip() {
     if (_flipController.isAnimating) return;
     if (!_backInitialized) {
@@ -1064,6 +1078,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
           ebookFile: ebookFile,
           initialCfi: handoffCfi,
           onPositionChanged: (cfi) => latestCfi = cfi,
+          viewerSize: _readerSizeLock,
         ),
       ),
     );
@@ -1097,6 +1112,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                 initialCfi: _readerInitialCfi,
                 onClose: _toggleFlip,
                 onExpand: _openFullscreenReader,
+                viewerSize: _lockReaderSize(context),
               )
             else
               Padding(
