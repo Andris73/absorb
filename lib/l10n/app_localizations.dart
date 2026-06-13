@@ -3472,6 +3472,30 @@ abstract class AppLocalizations {
   /// **'Reset to default storage'**
   String get resetToDefaultStorage;
 
+  /// No description provided for @legacyDownloadsNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 download is in an old custom folder that can no longer be opened. Re-download it or dismiss this notice.} other{{count} downloads are in an old custom folder that can no longer be opened. Re-download them or dismiss this notice.}}'**
+  String legacyDownloadsNotice(int count);
+
+  /// No description provided for @redownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Re-download'**
+  String get redownload;
+
+  /// No description provided for @redownloadStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Re-downloading'**
+  String get redownloadStarted;
+
+  /// No description provided for @dismiss.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get dismiss;
+
   /// No description provided for @tipsAndHiddenFeatures.
   ///
   /// In en, this message translates to:

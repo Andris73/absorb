@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:background_downloader/background_downloader.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:just_audio/just_audio.dart' show AudioPlayer;
@@ -646,7 +647,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _sleepChimeVolume = chimeVol;
       _shakeSensitivity = shakeSens;
       _language = language;
-      _canPickDownloadLocation = !_isPlayStoreBuild;
+      _canPickDownloadLocation = true;
       _statsGoalType = statsGoalType;
       _statsGoalMinutes = statsGoalMinutes;
       _statsBookGoal = statsBookGoal;
@@ -3061,6 +3062,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l = AppLocalizations.of(context)!;
     final dl = DownloadService();
     final hasExistingDownloads = dl.downloadedItems.isNotEmpty;
+    final api = context.read<AuthProvider>().apiService;
+    final legacyCount = dl.legacyExternalDownloads.length;
 
     showModalBottomSheet(
       context: context,
@@ -3115,6 +3118,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 16),
 
+            if (legacyCount > 0) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: cs.errorContainer.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: cs.error.withValues(alpha: 0.2)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Icon(Icons.warning_amber_rounded, size: 18, color: cs.error),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(l.legacyDownloadsNotice(legacyCount),
+                          style: tt.bodySmall?.copyWith(color: cs.onSurface)),
+                      ),
+                    ]),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () async {
+                            Navigator.pop(ctx);
+                            await dl.dismissLegacyDownloads();
+                            if (mounted) setState(() {});
+                          },
+                          child: Text(l.dismiss),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: api == null
+                              ? null
+                              : () async {
+                                  Navigator.pop(ctx);
+                                  await dl.redownloadAllLegacy(api);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                      content: Text(l.redownloadStarted),
+                                      behavior: SnackBarBehavior.floating,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12)),
+                                    ));
+                                  }
+                                },
+                          child: Text(l.redownload),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
             if (hasExistingDownloads)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -3148,83 +3209,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 label: Text(l.chooseFolder),
                 onPressed: () async {
                   Navigator.pop(ctx);
-                  if (Platform.isAndroid) {
-                    // Android 11+ needs MANAGE_EXTERNAL_STORAGE for custom paths.
-                    // Android 9-10 use WRITE_EXTERNAL_STORAGE.
-                    // If manageExternalStorage is restricted, the OS doesn't
-                    // support it (Android 10 or below) so fall back to storage.
-                    final manageStatus = await Permission.manageExternalStorage.status;
-                    final Permission perm = manageStatus == PermissionStatus.restricted
-                        ? Permission.storage
-                        : Permission.manageExternalStorage;
-                    final status = await perm.status;
-                    if (status.isPermanentlyDenied) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text(l.storagePermissionDenied),
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                          action: SnackBarAction(
-                            label: l.openSettings,
-                            onPressed: openAppSettings,
-                          ),
-                        ));
-                      }
-                      return;
-                    }
-                    if (!status.isGranted) {
-                      final result = await perm.request();
-                      if (!result.isGranted) {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text(l.storagePermissionRequired),
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                          ));
-                        }
-                        return;
-                      }
-                    }
-                  }
-                  final result = await FilePicker.platform.getDirectoryPath(
-                    dialogTitle: l.chooseDownloadFolder,
-                  );
-                  if (result != null) {
-                    // Write test - verify we can actually create files here
-                    try {
-                      final testDir = Directory(result);
-                      if (!testDir.existsSync()) testDir.createSync(recursive: true);
-                      final testFile = File('${testDir.path}/.absorb_write_test');
-                      testFile.writeAsStringSync('test');
-                      testFile.deleteSync();
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text(l.cannotWriteToFolder),
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                          action: SnackBarAction(
-                            label: l.openSettings,
-                            onPressed: openAppSettings,
-                          ),
-                        ));
-                      }
-                      return;
-                    }
-                    await dl.setCustomDownloadPath(result);
-                    final label = await dl.downloadLocationLabel;
+                  // Storage Access Framework: the user grants a folder through
+                  // the system picker, no storage permission needed.
+                  Uri? treeUri;
+                  try {
+                    treeUri = await FileDownloader().uri.pickDirectory(
+                      startLocation: SharedStorage.downloads,
+                      persistedUriPermission: true,
+                    );
+                  } catch (e) {
                     if (mounted) {
-                      setState(() => _downloadLocationLabel = label);
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(l.downloadLocationSetTo(label)),
+                        content: Text(l.cannotWriteToFolder),
                         behavior: SnackBarBehavior.floating,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                       ));
                     }
+                    return;
+                  }
+                  if (treeUri == null) return; // user cancelled
+                  // Verify we can actually create files in the chosen folder.
+                  try {
+                    final probe = await FileDownloader()
+                        .uri
+                        .createDirectory(treeUri, '.absorb_write_test');
+                    await FileDownloader().uri.deleteFile(probe);
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(l.cannotWriteToFolder),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      ));
+                    }
+                    return;
+                  }
+                  await dl.setCustomDownloadUri(treeUri);
+                  final label = await dl.downloadLocationLabel;
+                  if (mounted) {
+                    setState(() => _downloadLocationLabel = label);
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(l.downloadLocationSetTo(label)),
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    ));
                   }
                 },
               ),
@@ -3232,7 +3263,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 8),
 
             // Reset to default button
-            if (dl.customDownloadPath != null)
+            if (dl.customDownloadUri != null)
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
@@ -3240,7 +3271,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   label: Text(l.resetToDefault),
                   onPressed: () async {
                     Navigator.pop(ctx);
-                    await dl.setCustomDownloadPath(null);
+                    await dl.setCustomDownloadUri(null);
                     final label = await dl.downloadLocationLabel;
                     if (mounted) {
                       setState(() => _downloadLocationLabel = label);

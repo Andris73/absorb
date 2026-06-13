@@ -1889,6 +1889,28 @@ class AppLocalizationsRu extends AppLocalizations {
   String get resetToDefaultStorage => 'Reset to default storage';
 
   @override
+  String legacyDownloadsNotice(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          '$count downloads are in an old custom folder that can no longer be opened. Re-download them or dismiss this notice.',
+      one:
+          '1 download is in an old custom folder that can no longer be opened. Re-download it or dismiss this notice.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get redownload => 'Re-download';
+
+  @override
+  String get redownloadStarted => 'Re-downloading';
+
+  @override
+  String get dismiss => 'Dismiss';
+
+  @override
   String get tipsAndHiddenFeatures => 'Советы и скрытые возможности';
 
   @override

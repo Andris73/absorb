@@ -9,6 +9,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'download_service.dart';
+import 'offline_source.dart';
 import 'playback_history_service.dart' hide PlaybackEvent;
 import 'progress_sync_service.dart';
 import 'sync_logic.dart';
@@ -1381,8 +1382,7 @@ class AudioPlayerService extends ChangeNotifier {
 
       List<AudioSource>? nextTrackSources;
       if (localPaths != null && localPaths.isNotEmpty) {
-        nextTrackSources =
-            localPaths.map((p) => AudioSource.file(p) as AudioSource).toList();
+        nextTrackSources = localPaths.map((p) => localAudioSource(p)).toList();
       } else if (audioTracks != null && audioTracks.isNotEmpty) {
         nextTrackSources = audioTracks
             .map((t) => AudioSource.uri(
@@ -2455,9 +2455,9 @@ class AudioPlayerService extends ChangeNotifier {
     try {
       AudioSource source;
       if (localPaths.length == 1) {
-        source = AudioSource.file(localPaths.first);
+        source = localAudioSource(localPaths.first);
       } else {
-        final sources = localPaths.map((p) => AudioSource.file(p) as AudioSource).toList();
+        final sources = localPaths.map((p) => localAudioSource(p)).toList();
         source = ConcatenatingAudioSource(children: sources);
       }
 
@@ -2656,9 +2656,7 @@ class AudioPlayerService extends ChangeNotifier {
         _trackStartOffsets = [0.0]; // single file fallback
       }
 
-      final trackSources = localPaths
-          .map((p) => AudioSource.file(p) as AudioSource)
-          .toList();
+      final trackSources = localPaths.map((p) => localAudioSource(p)).toList();
       final source = ConcatenatingAudioSource(children: trackSources);
 
       await _configureAudioSession();

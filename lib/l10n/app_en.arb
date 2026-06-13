@@ -964,6 +964,17 @@
   },
   "resetToDefault": "Reset to default",
   "resetToDefaultStorage": "Reset to default storage",
+  "legacyDownloadsNotice": "{count, plural, =1{1 download is in an old custom folder that can no longer be opened. Re-download it or dismiss this notice.} other{{count} downloads are in an old custom folder that can no longer be opened. Re-download them or dismiss this notice.}}",
+  "@legacyDownloadsNotice": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "redownload": "Re-download",
+  "redownloadStarted": "Re-downloading",
+  "dismiss": "Dismiss",
   "tipsAndHiddenFeatures": "Tips & Hidden Features",
   "tipsSubtitle": "Get the most out of Absorb",
   "adminTitle": "Server Admin",

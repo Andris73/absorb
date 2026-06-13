@@ -25,7 +25,7 @@ class ScopedPrefs {
     'server_url', 'token', 'username', 'user_id', 'default_library_id',
     'custom_headers',
     'loggingEnabled', 'manual_offline_mode',
-    'custom_download_path', 'downloads',
+    'custom_download_path', 'custom_download_uri', 'downloads',
     'absorb_device_id',
     'widget_item_id', 'widget_episode_id',
     'cached_stats', 'cached_sessions',

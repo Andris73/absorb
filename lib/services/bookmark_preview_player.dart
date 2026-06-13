@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'api_service.dart';
 import 'audio_player_service.dart';
 import 'download_service.dart';
+import 'offline_source.dart';
 
 /// Auditions a book at a given position WITHOUT moving the user's real playback
 /// position. Resolves audio for ANY book - downloaded (local files) or streamed
@@ -105,7 +106,7 @@ class BookmarkPreviewPlayer extends ChangeNotifier {
         if (done) player.pause();
       });
       if (track.local) {
-        await player.setAudioSource(AudioSource.file(track.source));
+        await player.setAudioSource(localAudioSource(track.source));
       } else {
         await player.setAudioSource(
             AudioSource.uri(Uri.parse(track.source), headers: api?.mediaHeaders));

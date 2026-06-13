@@ -4,7 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.net.Uri
 import android.provider.MediaStore
+import androidx.documentfile.provider.DocumentFile
+import java.io.File
+import java.io.FileInputStream
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
@@ -17,6 +21,7 @@ import android.util.Log
 import com.ryanheise.audioservice.AudioServiceActivity
 import com.ryanheise.just_audio.MonoController
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : AudioServiceActivity() {
@@ -100,6 +105,7 @@ class MainActivity : AudioServiceActivity() {
                             result.error("STORAGE_ERROR", e.message, null)
                         }
                     }
+                    "moveBookToSaf" -> handleMoveBookToSaf(call, result)
                     else -> result.notImplemented()
                 }
             }
@@ -107,6 +113,61 @@ class MainActivity : AudioServiceActivity() {
         // GMS-backed channels (cast foreground service, wear bridges).
         // Resolves to the real impl in github/playstore, no-op in fdroid.
         PlatformIntegration.registerChannels(this, flutterEngine)
+    }
+
+    // Move downloaded temp files into the user's SAF folder, creating the nested
+    // [subfolder] (e.g. "Author/Title") under the granted tree via the DocumentFile
+    // chain so files nest correctly and stay readable through the original grant.
+    // The byte copy runs off the main thread.
+    private fun handleMoveBookToSaf(call: MethodCall, result: MethodChannel.Result) {
+        val treeUri = call.argument<String>("treeUri")
+        val subfolder = call.argument<String>("subfolder") ?: ""
+        val filenames = call.argument<List<String>>("filenames")
+        val tempPaths = call.argument<List<String>>("tempPaths")
+        if (treeUri == null || filenames == null || tempPaths == null || filenames.size != tempPaths.size) {
+            result.error("SAF_ARGS", "Invalid arguments", null)
+            return
+        }
+        Thread {
+            try {
+                val tree = DocumentFile.fromTreeUri(applicationContext, Uri.parse(treeUri))
+                    ?: throw IllegalStateException("Download folder not accessible")
+                var dir: DocumentFile = tree
+                for (segment in subfolder.split('/').filter { it.isNotBlank() }) {
+                    val existing = dir.findFile(segment)
+                    dir = if (existing != null && existing.isDirectory) existing
+                        else (dir.createDirectory(segment)
+                            ?: throw IllegalStateException("Could not create folder: $segment"))
+                }
+                val fileUris = ArrayList<String>(filenames.size)
+                val temps = ArrayList<File>(filenames.size)
+                for (i in filenames.indices) {
+                    val name = filenames[i]
+                    val temp = File(tempPaths[i])
+                    if (!temp.exists()) throw IllegalStateException("Missing downloaded file: ${tempPaths[i]}")
+                    // Replace any existing file of the same name (e.g. re-download).
+                    dir.findFile(name)?.delete()
+                    // octet-stream so SAF keeps the exact filename + extension (a
+                    // real audio MIME makes the provider rewrite e.g. .m4b to .m4a).
+                    // ExoPlayer detects the format from the file content anyway.
+                    val doc = dir.createFile("application/octet-stream", name)
+                        ?: throw IllegalStateException("Could not create file: $name")
+                    contentResolver.openOutputStream(doc.uri)?.use { output ->
+                        FileInputStream(temp).use { input -> input.copyTo(output, 64 * 1024) }
+                    } ?: throw IllegalStateException("Could not write: $name")
+                    temps.add(temp)
+                    fileUris.add(doc.uri.toString())
+                }
+                // Only remove the internal copies once every file moved, so a
+                // mid-way failure leaves the internal download intact to fall back on.
+                temps.forEach { it.delete() }
+                val dirUri = dir.uri.toString()
+                runOnUiThread { result.success(mapOf("dirUri" to dirUri, "fileUris" to fileUris)) }
+            } catch (e: Exception) {
+                Log.e(TAG, "moveBookToSaf failed: ${e.message}", e)
+                runOnUiThread { result.error("SAF_MOVE_ERROR", e.message, null) }
+            }
+        }.start()
     }
 
     private fun handleInit(result: MethodChannel.Result) {
