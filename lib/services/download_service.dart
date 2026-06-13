@@ -960,6 +960,7 @@ class DownloadService extends ChangeNotifier {
 
     // If at capacity, queue this one
     if (_activeDownloadIds.length >= maxConcurrent) {
+      debugPrint('[Download] Queued "$title" ($itemId); slots ${_activeDownloadIds.length}/$maxConcurrent full, ${_queue.length} waiting');
       _queue.add(_QueuedDownload(
         api: api,
         itemId: itemId,
@@ -1036,6 +1037,7 @@ class DownloadService extends ChangeNotifier {
   }) async {
     _activeDownloadIds.add(itemId);
     _cancelledIds.remove(itemId);
+    debugPrint('[Download] Starting "$title" ($itemId)');
 
     _downloads[itemId] = DownloadInfo(
       itemId: itemId,
@@ -1079,6 +1081,8 @@ class DownloadService extends ChangeNotifier {
       if (!bookDir.existsSync()) {
         bookDir.createSync(recursive: true);
       }
+      final usingCustom = _customDownloadPath != null && _customDownloadPath!.isNotEmpty;
+      debugPrint('[Download] "$title" location=${usingCustom ? 'custom' : 'default'} dir=${bookDir.path} tracks=${files.length}');
 
       final localCoverPath = await _cacheCover(api, itemId, coverUrl);
 
@@ -1133,6 +1137,7 @@ class DownloadService extends ChangeNotifier {
           allowPause: true,
         );
         final ok = await FileDownloader().enqueue(task);
+        debugPrint('[Download] enqueue ${i + 1}/${files.length} ok=$ok file=${files[i].filename}');
         if (!ok) throw Exception('Failed to enqueue track ${i + 1}');
       }
       debugPrint('[Download] Enqueued ${files.length} task(s) for "$title"');
@@ -1262,6 +1267,9 @@ class DownloadService extends ChangeNotifier {
       }
     } else if (update is TaskStatusUpdate) {
       p.trackStatus[i] = update.status;
+      debugPrint('[Download] task $itemId #$i status=${update.status.name}'
+          '${update.exception != null ? ' ex=${update.exception}' : ''}'
+          '${update.responseStatusCode != null ? ' code=${update.responseStatusCode}' : ''}');
       if (update.status == TaskStatus.complete) p.trackProgress[i] = 1.0;
 
       // A hard failure aborts the whole book: cancel the remaining siblings so
