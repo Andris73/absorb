@@ -229,6 +229,11 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       _stopServerPingTimer();
       _startHealthCheckTimer();
       PaintingBinding.instance.imageCache.clear();
+      // If we launched offline (e.g. right after an app update), the user info
+      // (type/permissions) never loaded and admin-only UI stayed hidden. Now
+      // that we're back online, pull it so the admin settings appear without a
+      // force-close. No-op if it's already loaded.
+      unawaited(_auth?.ensureUserInfoLoaded() ?? Future.value());
       if (_api != null) {
         debugPrint('[Library] Back online — flushing pending syncs');
         ProgressSyncService().flushPendingSync(api: _api!);
@@ -956,6 +961,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         setNetworkOffline(true);
       } else {
         notifyServerReachable(reachableUrl);
+        // Safety net: if user info never loaded (e.g. /me failed at launch
+        // while the server was technically reachable), admin-only UI stays
+        // hidden. Idempotent once loaded.
+        unawaited(_auth?.ensureUserInfoLoaded() ?? Future.value());
       }
     });
   }
