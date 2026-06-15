@@ -1167,6 +1167,16 @@ class AudioPlayerService extends ChangeNotifier {
   List<double> _trackStartOffsets = []; // [0, dur0, dur0+dur1, ...]
   List<double> get trackStartOffsets => _trackStartOffsets;
   int _currentTrackIndex = 0;
+
+  // When a downloaded file decodes shorter than the book's metadata duration
+  // (an incomplete or corrupt download), this holds the real playable length
+  // in seconds. Seeks are clamped to it, and the truncation-end position is
+  // never saved over a further-along stored position. null = file looks fine.
+  // GH #278: a half-downloaded book otherwise clamped every resume back to the
+  // file's end (50% of the book) and saved that over the user's real progress.
+  double? _shortLocalDurationSec;
+  // Ignore small encoder/container rounding when comparing decoded vs metadata.
+  static const double _kLocalTruncationMarginSec = 60.0;
   int _lastNotifiedChapterIndex = -1;
   int _lastChapterCheckSec = -1;
   StreamSubscription? _indexSub;
@@ -1809,6 +1819,14 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> _seekAbsolute(double absoluteSeconds) async {
     if (_player == null) return;
 
+    // Incomplete download: there's no audio past the decoded end, so clamp the
+    // target there instead of letting the player report a phantom position
+    // beyond the file (which would then get saved/bookmarked). GH #278.
+    if (_shortLocalDurationSec != null &&
+        absoluteSeconds > _shortLocalDurationSec!) {
+      absoluteSeconds = _shortLocalDurationSec!;
+    }
+
     // Record seek target so UI can snap immediately
     _lastSeekTargetSeconds = absoluteSeconds;
     _lastSeekTime = DateTime.now();
@@ -2279,6 +2297,7 @@ class AudioPlayerService extends ChangeNotifier {
     _currentCoverUrl = coverUrl;
     _totalDuration = totalDuration;
     _chapters = chapters;
+    _shortLocalDurationSec = null; // re-evaluated per source in _playFromLocal
     _handler?.updateChaptersQueue(chapters);
     // New book = fresh session — clear any auto sleep dismissal
     SleepTimerService().resetDismiss();
@@ -2667,9 +2686,24 @@ class AudioPlayerService extends ChangeNotifier {
         debugPrint('[Player] Pre-source setActive failed (local): $e');
       }
       _resetPreBufferState();
-      await _player!.setAudioSource(source);
+      final decoded = await _player!.setAudioSource(source);
       _activeConcatSource = source;
       _currentBookTrackCount = trackSources.length;
+
+      // Detect an incomplete/corrupt download: the audio on disk decodes to
+      // materially less than the book's real length. If we trusted the
+      // metadata duration we'd let the user seek past the end of the file,
+      // clamp them to ~the file's end on resume, and save that over their real
+      // progress (GH #278). Flag it so seeks clamp and saves are protected.
+      final decodedSec = (decoded?.inMilliseconds ?? 0) / 1000.0;
+      if (totalDuration > 0 &&
+          decodedSec > 0 &&
+          decodedSec < totalDuration - _kLocalTruncationMarginSec) {
+        _shortLocalDurationSec = decodedSec;
+        debugPrint('[Player] Local audio decodes to ${decodedSec.toStringAsFixed(1)}s '
+            'but book is ${totalDuration.toStringAsFixed(1)}s — download looks '
+            'incomplete; clamping seeks and protecting saved progress (GH #278)');
+      }
 
       // If the saved position is at (or past) the end, restart from the beginning
       if (totalDuration > 0 && startTime >= totalDuration - 1.0) startTime = 0;
@@ -4082,6 +4116,19 @@ class AudioPlayerService extends ChangeNotifier {
     final progressKey = _currentEpisodeId != null
         ? '$_currentItemId-$_currentEpisodeId'
         : _currentItemId!;
+    // Incomplete download: the player pins beyond-file positions to the file's
+    // end. Don't let that clamped value clobber a further-along saved position
+    // (the user's real progress, recoverable once the full file streams or
+    // re-downloads). GH #278. Only refuses a backward jump at the clamp point.
+    if (_shortLocalDurationSec != null && ct >= _shortLocalDurationSec! - 2.0) {
+      final saved = await _progressSync.getSavedPosition(progressKey);
+      if (saved > ct + 1.0) {
+        debugPrint('[Player] Skipping save ${ct.toStringAsFixed(1)}s — would '
+            'clobber further saved ${saved.toStringAsFixed(1)}s from incomplete '
+            'download (GH #278)');
+        return;
+      }
+    }
     await _progressSync.saveLocal(
       itemId: progressKey,
       currentTime: ct,
@@ -4100,6 +4147,12 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> _syncToServer(Duration pos, {int? timeListenedOverride}) async {
     if (_api == null || _playbackSessionId == null) return;
     final ct = pos.inMilliseconds / 1000.0;
+    // Incomplete download: stuck at the truncated file's end. Don't push that
+    // clamped position to the server (it would move real progress backward) or
+    // report the stuck time as listened. GH #278.
+    if (_shortLocalDurationSec != null && ct >= _shortLocalDurationSec! - 2.0) {
+      return;
+    }
     final now = DateTime.now();
     final elapsed = timeListenedOverride ??
         now.difference(_lastServerSync).inSeconds.clamp(0, 300);
