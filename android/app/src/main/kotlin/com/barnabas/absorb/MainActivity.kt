@@ -200,10 +200,20 @@ class MainActivity : AudioServiceActivity() {
 
     private fun handleAttachSession(sessionId: Int, result: MethodChannel.Result) {
         try {
-            Log.d(TAG, "attachSession: $sessionId (previous: $currentSessionId)")
-            if (sessionId != currentSessionId) {
-                releaseEffects()
+            Log.d(TAG, "attachSession: $sessionId (previous: $currentSessionId, haveEffects=${equalizer != null})")
+            // ExoPlayer reuses one audio session id across books. Re-attaching to
+            // the SAME live session must reuse the effects already bound to it —
+            // building a second Equalizer/BassBoost/etc. on that session without
+            // releasing the old ones leaks native effects every book switch and
+            // can cost our instance control of the engine, so EQ silently stops
+            // affecting the sound until the process restarts. Only tear down and
+            // rebuild when the session actually changed. Dart re-pushes the band /
+            // enabled / effect values right after this call in either case.
+            if (sessionId != 0 && sessionId == currentSessionId && equalizer != null) {
+                result.success(true)
+                return
             }
+            releaseEffects()
             currentSessionId = sessionId
 
             if (sessionId == 0) {
@@ -211,16 +221,24 @@ class MainActivity : AudioServiceActivity() {
                 return
             }
 
-            // Don't touch the audio-effect HAL on devices where it failed to
-            // init, since constructing effects there can crash natively.
-            // Software presets still drive the EQ UI; we just skip hardware fx.
-            if (!effectsAvailable) {
-                Log.w(TAG, "attachSession: effect engine unavailable, skipping native effects for session $sessionId")
+            // init() probes Equalizer(0, 0) on the global output mix, which some
+            // devices/HAL states reject with a catchable Error -3 right after a
+            // process start (e.g. just after an app update) — which used to leave
+            // effectsAvailable=false and EQ silent until a force-restart. A real
+            // per-session effect usually still works, so build it here regardless
+            // of the probe result and let this construction decide availability.
+            // (A device that hard-crashes on construction would have crashed at
+            // init already, so reaching this point means construction is catch-safe.)
+            try {
+                equalizer = Equalizer(0, sessionId).apply { enabled = false }
+                effectsAvailable = true
+            } catch (e: Exception) {
+                effectsAvailable = false
+                equalizer = null
+                Log.w(TAG, "attachSession: Equalizer unavailable on session $sessionId: ${e.message}")
                 result.success(true)
                 return
             }
-
-            equalizer = Equalizer(0, sessionId).apply { enabled = false }
             bassBoost = try {
                 BassBoost(0, sessionId).apply { enabled = false }
             } catch (e: Exception) {
