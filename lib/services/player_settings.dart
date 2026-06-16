@@ -170,8 +170,13 @@ class PlayerSettings {
   /// player as listening time accrues; read-only here.
   static Future<double> getStatsTimeSaved() => _get('stats_time_saved', 0.0);
 
-  /// Listening chart style on the stats page: 'bar' | 'line' | 'heatmap'.
-  static Future<String> getStatsChartStyle() => _get('stats_chart_style', 'bar');
+  /// Listening chart style on the stats page: 'bar' | 'line'.
+  /// 'heatmap' used to be a chart style; it's now its own stats section, so a
+  /// saved 'heatmap' value is coerced back to 'bar'.
+  static Future<String> getStatsChartStyle() async {
+    final v = await _get('stats_chart_style', 'bar');
+    return v == 'heatmap' ? 'bar' : v;
+  }
   static Future<void> setStatsChartStyle(String value) => _set('stats_chart_style', value, notify: true);
 
   /// Days covered by the bar/line chart: 7 or 30. The heatmap is always a year.

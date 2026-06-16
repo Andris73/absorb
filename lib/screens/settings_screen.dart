@@ -127,7 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Recent sessions is intentionally absent: it infinite-scrolls, so it is
   // pinned to the bottom of the stats page and can't be reordered or hidden.
   static const _statsSectionIds = [
-    'hero', 'goals', 'periods', 'activity', 'chart', 'dayofweek', 'top',
+    'hero', 'goals', 'periods', 'activity', 'chart', 'heatmap', 'dayofweek', 'top',
   ];
   int _streamingCacheSizeMb = 0;
   bool _localServerEnabled = false;
@@ -370,6 +370,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case 'periods': return l.statsSectionTimePeriods;
       case 'activity': return l.statsActivity;
       case 'chart': return l.statsChartTitle;
+      case 'heatmap': return l.statsChartHeatmap;
       case 'dayofweek': return l.statsDayOfWeek;
       case 'top': return l.statsMostListened;
     }
@@ -383,6 +384,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case 'periods': return Icons.date_range_rounded;
       case 'activity': return Icons.local_fire_department_rounded;
       case 'chart': return Icons.bar_chart_rounded;
+      case 'heatmap': return Icons.calendar_view_month_rounded;
       case 'dayofweek': return Icons.view_week_rounded;
       case 'top': return Icons.star_outline_rounded;
     }
@@ -1241,7 +1243,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               segments: [
                                 ButtonSegment(value: 'bar', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsChartBar, maxLines: 1))),
                                 ButtonSegment(value: 'line', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsChartLine, maxLines: 1))),
-                                ButtonSegment(value: 'heatmap', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsChartHeatmap, maxLines: 1))),
                               ],
                               selected: {_statsChartStyle},
                               onSelectionChanged: _loaded ? (selected) {
@@ -1251,25 +1252,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               style: const ButtonStyle(visualDensity: VisualDensity.compact),
                             ),
                           ),
-                          if (_statsChartStyle != 'heatmap') ...[
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: double.infinity,
-                              child: SegmentedButton<int>(
-                                showSelectedIcon: false,
-                                segments: [
-                                  ButtonSegment(value: 7, label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsChartDays7, maxLines: 1))),
-                                  ButtonSegment(value: 30, label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsChartDays30, maxLines: 1))),
-                                ],
-                                selected: {_statsChartRange},
-                                onSelectionChanged: _loaded ? (selected) {
-                                  setState(() => _statsChartRange = selected.first);
-                                  PlayerSettings.setStatsChartRange(_statsChartRange);
-                                } : null,
-                                style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                              ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: SegmentedButton<int>(
+                              showSelectedIcon: false,
+                              segments: [
+                                ButtonSegment(value: 7, label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsChartDays7, maxLines: 1))),
+                                ButtonSegment(value: 30, label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.statsChartDays30, maxLines: 1))),
+                              ],
+                              selected: {_statsChartRange},
+                              onSelectionChanged: _loaded ? (selected) {
+                                setState(() => _statsChartRange = selected.first);
+                                PlayerSettings.setStatsChartRange(_statsChartRange);
+                              } : null,
+                              style: const ButtonStyle(visualDensity: VisualDensity.compact),
                             ),
-                          ],
+                          ),
                         ],
                       ),
                     ),
