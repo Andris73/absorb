@@ -3529,6 +3529,7 @@ class AudioPlayerService extends ChangeNotifier {
     _lastChapterCheckSec = -1;
     _lastKnownPositionSec = 0;
     _lastServerSync = DateTime.now();
+    _lastAccrual = DateTime.now();
     _positionSyncInProgress = false;
     _positionSyncFailures = 0;
     // Cache prefs in background - not needed synchronously here
@@ -3546,6 +3547,9 @@ class AudioPlayerService extends ChangeNotifier {
       final posSec = pos.inMilliseconds / 1000.0;
       if (posSec <= 0) return;
       await _saveProgressLocal(pos);
+      // Backstop: if the position stream is frozen (Doze), this still banks
+      // listening. Shares _lastAccrual so it can't double-count live ticks.
+      await _accrueListening(pos);
     });
 
     // Attach equalizer to current audio session
@@ -3718,9 +3722,13 @@ class AudioPlayerService extends ChangeNotifier {
       if (sec % 5 == 0 && sec != _lastSyncSecond && _currentItemId != null) {
         _lastSyncSecond = sec;
         _saveProgressLocal(absolutePos);
+        // Bank listening to durable storage every tick, decoupled from the
+        // server push below, so an abrupt kill loses at most one tick.
+        await _accrueListening(absolutePos);
 
-        // Sync to server: 60s foreground, 300s background
-        final syncInterval = _isBackgrounded ? 300 : 60;
+        // Push to server: 15s foreground, 60s background. Accuracy rides on the
+        // accrual above, not this cadence — this is just server freshness.
+        final syncInterval = _isBackgrounded ? 60 : 15;
         final sinceLastSync = DateTime.now().difference(_lastServerSync).inSeconds;
         if (sinceLastSync >= syncInterval && !_positionSyncInProgress) {
           _positionSyncInProgress = true;
@@ -3761,41 +3769,20 @@ class AudioPlayerService extends ChangeNotifier {
               }
             }
 
+            // Listening itself is banked every tick by _accrueListening. These
+            // branches only handle the interval-rate bookkeeping (time-saved,
+            // widget tick) and, for downloaded plays, pushing the local session.
+            final secs = sinceLastSync.clamp(0, 300);
             if (_localSessionMode) {
-              // Downloaded play: accrue listening into the client-owned local
-              // session (per-day, reported to the server as Local). Position
-              // still syncs via /me/progress in the block below — independent
-              // of this listening session.
-              final progressKey = _currentEpisodeId != null
-                  ? '$_currentItemId-$_currentEpisodeId'
-                  : _currentItemId!;
-              final secs = sinceLastSync.clamp(0, 300);
               final online = !manualOffline && !_isOfflineMode && _api != null;
-              await LocalSessionService().accrue(
-                progressKey: progressKey,
-                seconds: secs,
-                currentTime: absolutePos.inMilliseconds / 1000.0,
-                api: online ? _api : null,
-              );
-              unawaited(
-                  _progressSync.addTimeSaved(secs, _player?.speed ?? 1.0));
+              unawaited(_progressSync.addTimeSaved(secs, _player?.speed ?? 1.0));
               unawaited(HomeWidgetService().addLocalListeningSeconds(secs));
-              // Reset the sync clock so the next tick waits a full interval.
+              if (online) await LocalSessionService().pushActive(api: _api!);
               _lastServerSync = DateTime.now();
             } else if (manualOffline || _isOfflineMode || _playbackSessionId == null) {
-              // Offline or no session - accumulate listening time locally
-              final progressKey = _currentEpisodeId != null
-                  ? '$_currentItemId-$_currentEpisodeId'
-                  : _currentItemId!;
-              final offlineSeconds = sinceLastSync.clamp(0, 300);
-              _progressSync.addOfflineListeningTime(progressKey, offlineSeconds);
-              unawaited(_progressSync.addTimeSaved(
-                  offlineSeconds, _player?.speed ?? 1.0));
+              unawaited(_progressSync.addTimeSaved(secs, _player?.speed ?? 1.0));
               // Widget ticks forward even when the server is unreachable.
-              unawaited(HomeWidgetService()
-                  .addLocalListeningSeconds(offlineSeconds));
-              // Reset the sync clock so the next tick waits a full interval
-              // before accumulating again.
+              unawaited(HomeWidgetService().addLocalListeningSeconds(secs));
               _lastServerSync = DateTime.now();
             }
 
@@ -4149,10 +4136,41 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   DateTime _lastServerSync = DateTime.now();
+  // Separate from the server-sync clock: drives the every-5s durable accrual so
+  // a kill loses at most one tick of listening, independent of how often we POST.
+  DateTime _lastAccrual = DateTime.now();
   bool _syncRecoveryInProgress = false;
   bool _positionSyncInProgress = false;
   int _positionSyncFailures = 0;
   bool _recreatingSession = false;
+
+  /// Bank listening time to the durable store for the active play mode. Called
+  /// every ~5s while playing (decoupled from the server POST) so the recorded
+  /// total survives a kill. Uses wall-clock elapsed since the last accrual, so
+  /// it stays correct at any speed and excludes paused spans (no ticks fire
+  /// while paused; [play] restarts the clock).
+  Future<void> _accrueListening(Duration absolutePos) async {
+    if (_currentItemId == null) return;
+    final now = DateTime.now();
+    final delta = now.difference(_lastAccrual).inSeconds;
+    if (delta <= 0) return;
+    final secs = delta > 300 ? 300 : delta;
+    _lastAccrual = now;
+    final key = _currentEpisodeId != null
+        ? '$_currentItemId-$_currentEpisodeId'
+        : _currentItemId!;
+    final manualOffline =
+        (_prefs?.getBool('manual_offline_mode')) ?? false;
+    final ct = absolutePos.inMilliseconds / 1000.0;
+    if (_localSessionMode) {
+      await LocalSessionService().accrue(
+          progressKey: key, seconds: secs, currentTime: ct, api: null);
+    } else if (manualOffline || _isOfflineMode || _playbackSessionId == null) {
+      await _progressSync.addOfflineListeningTime(key, secs);
+    } else {
+      await _progressSync.addStreamingPendingTime(key, secs);
+    }
+  }
 
   Future<void> _syncToServer(Duration pos, {int? timeListenedOverride}) async {
     if (_api == null || _playbackSessionId == null) return;
@@ -4167,6 +4185,17 @@ class AudioPlayerService extends ChangeNotifier {
     final elapsed = timeListenedOverride ??
         now.difference(_lastServerSync).inSeconds.clamp(0, 300);
     _lastServerSync = now;
+    // The streaming safety buffer mirrors this same span; read it before the
+    // POST so we only clear what the server is about to confirm. A real
+    // timeListened (not an override) is what the buffer is shadowing.
+    final streamKey = (timeListenedOverride == null && _currentItemId != null)
+        ? (_currentEpisodeId != null
+            ? '$_currentItemId-$_currentEpisodeId'
+            : _currentItemId!)
+        : null;
+    final pendingBefore = streamKey != null
+        ? await _progressSync.getStreamingPendingTime(streamKey)
+        : 0;
     if (elapsed > 0) {
       unawaited(_progressSync.addTimeSaved(elapsed.toInt(), _player?.speed ?? 1.0));
     }
@@ -4185,6 +4214,9 @@ class AudioPlayerService extends ChangeNotifier {
       // Tick the StatsWidget forward locally so "today" stays fresh between
       // 15-min authoritative refreshes (which Android Doze throttles).
       unawaited(HomeWidgetService().addLocalListeningSeconds(elapsed));
+    }
+    if (ok && streamKey != null && pendingBefore > 0) {
+      unawaited(_progressSync.reduceStreamingPendingTime(streamKey, pendingBefore));
     }
     if (ok) {
       _logEvent(PlaybackEventType.syncServer, detail: '+${elapsed}s');
@@ -4344,6 +4376,7 @@ class AudioPlayerService extends ChangeNotifier {
     // Reset server sync clock so the first sync after resume doesn't
     // include pause duration as timeListened
     _lastServerSync = DateTime.now();
+    _lastAccrual = DateTime.now();
     // Re-activate audio session in case a prior stop released it.
     try { (await AudioSession.instance).setActive(true); } catch (_) {}
     // If the player is idle (source was disposed), we need to fully re-initialize
@@ -4380,6 +4413,7 @@ class AudioPlayerService extends ChangeNotifier {
     // listening on the first sync tick after resume (a long/overnight pause
     // would otherwise be credited as up to 300s of phantom listening).
     _lastServerSync = DateTime.now();
+    _lastAccrual = DateTime.now();
     // Start playback immediately — don't wait for server calls
     _player?.play();
     _scheduleAudioDiagnostics('resume');
@@ -4398,6 +4432,9 @@ class AudioPlayerService extends ChangeNotifier {
         final posSec = pos.inMilliseconds / 1000.0;
         if (posSec <= 0) return;
         await _saveProgressLocal(pos);
+        // Backstop accrual for a frozen position stream (Doze); shares
+        // _lastAccrual so it never double-counts live ticks.
+        await _accrueListening(pos);
       });
     }
     // Restart stuck detection (stopped on pause to avoid background wakes)
@@ -4516,27 +4553,16 @@ class AudioPlayerService extends ChangeNotifier {
     final manualOffline = (_prefs ?? await SharedPreferences.getInstance())
         .getBool('manual_offline_mode') ?? false;
 
-    // Local-session play: credit the real listening since the last tick — we
-    // were playing right up to this pause — then push. resume (play()) resets
-    // the sync clock so the paused span isn't counted. Runs even under manual
-    // offline since accrual works offline.
+    // Credit listening right up to the pause for whatever mode is active — we
+    // were playing until now — then let the push below ship it. resume (play())
+    // restarts both clocks so the paused span is never counted. Runs even under
+    // manual offline since accrual works offline.
+    await _accrueListening(pos);
     if (_localSessionMode) {
-      final pk = _currentEpisodeId != null
-          ? '$_currentItemId-$_currentEpisodeId'
-          : _currentItemId!;
-      final tail =
-          DateTime.now().difference(_lastServerSync).inSeconds.clamp(0, 300);
       final online = !manualOffline && !_isOfflineMode && _api != null;
-      if (tail > 0) {
-        await LocalSessionService().accrue(
-            progressKey: pk,
-            seconds: tail,
-            currentTime: pos.inMilliseconds / 1000.0,
-            api: online ? _api : null);
-      } else if (online) {
-        unawaited(LocalSessionService().pushActive(api: _api!));
-      }
+      if (online) unawaited(LocalSessionService().pushActive(api: _api!));
       _lastServerSync = DateTime.now();
+      _lastAccrual = DateTime.now();
     }
 
     if (manualOffline) return;
@@ -4751,11 +4777,15 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> stop() async {
     _pauseStopTimer?.cancel();
     _pauseStopTimer = null;
+    final wasPlaying = _player?.playing ?? false;
     // Save final position locally
     if (_currentItemId != null) {
       final pos = position;
       debugPrint('[Player] Saving on stop: ${(pos.inMilliseconds / 1000.0).toStringAsFixed(1)}s');
       await _saveProgressLocal(pos);
+      // Credit the final playing tail before the push/close below. Skipped when
+      // stopped from a paused state so the idle span isn't counted.
+      if (wasPlaying) await _accrueListening(pos);
     }
 
     // Check manual offline before syncing
@@ -4767,7 +4797,6 @@ class AudioPlayerService extends ChangeNotifier {
       // not playing in the interval since the last sync - pass timeListened=0
       // so the wall-clock diff doesn't inflate server listening stats.
       if (_playbackSessionId != null && _api != null) {
-        final wasPlaying = _player?.playing ?? false;
         _logEvent(PlaybackEventType.sessionEnd, detail: 'stop');
         await _syncToServer(position,
             timeListenedOverride: wasPlaying ? null : 0);

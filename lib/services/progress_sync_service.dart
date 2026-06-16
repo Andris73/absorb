@@ -368,6 +368,63 @@ class ProgressSyncService {
     }
   }
 
+  /// Buffer listening time for an item that is streaming with a live server
+  /// session. This is a durable safety net only: the live session sync is what
+  /// reports the time, and [reduceStreamingPendingTime] clears the buffer once
+  /// a sync confirms. Whatever survives a kill is shipped by
+  /// [migrateOrphanStreamingTime] on the next launch, so the most that can be
+  /// lost is one accrual tick.
+  Future<void> addStreamingPendingTime(String itemId, int seconds) async {
+    if (seconds <= 0) return;
+    final key = 'streaming_pending_$itemId';
+    final existing = await ScopedPrefs.getInt(key) ?? 0;
+    await ScopedPrefs.setInt(key, existing + seconds);
+    final pending = await ScopedPrefs.getStringList('pending_streaming_listening');
+    if (!pending.contains(itemId)) {
+      pending.add(itemId);
+      await ScopedPrefs.setStringList('pending_streaming_listening', pending);
+    }
+  }
+
+  Future<int> getStreamingPendingTime(String itemId) async =>
+      await ScopedPrefs.getInt('streaming_pending_$itemId') ?? 0;
+
+  /// Clear [seconds] from the streaming safety buffer after a sync confirmed
+  /// that much listening reached the server. Anything accrued during the
+  /// in-flight sync is left for the next round.
+  Future<void> reduceStreamingPendingTime(String itemId, int seconds) async {
+    if (seconds <= 0) return;
+    final key = 'streaming_pending_$itemId';
+    final cur = await ScopedPrefs.getInt(key) ?? 0;
+    final next = cur - seconds;
+    if (next > 0) {
+      await ScopedPrefs.setInt(key, next);
+    } else {
+      await ScopedPrefs.remove(key);
+      final pending =
+          List<String>.from(await ScopedPrefs.getStringList('pending_streaming_listening'));
+      pending.remove(itemId);
+      await ScopedPrefs.setStringList('pending_streaming_listening', pending);
+    }
+  }
+
+  /// On launch, a non-empty streaming buffer means a stream was killed before
+  /// its last span synced. Move it into the offline ledger so the normal flush
+  /// ships it (via a fresh session). Run once at startup before playback opens
+  /// any new streaming session.
+  Future<void> migrateOrphanStreamingTime() async {
+    final pending = List<String>.from(
+        await ScopedPrefs.getStringList('pending_streaming_listening'));
+    if (pending.isEmpty) return;
+    for (final itemId in pending) {
+      final key = 'streaming_pending_$itemId';
+      final secs = await ScopedPrefs.getInt(key) ?? 0;
+      if (secs > 0) await addOfflineListeningTime(itemId, secs);
+      await ScopedPrefs.remove(key);
+    }
+    await ScopedPrefs.setStringList('pending_streaming_listening', []);
+  }
+
   /// Bank time saved by playback speed: [elapsedSeconds] of wall-clock
   /// listening at [speed]. Exact even with constant speed changes because it
   /// samples whatever speed is live each time listening accrues. Stored

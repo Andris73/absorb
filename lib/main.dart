@@ -521,6 +521,9 @@ class _AuthGateState extends State<AuthGate> {
     debugPrint('[Init] remaining services... (${sw.elapsedMilliseconds}ms)');
     try {
       await ProgressSyncService().init();
+      // A killed stream can leave unsynced listening in the streaming buffer;
+      // fold it into the offline ledger so the normal flush ships it.
+      await ProgressSyncService().migrateOrphanStreamingTime();
       await LocalSessionService().init();
       await EqualizerService().init();
       await SleepTimerService().loadAutoSleepSettings();
