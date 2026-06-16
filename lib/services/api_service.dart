@@ -978,6 +978,36 @@ class ApiService {
     }
   }
 
+  /// Edit an existing listening session by re-POSTing it through the local
+  /// upsert. The server honors timeListening, currentTime, and updatedAt (it
+  /// re-derives the session's day from updatedAt); other fields on an existing
+  /// session are left untouched, so the original playMethod/device stay intact.
+  /// Returns true on success.
+  Future<bool> updateListeningSession(Map<String, dynamic> session) async {
+    try {
+      final resp = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/session/local'),
+        body: jsonEncode(session),
+        timeout: const Duration(seconds: 10));
+      return resp.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Delete a listening session. Needs the user's delete permission on the
+  /// server (403 otherwise). Returns true on success.
+  Future<bool> deleteListeningSession(String sessionId) async {
+    try {
+      final resp = await _authDelete(
+        Uri.parse('$_cleanBaseUrl/api/sessions/$sessionId'),
+        timeout: const Duration(seconds: 10));
+      return resp.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Get server progress for a single item.
   /// GET /api/me/progress/:id
   Future<Map<String, dynamic>?> getItemProgress(String itemId) async {
@@ -1898,6 +1928,36 @@ class ApiService {
     return [];
   }
 
+  /// Admin: paginated listing of every user's sessions. Returns the full
+  /// envelope (total, numPages, page, sessions) with each session carrying its
+  /// user. Optionally filter to a single [userId]. Admin-only server-side.
+  Future<Map<String, dynamic>?> getAllSessionsPaged({
+    int page = 0,
+    int itemsPerPage = 25,
+    String? userId,
+    String sort = 'updatedAt',
+    bool desc = true,
+  }) async {
+    try {
+      final params = <String, String>{
+        'itemsPerPage': '$itemsPerPage',
+        'page': '$page',
+        'sort': sort,
+        'desc': desc ? '1' : '0',
+        if (userId != null && userId.isNotEmpty) 'user': userId,
+      };
+      final uri = Uri.parse('$_cleanBaseUrl/api/sessions')
+          .replace(queryParameters: params);
+      final r = await _authGet(uri, timeout: const Duration(seconds: 15));
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('getAllSessionsPaged error: $e');
+    }
+    return null;
+  }
+
   /// Get all backups (admin only)
   Future<List<dynamic>> getBackups() async {
     try {
@@ -1960,6 +2020,133 @@ class ApiService {
       return r.statusCode == 200;
     } catch (e) { debugPrint('purgeCache error: $e'); }
     return false;
+  }
+
+  /// GET /api/filesystem?path= — browse server directories (admin only).
+  /// Omit [path] for the root listing (drive letters on Windows servers).
+  /// Returns { posix: bool, directories: [{path, dirname, level}] }.
+  Future<Map<String, dynamic>?> getFilesystemPaths({String? path}) async {
+    try {
+      final uri = Uri.parse('$_cleanBaseUrl/api/filesystem')
+          .replace(queryParameters: path != null ? {'path': path} : null);
+      final r = await _authGet(uri, timeout: const Duration(seconds: 20));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) { debugPrint('[API] getFilesystemPaths error: $e'); }
+    return null;
+  }
+
+  /// POST /api/libraries — create a library (admin only).
+  /// [body] needs name + folders (each {fullPath}); optional mediaType, icon,
+  /// provider, settings. Returns the new library object on success.
+  Future<Map<String, dynamic>?> createLibrary(Map<String, dynamic> body) async {
+    try {
+      final r = await _authPost(Uri.parse('$_cleanBaseUrl/api/libraries'),
+          body: jsonEncode(body), timeout: const Duration(seconds: 30));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+      debugPrint('[API] createLibrary failed: ${r.statusCode}');
+    } catch (e) { debugPrint('[API] createLibrary error: $e'); }
+    return null;
+  }
+
+  /// PATCH /api/libraries/:id — partial update (admin only).
+  /// In [body]'s folders array, keep existing folders as {id, fullPath}, add
+  /// new ones as {fullPath}; omitting a folder DELETES it (cascades on server).
+  Future<bool> updateLibrary(String id, Map<String, dynamic> body) async {
+    try {
+      final r = await _authPatch(Uri.parse('$_cleanBaseUrl/api/libraries/$id'),
+          body: jsonEncode(body), timeout: const Duration(seconds: 30));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('[API] updateLibrary error: $e'); }
+    return false;
+  }
+
+  /// DELETE /api/libraries/:id — removes the library and all its items (admin only).
+  Future<bool> deleteLibrary(String id) async {
+    try {
+      final r = await _authDelete(Uri.parse('$_cleanBaseUrl/api/libraries/$id'),
+          timeout: const Duration(seconds: 30));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('[API] deleteLibrary error: $e'); }
+    return false;
+  }
+
+  /// POST /api/libraries/order — body is a raw array [{id, newOrder}] (admin only).
+  Future<bool> reorderLibraries(List<Map<String, dynamic>> order) async {
+    try {
+      final r = await _authPost(Uri.parse('$_cleanBaseUrl/api/libraries/order'),
+          body: jsonEncode(order));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('[API] reorderLibraries error: $e'); }
+    return false;
+  }
+
+  /// GET /api/search/providers — metadata provider ids for the library editor.
+  /// Response shape is { books: [{text,value}], podcasts: [...], booksCovers: [...] }.
+  /// Returns book + podcast provider values (deduped); falls back to built-ins.
+  Future<List<String>> getMetadataProviders() async {
+    try {
+      final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/search/providers'));
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        final out = <String>[];
+        for (final key in ['books', 'podcasts']) {
+          for (final p in (data[key] as List?) ?? []) {
+            final v = p is Map ? p['value']?.toString() : p?.toString();
+            if (v != null && v.isNotEmpty && !out.contains(v)) out.add(v);
+          }
+        }
+        if (out.isNotEmpty) return out;
+      }
+    } catch (e) { debugPrint('[API] getMetadataProviders error: $e'); }
+    return const ['google', 'audible', 'openlibrary', 'itunes', 'audnexus', 'fantlab'];
+  }
+
+  /// PATCH /api/settings — update server settings (admin only).
+  /// There is no GET; read current values from AuthProvider.serverSettings.
+  /// Returns the fresh serverSettings map so the caller can re-cache it.
+  Future<Map<String, dynamic>?> updateServerSettings(Map<String, dynamic> patch) async {
+    try {
+      final r = await _authPatch(Uri.parse('$_cleanBaseUrl/api/settings'),
+          body: jsonEncode(patch));
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body)['serverSettings'] as Map<String, dynamic>?;
+      }
+      debugPrint('[API] updateServerSettings failed: ${r.statusCode}');
+    } catch (e) { debugPrint('[API] updateServerSettings error: $e'); }
+    return null;
+  }
+
+  /// PATCH /api/sorting-prefixes — body { sortingPrefixes: [..] } (admin only).
+  /// Returns the fresh serverSettings map (the response also has rowsUpdated).
+  Future<Map<String, dynamic>?> updateSortingPrefixes(List<String> prefixes) async {
+    try {
+      final r = await _authPatch(Uri.parse('$_cleanBaseUrl/api/sorting-prefixes'),
+          body: jsonEncode({'sortingPrefixes': prefixes}),
+          timeout: const Duration(seconds: 30));
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body)['serverSettings'] as Map<String, dynamic>?;
+      }
+    } catch (e) { debugPrint('[API] updateSortingPrefixes error: $e'); }
+    return null;
+  }
+
+  /// GET /api/stats/server — { books, podcasts, total } (admin only).
+  Future<Map<String, dynamic>?> getServerStats() async {
+    try {
+      final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/stats/server'));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) { debugPrint('[API] getServerStats error: $e'); }
+    return null;
+  }
+
+  /// GET /api/stats/year/:year — admin year-in-review stats (admin only).
+  Future<Map<String, dynamic>?> getServerYearStats(int year) async {
+    try {
+      final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/stats/year/$year'),
+          timeout: const Duration(seconds: 30));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) { debugPrint('[API] getServerYearStats error: $e'); }
+    return null;
   }
 
   /// Create a new user (admin only)

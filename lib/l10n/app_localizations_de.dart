@@ -4491,6 +4491,31 @@ class AppLocalizationsDe extends AppLocalizations {
   String get statsScreenListened => 'Gehört';
 
   @override
+  String get sessionEditTitle => 'Edit session';
+
+  @override
+  String get sessionDayLabel => 'Day';
+
+  @override
+  String get sessionDeleteConfirmTitle => 'Delete session?';
+
+  @override
+  String get sessionDeleteConfirmBody =>
+      'This removes the session and lowers your listening totals by its time. It cannot be undone.';
+
+  @override
+  String get sessionSaved => 'Session updated';
+
+  @override
+  String get sessionDeleted => 'Session deleted';
+
+  @override
+  String get sessionSaveFailed => 'Could not save changes';
+
+  @override
+  String get sessionDeleteFailed => 'Could not delete this session';
+
+  @override
   String get statsScreenStartedAtPosition => 'Gestartet bei Position';
 
   @override
@@ -6142,4 +6167,306 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get bookmarkPreviewFailed => 'Couldn\'t play this spot.';
+
+  @override
+  String get fsPickerTitle => 'Select folder';
+
+  @override
+  String get fsServerRoot => 'Server root';
+
+  @override
+  String get fsEmptyFolder => 'No subfolders here';
+
+  @override
+  String get fsUseThisFolder => 'Use this folder';
+
+  @override
+  String get adminLibrariesManage => 'Libraries';
+
+  @override
+  String get adminLibrariesManageSubtitle => 'Create, edit and reorder';
+
+  @override
+  String get adminServerSettings => 'Server settings';
+
+  @override
+  String get adminServerSettingsSubtitle => 'Scanner, storage and sorting';
+
+  @override
+  String get adminStats => 'Statistics';
+
+  @override
+  String get adminStatsSubtitle => 'Library and listening totals';
+
+  @override
+  String get adminAllSessions => 'All sessions';
+
+  @override
+  String get adminAllSessionsSubtitle =>
+      'View and manage all listening sessions';
+
+  @override
+  String get adminSessionsAllUsers => 'All users';
+
+  @override
+  String get adminSessionsEmpty => 'No sessions';
+
+  @override
+  String get statsLibraryTotals => 'Library totals';
+
+  @override
+  String get statsTotalItems => 'Items';
+
+  @override
+  String get statsAudioFiles => 'Audio files';
+
+  @override
+  String get statsTotalSize => 'Total size';
+
+  @override
+  String get statsBooks => 'Books';
+
+  @override
+  String get statsPodcasts => 'Podcasts';
+
+  @override
+  String get statsBooksSize => 'Books size';
+
+  @override
+  String get statsYearReview => 'Year in review';
+
+  @override
+  String get statsNoYearData => 'No data for this year';
+
+  @override
+  String get statsListeningTime => 'Listening time';
+
+  @override
+  String get statsSessions => 'Sessions';
+
+  @override
+  String get statsBooksAdded => 'Books added';
+
+  @override
+  String get statsAuthorsAdded => 'Authors added';
+
+  @override
+  String get statsTopAuthors => 'Top authors';
+
+  @override
+  String get statsTopNarrators => 'Top narrators';
+
+  @override
+  String get statsTopGenres => 'Top genres';
+
+  @override
+  String get srvScannerSection => 'Scanner';
+
+  @override
+  String get srvFindCovers => 'Find covers';
+
+  @override
+  String get srvCoverProvider => 'Cover provider';
+
+  @override
+  String get srvParseSubtitles => 'Parse subtitles from filename';
+
+  @override
+  String get srvPreferMatched => 'Prefer matched metadata';
+
+  @override
+  String get srvDisableWatcher => 'Disable folder watcher';
+
+  @override
+  String get srvStorageSection => 'Storage';
+
+  @override
+  String get srvStoreCover => 'Store cover with item';
+
+  @override
+  String get srvStoreMetadata => 'Store metadata with item';
+
+  @override
+  String get srvMetadataFormat => 'Metadata file format';
+
+  @override
+  String get srvFormatSection => 'Display and format';
+
+  @override
+  String get srvDateFormat => 'Date format';
+
+  @override
+  String get srvTimeFormat => 'Time format';
+
+  @override
+  String get srvLanguage => 'Server language';
+
+  @override
+  String get srvChromecast => 'Chromecast support';
+
+  @override
+  String get srvAllowIframe => 'Allow iframe embedding';
+
+  @override
+  String get srvSortingSection => 'Sorting';
+
+  @override
+  String get srvIgnorePrefixes => 'Ignore prefixes when sorting';
+
+  @override
+  String get srvSortingPrefixes => 'Sorting prefixes';
+
+  @override
+  String get srvAddPrefix => 'Add prefix';
+
+  @override
+  String get srvSave => 'Save settings';
+
+  @override
+  String get srvSavePrefixes => 'Save prefixes';
+
+  @override
+  String get srvSaved => 'Settings saved';
+
+  @override
+  String get srvSaveFailed => 'Couldn\'t save settings';
+
+  @override
+  String get srvPrefixesSaved => 'Sorting prefixes updated';
+
+  @override
+  String get libNoneYet => 'No libraries yet';
+
+  @override
+  String get libReorderFailed => 'Couldn\'t save the new order';
+
+  @override
+  String get libDeleteTitle => 'Delete library?';
+
+  @override
+  String get libDeleteBody =>
+      'This permanently removes the library and all of its items from the server.';
+
+  @override
+  String get libDeleted => 'Library deleted';
+
+  @override
+  String get libDeleteFailed => 'Couldn\'t delete library';
+
+  @override
+  String libFolderCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count folders',
+      one: '1 folder',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get libNewTitle => 'New library';
+
+  @override
+  String get libEditTitle => 'Edit library';
+
+  @override
+  String get libName => 'Library name';
+
+  @override
+  String get libMediaType => 'Media type';
+
+  @override
+  String get libMediaBook => 'Books';
+
+  @override
+  String get libMediaPodcast => 'Podcasts';
+
+  @override
+  String get libProvider => 'Metadata provider';
+
+  @override
+  String get libIcon => 'Icon';
+
+  @override
+  String get libFolders => 'Folders';
+
+  @override
+  String get libAddFolder => 'Add folder';
+
+  @override
+  String get libNoFolders => 'Add at least one folder';
+
+  @override
+  String get libAdvanced => 'Advanced settings';
+
+  @override
+  String get libCoverShape => 'Cover shape';
+
+  @override
+  String get libCoverSquare => 'Square';
+
+  @override
+  String get libCoverStandard => 'Standard';
+
+  @override
+  String get libDisableWatcher => 'Disable folder watcher';
+
+  @override
+  String get libSkipAsin => 'Skip matching books that have an ASIN';
+
+  @override
+  String get libSkipIsbn => 'Skip matching books that have an ISBN';
+
+  @override
+  String get libHideSingleSeries => 'Hide single-book series';
+
+  @override
+  String get libAudiobooksOnly => 'Audiobooks only';
+
+  @override
+  String get libEpubScripted => 'Allow scripted ePub content';
+
+  @override
+  String get libLaterBooksOnly => 'Only show later books in Continue Series';
+
+  @override
+  String get libPodcastRegion => 'Podcast search region';
+
+  @override
+  String get libMarkPercent => 'Finished at % complete';
+
+  @override
+  String get libMarkTime => 'Finished with seconds left';
+
+  @override
+  String get libAutoScan => 'Auto-scan schedule (cron)';
+
+  @override
+  String get libCreate => 'Create library';
+
+  @override
+  String get libUpdate => 'Save changes';
+
+  @override
+  String get libNameRequired => 'Enter a library name';
+
+  @override
+  String get libCreated => 'Library created';
+
+  @override
+  String get libCreateFailed => 'Couldn\'t create library';
+
+  @override
+  String get libUpdated => 'Library updated';
+
+  @override
+  String get libUpdateFailed => 'Couldn\'t update library';
+
+  @override
+  String get libRemoveFoldersTitle => 'Remove folders?';
+
+  @override
+  String get libRemoveFoldersBody =>
+      'Removing a folder deletes its items from the library. This can\'t be undone.';
 }

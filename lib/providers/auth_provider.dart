@@ -102,6 +102,16 @@ class AuthProvider extends ChangeNotifier {
     return perms?['delete'] == true;
   }
 
+  /// Re-cache server settings after an admin saves them via PATCH /api/settings
+  /// (which echoes the updated serverSettings). Keeps cached values and the
+  /// shown server version fresh without forcing a re-login.
+  void applyServerSettings(Map<String, dynamic> settings) {
+    _serverSettings = settings;
+    final v = settings['version'] as String?;
+    if (v != null && v.isNotEmpty) _serverVersion = v;
+    notifyListeners();
+  }
+
   /// E-reader devices the current user is allowed to send ebooks to.
   /// Populated from the login response (top-level `ereaderDevices`, NOT
   /// nested inside the user object) and persisted across restarts since
