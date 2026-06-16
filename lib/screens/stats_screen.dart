@@ -12,6 +12,7 @@ import '../widgets/finished_books_this_year_sheet.dart';
 import '../widgets/stats_charts.dart';
 import '../widgets/absorb_wave_icon.dart';
 import '../widgets/card_buttons.dart';
+import '../widgets/overlay_toast.dart';
 import '../main.dart' show oledNotifier;
 import 'app_shell.dart';
 import '../l10n/app_localizations.dart';
@@ -39,6 +40,9 @@ class _StatsScreenState extends State<StatsScreen>
   List<String> _statsOrder = [];
   Set<String> _statsHidden = {};
   String? _selectedDayKey;
+  // Which section owns the current day selection ('chart' or 'heatmap') so the
+  // detail card only shows under the one that was tapped.
+  String? _selectedSection;
   double _selectedDaySeconds = 0;
   double _timeSavedSeconds = 0;
   late AnimationController _animController;
@@ -46,7 +50,7 @@ class _StatsScreenState extends State<StatsScreen>
   // Recent sessions stays out of the reorderable sections: it loads more as
   // you scroll, so anything placed under it would never be reachable.
   static const _defaultSectionOrder = [
-    'hero', 'goals', 'periods', 'activity', 'chart', 'dayofweek', 'top',
+    'hero', 'goals', 'periods', 'activity', 'chart', 'heatmap', 'dayofweek', 'top',
   ];
   late Animation<double> _animValue;
 
@@ -121,6 +125,7 @@ class _StatsScreenState extends State<StatsScreen>
     setState(() {
       if (chartStyle != _chartStyle || chartRange != _chartRange) {
         _selectedDayKey = null;
+        _selectedSection = null;
       }
       _goalType = type;
       _goalMinutes = minutes;
@@ -133,37 +138,87 @@ class _StatsScreenState extends State<StatsScreen>
     });
   }
 
-  void _selectDay(String key, double seconds) {
+  void _selectDay(String section, String key, double seconds) {
     setState(() {
-      if (_selectedDayKey == key) {
+      if (_selectedSection == section && _selectedDayKey == key) {
+        _selectedSection = null;
         _selectedDayKey = null;
       } else {
+        _selectedSection = section;
         _selectedDayKey = key;
         _selectedDaySeconds = seconds;
       }
     });
   }
 
-  /// "Mon, Jun 5 · 1h 23m" line under the chart for the tapped day.
-  Widget _selectedDayRow(ColorScheme cs, TextTheme tt) {
-    final key = _selectedDayKey;
-    if (key == null) return const SizedBox.shrink();
-    final parts = key.split('-');
+  /// Detail card for the tapped day, scoped to [section] so it only appears
+  /// under the chart or the heatmap — whichever was tapped. Animates in/out.
+  Widget _dayDetailSlot(ColorScheme cs, TextTheme tt, String section) {
+    final show = _selectedSection == section && _selectedDayKey != null;
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: show
+          ? Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: _dayDetailCard(cs, tt),
+            )
+          : const SizedBox(width: double.infinity),
+    );
+  }
+
+  Widget _dayDetailCard(ColorScheme cs, TextTheme tt) {
+    final parts = _selectedDayKey!.split('-');
     final date = DateTime(
         int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     final l = AppLocalizations.of(context)!;
-    final label = '${_dayLabel(date, l)}, ${months[date.month - 1]} ${date.day}';
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(Icons.calendar_today_rounded,
-            size: 13, color: cs.primary.withValues(alpha: 0.7)),
-        const SizedBox(width: 6),
-        Text('$label  ·  ${_formatDuration(_selectedDaySeconds)}',
-            style: tt.bodySmall?.copyWith(
-                color: cs.onSurface.withValues(alpha: 0.7),
-                fontWeight: FontWeight.w600)),
+    final dateLabel = '${_dayLabel(date, l)}, ${months[date.month - 1]} ${date.day}';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: cs.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cs.primary.withValues(alpha: 0.18)),
+      ),
+      child: Row(children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: cs.primary.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(Icons.calendar_today_rounded, size: 16, color: cs.primary),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(dateLabel,
+                  style: tt.bodyMedium?.copyWith(
+                      color: cs.onSurface, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              Text(_formatDuration(_selectedDaySeconds),
+                  style: tt.bodySmall?.copyWith(
+                      color: cs.primary, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+        InkWell(
+          onTap: () => setState(() {
+            _selectedSection = null;
+            _selectedDayKey = null;
+          }),
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Icon(Icons.close_rounded,
+                size: 16, color: cs.onSurface.withValues(alpha: 0.4)),
+          ),
+        ),
       ]),
     );
   }
@@ -431,15 +486,18 @@ class _StatsScreenState extends State<StatsScreen>
         const SizedBox(height: 28),
       ],
       'chart': [
-        _sectionTitle(
-            tt,
-            cs,
-            _chartStyle == 'heatmap'
-                ? l.statsThisYearTitle
-                : (_chartRange == 30 ? l.statsLast30Days : l.statsLast7Days)),
+        _sectionTitle(tt, cs,
+            _chartRange == 30 ? l.statsLast30Days : l.statsLast7Days),
         const SizedBox(height: 10),
-        _chartCard(cs, tt, l, dailyMap, chartData),
-        _selectedDayRow(cs, tt),
+        _chartCard(cs, tt, chartData),
+        _dayDetailSlot(cs, tt, 'chart'),
+        const SizedBox(height: 28),
+      ],
+      'heatmap': [
+        _sectionTitle(tt, cs, l.statsThisYearTitle),
+        const SizedBox(height: 10),
+        _heatmapCard(cs, l, _cardDeco(cs), dailyMap),
+        _dayDetailSlot(cs, tt, 'heatmap'),
         const SizedBox(height: 28),
       ],
       'dayofweek': [
@@ -496,20 +554,18 @@ class _StatsScreenState extends State<StatsScreen>
     );
   }
 
-  Widget _chartCard(ColorScheme cs, TextTheme tt, AppLocalizations l,
-      Map<String, dynamic> dailyMap, List<_DayData> chartData) {
-    if (_chartStyle == 'bar') {
-      return _barChart(chartData, cs, tt, dense: _chartRange > 10);
-    }
-    final deco = BoxDecoration(
-      color: cs.onSurface.withValues(alpha: 0.03),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: cs.onSurface.withValues(alpha: 0.05)),
-    );
+  /// Shared card background used by the line chart and the heatmap.
+  BoxDecoration _cardDeco(ColorScheme cs) => BoxDecoration(
+        color: cs.onSurface.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cs.onSurface.withValues(alpha: 0.05)),
+      );
+
+  Widget _chartCard(ColorScheme cs, TextTheme tt, List<_DayData> chartData) {
     if (_chartStyle == 'line') {
       return Container(
         padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
-        decoration: deco,
+        decoration: _cardDeco(cs),
         child: StatsLineChart(
           data: chartData
               .map((d) => ChartDay(label: d.label, dateKey: d.fullLabel, seconds: d.seconds))
@@ -520,12 +576,14 @@ class _StatsScreenState extends State<StatsScreen>
           labelColor: cs.onSurface,
           todayColor: cs.primary,
           formatValue: _shortDuration,
-          selectedIndex: chartData.indexWhere((d) => d.fullLabel == _selectedDayKey),
-          onDaySelected: (i) => _selectDay(chartData[i].fullLabel, chartData[i].seconds),
+          selectedIndex: _selectedSection == 'chart'
+              ? chartData.indexWhere((d) => d.fullLabel == _selectedDayKey)
+              : -1,
+          onDaySelected: (i) => _selectDay('chart', chartData[i].fullLabel, chartData[i].seconds),
         ),
       );
     }
-    return _heatmapCard(cs, l, deco, dailyMap);
+    return _barChart(chartData, cs, tt, dense: _chartRange > 10);
   }
 
   /// Average listening per weekday (across days that had any listening),
@@ -648,8 +706,8 @@ class _StatsScreenState extends State<StatsScreen>
           l.statsScreenDaySat,
           l.statsScreenDaySun,
         ],
-        selectedKey: _selectedDayKey,
-        onDaySelected: _selectDay,
+        selectedKey: _selectedSection == 'heatmap' ? _selectedDayKey : null,
+        onDaySelected: (key, seconds) => _selectDay('heatmap', key, seconds),
       ),
     );
   }
@@ -973,11 +1031,12 @@ class _StatsScreenState extends State<StatsScreen>
             children: data.map((d) {
               final ratio = (d.seconds / barMax * anim).clamp(0.0, 1.0);
               final isToday = d.fullLabel == _dateKey(DateTime.now());
-              final isSelected = d.fullLabel == _selectedDayKey;
+              final isSelected =
+                  _selectedSection == 'chart' && d.fullLabel == _selectedDayKey;
               return Expanded(
                   child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => _selectDay(d.fullLabel, d.seconds),
+                onTap: () => _selectDay('chart', d.fullLabel, d.seconds),
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: dense ? 1 : 3),
                   child: Column(
@@ -1215,13 +1274,17 @@ class _StatsScreenState extends State<StatsScreen>
     }).toList();
   }
 
-  void _showSessionDetails(Map<String, dynamic> s) {
-    showModalBottomSheet(
+  Future<void> _showSessionDetails(Map<String, dynamic> s) async {
+    final changed = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _SessionDetailsSheet(session: s),
+      builder: (_) => SessionDetailsSheet(session: s),
     );
+    if (changed == true && mounted) {
+      setState(() => _isLoading = true);
+      await _loadStats();
+    }
   }
 
   IconData _clientIcon(String clientName) {
@@ -1422,18 +1485,178 @@ class _TopItem {
       required this.sessionCount});
 }
 
-class _SessionDetailsSheet extends StatefulWidget {
+class SessionDetailsSheet extends StatefulWidget {
   final Map<String, dynamic> session;
-  const _SessionDetailsSheet({required this.session});
+  /// Whether the listened-time / day editor is offered. Hidden when an admin is
+  /// viewing another user's session (the only edit path would write to the
+  /// admin's own progress).
+  final bool allowEdit;
+  const SessionDetailsSheet({super.key, required this.session, this.allowEdit = true});
 
   @override
-  State<_SessionDetailsSheet> createState() => _SessionDetailsSheetState();
+  State<SessionDetailsSheet> createState() => SessionDetailsSheetState();
 }
 
-class _SessionDetailsSheetState extends State<_SessionDetailsSheet> {
+class SessionDetailsSheetState extends State<SessionDetailsSheet> {
   bool _jumping = false;
+  bool _saving = false;
 
   static double _n(dynamic v) => v is num ? v.toDouble() : 0;
+
+  static String _two(int v) => v.toString().padLeft(2, '0');
+
+  /// Edit how much listening this session counts for and which day it lands on.
+  /// The server only honors timeListening and the day (re-derived from
+  /// updatedAt) on an existing session, so those are all we expose.
+  Future<void> _editSession() async {
+    final l = AppLocalizations.of(context)!;
+    final s = widget.session;
+    final origListening = _n(s['timeListening']).round();
+    final origUpdatedMs = s['updatedAt'] is num
+        ? (s['updatedAt'] as num).toInt()
+        : DateTime.now().millisecondsSinceEpoch;
+    final origUpdated = DateTime.fromMillisecondsSinceEpoch(origUpdatedMs);
+
+    final hoursCtrl =
+        TextEditingController(text: '${origListening ~/ 3600}');
+    final minutesCtrl =
+        TextEditingController(text: '${(origListening % 3600) ~/ 60}');
+    var day = DateTime(origUpdated.year, origUpdated.month, origUpdated.day);
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(builder: (dialogCtx, setDialog) {
+          return AlertDialog(
+            title: Text(l.sessionEditTitle),
+            content: Column(mainAxisSize: MainAxisSize.min, children: [
+              Row(children: [
+                Expanded(
+                    child: TextField(
+                  controller: hoursCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                      labelText: l.statsHoursUnit,
+                      border: const OutlineInputBorder()),
+                )),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: TextField(
+                  controller: minutesCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                      labelText: l.statsMinutesUnit,
+                      border: const OutlineInputBorder()),
+                )),
+              ]),
+              const SizedBox(height: 12),
+              Row(children: [
+                Text(l.sessionDayLabel,
+                    style: Theme.of(dialogCtx).textTheme.bodyMedium),
+                const Spacer(),
+                TextButton.icon(
+                  icon: const Icon(Icons.calendar_today_rounded, size: 16),
+                  label: Text('${day.year}-${_two(day.month)}-${_two(day.day)}'),
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: dialogCtx,
+                      initialDate: day,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime.now(),
+                    );
+                    if (picked != null) {
+                      setDialog(() => day =
+                          DateTime(picked.year, picked.month, picked.day));
+                    }
+                  },
+                ),
+              ]),
+            ]),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogCtx, false),
+                  child: Text(l.cancel)),
+              FilledButton(
+                  onPressed: () => Navigator.pop(dialogCtx, true),
+                  child: Text(l.save)),
+            ],
+          );
+        });
+      },
+    );
+    if (saved != true || !mounted) return;
+
+    final h = int.tryParse(hoursCtrl.text.trim()) ?? 0;
+    final m = int.tryParse(minutesCtrl.text.trim()) ?? 0;
+    final newListening = (h < 0 ? 0 : h) * 3600 + (m < 0 ? 0 : m) * 60;
+    // Keep the original time-of-day so only the date moves.
+    final newUpdated = DateTime(day.year, day.month, day.day, origUpdated.hour,
+            origUpdated.minute, origUpdated.second)
+        .millisecondsSinceEpoch;
+
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) {
+      showOverlayToast(context, AppLocalizations.of(context)!.bookmarksNotConnected,
+          icon: Icons.error_outline_rounded);
+      return;
+    }
+    setState(() => _saving = true);
+    final edited = Map<String, dynamic>.from(s)
+      ..['timeListening'] = newListening
+      ..['updatedAt'] = newUpdated;
+    final ok = await api.updateListeningSession(edited);
+    if (!mounted) return;
+    if (ok) {
+      showOverlayToast(context, l.sessionSaved, icon: Icons.check_rounded);
+      Navigator.pop(context, true);
+    } else {
+      setState(() => _saving = false);
+      showOverlayToast(context, l.sessionSaveFailed,
+          icon: Icons.error_outline_rounded);
+    }
+  }
+
+  Future<void> _deleteSession() async {
+    final l = AppLocalizations.of(context)!;
+    final id = widget.session['id'] as String?;
+    if (id == null) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(l.sessionDeleteConfirmTitle),
+        content: Text(l.sessionDeleteConfirmBody),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(c, false), child: Text(l.cancel)),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(c).colorScheme.error),
+            onPressed: () => Navigator.pop(c, true),
+            child: Text(l.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) {
+      showOverlayToast(context, AppLocalizations.of(context)!.bookmarksNotConnected,
+          icon: Icons.error_outline_rounded);
+      return;
+    }
+    setState(() => _saving = true);
+    final ok = await api.deleteListeningSession(id);
+    if (!mounted) return;
+    if (ok) {
+      showOverlayToast(context, l.sessionDeleted, icon: Icons.delete_outline_rounded);
+      Navigator.pop(context, true);
+    } else {
+      setState(() => _saving = false);
+      showOverlayToast(context, l.sessionDeleteFailed,
+          icon: Icons.error_outline_rounded);
+    }
+  }
 
   String _fmtPos(double seconds) {
     final s = seconds.round();
@@ -1787,6 +2010,36 @@ class _SessionDetailsSheetState extends State<_SessionDetailsSheet> {
                         ),
                       ),
                     ),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    if (widget.allowEdit) ...[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _saving ? null : _editSession,
+                          icon: const Icon(Icons.edit_rounded, size: 18),
+                          label: Text(l.edit),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _saving ? null : _deleteSession,
+                        icon: Icon(Icons.delete_outline_rounded,
+                            size: 18, color: cs.error),
+                        label:
+                            Text(l.delete, style: TextStyle(color: cs.error)),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          side:
+                              BorderSide(color: cs.error.withValues(alpha: 0.4)),
+                        ),
+                      ),
+                    ),
+                  ]),
                 ],
               ),
             ),
