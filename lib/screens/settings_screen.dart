@@ -25,9 +25,11 @@ import '../widgets/update_dialog.dart';
 import '../screens/admin_screen.dart';
 import '../screens/downloads_screen.dart';
 import '../screens/bookmarks_screen.dart';
-import '../main.dart' show applyThemeMode, applyTrustAllCerts, localeNotifier, oledNotifier, snappyTransitionsNotifier;
+import '../main.dart' show applyThemeMode, applyTrustAllCerts, applyFlatBackground, applyColorSource, applyManualSeed, applyGradientIntensity, applyUseColorEverywhere, localeNotifier, flatNotifier, gradientIntensityNotifier, snappyTransitionsNotifier;
 import '../services/wording.dart';
 import '../widgets/absorb_page_header.dart';
+import '../widgets/theme_presets.dart';
+import '../widgets/color_wheel_picker.dart';
 import '../widgets/absorb_slider.dart';
 import '../widgets/collapsible_section.dart';
 import '../widgets/overlay_toast.dart';
@@ -114,6 +116,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _cardBackground = 'blurred';
   double _progressTextScale = 1.0;
   String _themeMode = 'dark';
+  bool _flatBackground = false;
+  String _colorSource = 'dynamic';
+  int _manualSeed = 0xFF7C6FBF;
+  double _gradientIntensity = 0.06;
+  bool _useColorEverywhere = false;
   String _language = '';
   int _startScreen = 2;
   String _statsGoalType = 'off';
@@ -258,6 +265,107 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _podcastQueueMode = mode;
     });
     PlayerSettings.notifySettingsChanged();
+  }
+
+  void _setManualColor(int argb) {
+    setState(() => _manualSeed = argb);
+    PlayerSettings.setManualSeedColor(argb);
+    applyManualSeed(argb);
+  }
+
+  Widget _buildColorSwatches(ColorScheme cs) {
+    final l = AppLocalizations.of(context)!;
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: [
+        for (final preset in kThemePresets)
+          _swatch(
+            color: preset.color,
+            selected: _manualSeed == preset.color.toARGB32(),
+            tooltip: preset.name,
+            onTap: () => _setManualColor(preset.color.toARGB32()),
+          ),
+        // Custom color wheel entry
+        Tooltip(
+          message: l.colorSourceCustom,
+          child: InkWell(
+            onTap: () => _showCustomColorDialog(),
+            customBorder: const CircleBorder(),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const SweepGradient(colors: [
+                  Color(0xFFFF0000), Color(0xFFFFFF00), Color(0xFF00FF00),
+                  Color(0xFF00FFFF), Color(0xFF0000FF), Color(0xFFFF00FF), Color(0xFFFF0000),
+                ]),
+                border: Border.all(color: cs.outlineVariant),
+              ),
+              child: Icon(Icons.add_rounded, size: 20, color: Colors.white.withValues(alpha: 0.9)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _swatch({required Color color, required bool selected, required String tooltip, required VoidCallback onTap}) {
+    final cs = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected ? cs.onSurface : cs.outlineVariant,
+              width: selected ? 3 : 1,
+            ),
+          ),
+          child: selected
+              ? Icon(Icons.check_rounded, size: 20,
+                  color: ThemeData.estimateBrightnessForColor(color) == Brightness.dark ? Colors.white : Colors.black)
+              : null,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showCustomColorDialog() async {
+    var picked = Color(_manualSeed);
+    final l = AppLocalizations.of(context)!;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(l.colorSourceCustom),
+          content: SizedBox(
+            width: 300,
+            child: ColorWheelPicker(
+              initialColor: picked,
+              onChanged: (c) => picked = c,
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l.cancel)),
+            FilledButton(
+              onPressed: () {
+                _setManualColor(picked.withValues(alpha: 1.0).toARGB32());
+                Navigator.pop(ctx);
+              },
+              child: Text(l.save),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Widget _statsStepperRow(ColorScheme cs, TextTheme tt, String label, String value,
@@ -527,6 +635,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ]);
     final s = results[0] as AutoRewindSettings;
     final progressScale = results.last as double;
+    final flatBackground = await PlayerSettings.getFlatBackground();
+    final colorSource = await PlayerSettings.getColorSource();
+    final manualSeed = await PlayerSettings.getManualSeedColor();
+    final gradientIntensity = await PlayerSettings.getGradientIntensity();
+    final useColorEverywhere = await PlayerSettings.getUseColorEverywhere();
     final statsGoalType = await PlayerSettings.getStatsGoalType();
     final statsGoalMinutes = await PlayerSettings.getStatsGoalMinutes();
     final statsBookGoal = await PlayerSettings.getStatsBookGoal();
@@ -621,7 +734,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _fullScreenPlayer = fullScreen;
       _snappyTransitions = snappyTrans;
       _classicWording = classicWording;
-      _themeMode = theme;
+      _themeMode = theme == 'oled' ? 'dark' : theme;
+      _flatBackground = flatBackground;
+      _colorSource = colorSource == 'manual' ? 'manual' : 'dynamic';
+      _manualSeed = manualSeed;
+      _gradientIntensity = gradientIntensity;
+      _useColorEverywhere = useColorEverywhere;
       _downloadLocationLabel = dlLabel;
       _totalDownloadSizeBytes = dlSize;
       if (deviceStorage != null) {
@@ -820,13 +938,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Scaffold(
       body: Container(
-        decoration: oledNotifier.value ? null : BoxDecoration(
+        decoration: flatNotifier.value ? null : BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             stops: const [0.0, 0.35, 1.0],
             colors: [
-              cs.primary.withValues(alpha: 0.10),
+              cs.primary.withValues(alpha: gradientIntensityNotifier.value),
               Theme.of(context).scaffoldBackgroundColor,
               Theme.of(context).scaffoldBackgroundColor,
             ],
@@ -854,10 +972,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                       decoration: BoxDecoration(
-                        gradient: oledNotifier.value ? null : LinearGradient(
+                        gradient: flatNotifier.value ? null : LinearGradient(
                           colors: [cs.primaryContainer, cs.tertiaryContainer],
                         ),
-                        color: oledNotifier.value ? cs.surfaceContainerHigh : null,
+                        color: flatNotifier.value ? cs.surfaceContainerHigh : null,
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Row(
@@ -1019,7 +1137,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               showSelectedIcon: false,
                               segments: [
                                 ButtonSegment(value: 'dark', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.themeDark, maxLines: 1))),
-                                ButtonSegment(value: 'oled', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.themeOled, maxLines: 1))),
                                 ButtonSegment(value: 'light', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.themeLight, maxLines: 1))),
                                 ButtonSegment(value: 'system', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.themeAuto, maxLines: 1))),
                               ],
@@ -1035,6 +1152,82 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                             ),
                           ),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(l.flatBackgroundLabel, style: tt.bodyLarge),
+                            subtitle: Text(l.flatBackgroundSubtitle, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                            value: _flatBackground,
+                            onChanged: _loaded ? (v) {
+                              setState(() => _flatBackground = v);
+                              PlayerSettings.setFlatBackground(v);
+                              applyFlatBackground(v);
+                            } : null,
+                          ),
+                          if (!_flatBackground) ...[
+                            const SizedBox(height: 4),
+                            Text(l.backgroundIntensityLabel, style: tt.bodyMedium),
+                            Slider(
+                              value: _gradientIntensity.clamp(0.0, 0.45),
+                              min: 0.0,
+                              max: 0.45,
+                              onChanged: _loaded ? (v) {
+                                setState(() => _gradientIntensity = v);
+                                applyGradientIntensity(v);
+                              } : null,
+                              onChangeEnd: (v) => PlayerSettings.setGradientIntensity(v),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(l.colorSourceLabel, style: tt.titleSmall),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: SegmentedButton<String>(
+                              showSelectedIcon: false,
+                              segments: [
+                                ButtonSegment(value: 'dynamic', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.colorSourceDynamic, maxLines: 1))),
+                                ButtonSegment(value: 'manual', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.colorSourceManual, maxLines: 1))),
+                              ],
+                              selected: {_colorSource},
+                              onSelectionChanged: _loaded ? (selected) {
+                                final src = selected.first;
+                                setState(() => _colorSource = src);
+                                PlayerSettings.setColorSource(src);
+                                applyColorSource(src);
+                              } : null,
+                              style: const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _colorSource == 'manual' ? l.colorSourceManualDescription : l.colorSourceCoverDescription,
+                            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                          if (_colorSource == 'manual') ...[
+                            const SizedBox(height: 14),
+                            _buildColorSwatches(cs),
+                            SwitchListTile.adaptive(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(l.useColorEverywhereLabel, style: tt.bodyLarge),
+                              subtitle: Text(l.useColorEverywhereSubtitle, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              value: _useColorEverywhere,
+                              onChanged: _loaded ? (v) {
+                                setState(() => _useColorEverywhere = v);
+                                PlayerSettings.setUseColorEverywhere(v);
+                                applyUseColorEverywhere(v);
+                              } : null,
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -3448,10 +3641,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await BackupService.importSettings(data);
 
       // Apply theme immediately
-      final theme = data['settings']?['themeMode'] as String?;
+      final settings = data['settings'] as Map<String, dynamic>?;
+      final theme = settings?['themeMode'] as String?;
       if (theme != null) {
         applyThemeMode(theme);
       }
+      if (settings?['flatBackground'] is bool) applyFlatBackground(settings!['flatBackground'] as bool);
+      if (settings?['colorSource'] is String) applyColorSource(settings!['colorSource'] as String);
+      if (settings?['manualSeedColor'] is int) applyManualSeed(settings!['manualSeedColor'] as int);
+      if (settings?['gradientIntensity'] is num) applyGradientIntensity((settings!['gradientIntensity'] as num).toDouble());
+      if (settings?['useColorEverywhere'] is bool) applyUseColorEverywhere(settings!['useColorEverywhere'] as bool);
 
       // Refresh UI
       await _loadSettings();

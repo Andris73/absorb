@@ -1822,6 +1822,60 @@ abstract class AppLocalizations {
   /// **'Now Playing'**
   String get colorSourceNowPlaying;
 
+  /// No description provided for @colorSourceDynamic.
+  ///
+  /// In en, this message translates to:
+  /// **'Dynamic'**
+  String get colorSourceDynamic;
+
+  /// No description provided for @colorSourceManual.
+  ///
+  /// In en, this message translates to:
+  /// **'Manual'**
+  String get colorSourceManual;
+
+  /// No description provided for @colorSourceManualDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a fixed app color you choose below'**
+  String get colorSourceManualDescription;
+
+  /// No description provided for @colorSourceCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get colorSourceCustom;
+
+  /// No description provided for @useColorEverywhereLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Use this color everywhere'**
+  String get useColorEverywhereLabel;
+
+  /// No description provided for @useColorEverywhereSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Also color book detail pages and the player card with your set color instead of each book\'s cover'**
+  String get useColorEverywhereSubtitle;
+
+  /// No description provided for @flatBackgroundLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Flat background'**
+  String get flatBackgroundLabel;
+
+  /// No description provided for @flatBackgroundSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the background gradient. Pure black in dark mode for OLED screens.'**
+  String get flatBackgroundSubtitle;
+
+  /// No description provided for @backgroundIntensityLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Background intensity'**
+  String get backgroundIntensityLabel;
+
   /// No description provided for @startScreenLabel.
   ///
   /// In en, this message translates to:

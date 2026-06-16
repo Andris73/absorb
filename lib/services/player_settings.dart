@@ -606,8 +606,29 @@ class PlayerSettings {
     await prefs.setString('language', value);
   }
 
-  static Future<String> getColorSource() => _get('colorSource', 'default');
+  /// App color source: 'dynamic' follows the playing book cover (default),
+  /// 'manual' pins the app to [getManualSeedColor]. (Legacy values fall through
+  /// to dynamic since only 'manual' is special-cased.)
+  static Future<String> getColorSource() => _get('colorSource', 'dynamic');
   static Future<void> setColorSource(String value) => _set('colorSource', value);
+
+  /// Whether the background gradient is removed (flat). In dark mode this also
+  /// switches surfaces to pure black (OLED); in light mode to flat white.
+  static Future<bool> getFlatBackground() => _get('flatBackground', false);
+  static Future<void> setFlatBackground(bool v) => _set('flatBackground', v);
+
+  /// Seed color (ARGB int) used when [getColorSource] is 'manual'.
+  static Future<int> getManualSeedColor() => _get('manualSeedColor', 0xFF7C6FBF);
+  static Future<void> setManualSeedColor(int v) => _set('manualSeedColor', v);
+
+  /// Strength of the primary-tinted background gradient (top alpha, 0 = flat).
+  static Future<double> getGradientIntensity() => _get('gradientIntensity', 0.06);
+  static Future<void> setGradientIntensity(double v) => _set('gradientIntensity', v);
+
+  /// When manual color is on, also apply it to per-book surfaces (detail sheets,
+  /// absorbing card background) instead of each book's cover color.
+  static Future<bool> getUseColorEverywhere() => _get('useColorEverywhere', false);
+  static Future<void> setUseColorEverywhere(bool v) => _set('useColorEverywhere', v);
 
   /// Default start screen tab index: 0=Home, 1=Library, 2=Absorbing, 3=Stats, 4=Settings
   static Future<int> getStartScreen() => _get('startScreen', 2);

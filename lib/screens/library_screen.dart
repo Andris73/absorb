@@ -13,7 +13,7 @@ import '../services/download_service.dart';
 import '../services/audio_player_service.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/library_search_results.dart';
-import '../main.dart' show oledNotifier;
+import '../main.dart' show flatNotifier, gradientIntensityNotifier;
 import '../widgets/library_sort_filter_sheet.dart';
 import '../widgets/library_books_tab.dart';
 import '../widgets/library_series_tab.dart';
@@ -1522,7 +1522,7 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
       backgroundColor: scaffoldBg,
       body: Stack(
         children: [
-          if (!oledNotifier.value)
+          if (!flatNotifier.value)
             OverflowBox(
               maxHeight: MediaQuery.of(context).size.height,
               alignment: Alignment.topCenter,
@@ -1536,7 +1536,7 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
                       end: Alignment.bottomCenter,
                       stops: const [0.0, 0.22, 0.72, 1.0],
                       colors: [
-                        cs.primary.withValues(alpha: 0.06),
+                        cs.primary.withValues(alpha: gradientIntensityNotifier.value),
                         cs.surface,
                         lowerFade,
                         scaffoldBg,
@@ -1661,8 +1661,8 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
         lib.selectedLibrary?['name'] as String? ?? l.libraryFallback;
     final topInset = MediaQuery.of(context).padding.top;
     final screenH = MediaQuery.of(context).size.height;
-    final headerBackground = oledNotifier.value
-        ? const ColoredBox(color: Colors.black)
+    final headerBackground = flatNotifier.value
+        ? ColoredBox(color: scaffoldBg)
         : ClipRect(
             child: OverflowBox(
               maxHeight: screenH,
@@ -1681,7 +1681,7 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
                         end: Alignment.bottomCenter,
                         stops: const [0.0, 0.22, 0.72, 1.0],
                         colors: [
-                          cs.primary.withValues(alpha: 0.06),
+                          cs.primary.withValues(alpha: gradientIntensityNotifier.value),
                           cs.surface,
                           lowerFade,
                           scaffoldBg,

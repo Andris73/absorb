@@ -13,7 +13,7 @@ import '../widgets/stats_charts.dart';
 import '../widgets/absorb_wave_icon.dart';
 import '../widgets/card_buttons.dart';
 import '../widgets/overlay_toast.dart';
-import '../main.dart' show oledNotifier;
+import '../main.dart' show flatNotifier, gradientIntensityNotifier;
 import 'app_shell.dart';
 import '../l10n/app_localizations.dart';
 
@@ -321,13 +321,13 @@ class _StatsScreenState extends State<StatsScreen>
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Container(
-        decoration: oledNotifier.value ? null : BoxDecoration(
+        decoration: flatNotifier.value ? null : BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             stops: const [0.0, 0.22, 0.72, 1.0],
             colors: [
-              cs.primary.withValues(alpha: 0.06),
+              cs.primary.withValues(alpha: gradientIntensityNotifier.value),
               cs.surface,
               Color.lerp(cs.surface, Theme.of(context).scaffoldBackgroundColor, 0.55) ?? Theme.of(context).scaffoldBackgroundColor,
               Theme.of(context).scaffoldBackgroundColor,
@@ -863,7 +863,7 @@ class _StatsScreenState extends State<StatsScreen>
       padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        gradient: oledNotifier.value ? null : LinearGradient(
+        gradient: flatNotifier.value ? null : LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
@@ -871,7 +871,7 @@ class _StatsScreenState extends State<StatsScreen>
             cs.primary.withValues(alpha: 0.02),
           ],
         ),
-        border: Border.all(color: cs.primary.withValues(alpha: oledNotifier.value ? 0.08 : 0.15)),
+        border: Border.all(color: cs.primary.withValues(alpha: flatNotifier.value ? 0.08 : 0.15)),
       ),
       child: Column(children: [
         Text(l.statsTotalListeningTime,

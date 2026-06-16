@@ -54,6 +54,10 @@ class BackupService {
       'mergeAbsorbingLibraries': await PlayerSettings.getMergeAbsorbingLibraries(),
       'maxConcurrentDownloads': await PlayerSettings.getMaxConcurrentDownloads(),
       'colorSource': await PlayerSettings.getColorSource(),
+      'flatBackground': await PlayerSettings.getFlatBackground(),
+      'manualSeedColor': await PlayerSettings.getManualSeedColor(),
+      'gradientIntensity': await PlayerSettings.getGradientIntensity(),
+      'useColorEverywhere': await PlayerSettings.getUseColorEverywhere(),
       'snappyTransitions': await PlayerSettings.getSnappyTransitions(),
       'bookmarkSort': await PlayerSettings.getBookmarkSort(),
       'autoDownloadOnStream': await PlayerSettings.getAutoDownloadOnStream(),
@@ -403,6 +407,10 @@ class BackupService {
     if (s['mergeAbsorbingLibraries'] != null) PlayerSettings.setMergeAbsorbingLibraries(s['mergeAbsorbingLibraries'] as bool);
     if (s['maxConcurrentDownloads'] != null) PlayerSettings.setMaxConcurrentDownloads(s['maxConcurrentDownloads'] as int);
     if (s['colorSource'] != null) PlayerSettings.setColorSource(s['colorSource'] as String);
+    if (s['flatBackground'] != null) PlayerSettings.setFlatBackground(s['flatBackground'] as bool);
+    if (s['manualSeedColor'] != null) PlayerSettings.setManualSeedColor(s['manualSeedColor'] as int);
+    if (s['gradientIntensity'] != null) PlayerSettings.setGradientIntensity((s['gradientIntensity'] as num).toDouble());
+    if (s['useColorEverywhere'] != null) PlayerSettings.setUseColorEverywhere(s['useColorEverywhere'] as bool);
     if (s['snappyTransitions'] != null) PlayerSettings.setSnappyTransitions(s['snappyTransitions'] as bool);
     if (s['bookmarkSort'] != null) PlayerSettings.setBookmarkSort(s['bookmarkSort'] as String);
     if (s['autoDownloadOnStream'] != null) PlayerSettings.setAutoDownloadOnStream(s['autoDownloadOnStream'] as bool);

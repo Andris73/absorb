@@ -40,8 +40,40 @@ import 'widgets/absorb_wave_icon.dart';
 /// Global notifier so any widget (e.g. settings) can change the theme instantly.
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
 
-/// Whether OLED (pure black) dark theme is active.
-final ValueNotifier<bool> oledNotifier = ValueNotifier(false);
+/// Whether the flat (no-gradient) background is active. In dark mode this also
+/// switches surfaces to pure black (OLED); in light mode to clean flat white.
+final ValueNotifier<bool> flatNotifier = ValueNotifier(false);
+
+/// App color source: 'dynamic' tints the app to the playing book cover,
+/// 'manual' pins it to [manualSeedNotifier].
+final ValueNotifier<String> colorSourceNotifier = ValueNotifier('dynamic');
+
+/// Fixed seed color used when [colorSourceNotifier] is 'manual'.
+final ValueNotifier<Color> manualSeedNotifier = ValueNotifier(const Color(0xFF7C6FBF));
+
+/// Top alpha of the primary-tinted background gradient (0 = flat). Read by
+/// screens that paint the gradient so the intensity slider applies everywhere.
+final ValueNotifier<double> gradientIntensityNotifier = ValueNotifier(0.06);
+
+/// When true (and color source is manual), the fixed app color is also used on
+/// per-book surfaces (detail sheets, the absorbing card background) instead of
+/// each book's own cover color.
+final ValueNotifier<bool> useColorEverywhereNotifier = ValueNotifier(false);
+
+/// Builds a ColorScheme whose primary accent is exactly [seed] rather than the
+/// lighter, desaturated tone Material's seed mapping would pick (which turns a
+/// chosen red into pink). Used for the manual app color so swatches read true.
+ColorScheme manualColorScheme(Color seed, Brightness brightness) {
+  final base = ColorScheme.fromSeed(
+    seedColor: seed,
+    brightness: brightness,
+    dynamicSchemeVariant: DynamicSchemeVariant.vibrant,
+  );
+  final onSeed = ThemeData.estimateBrightnessForColor(seed) == Brightness.dark
+      ? Colors.white
+      : Colors.black;
+  return base.copyWith(primary: seed, onPrimary: onSeed);
+}
 
 /// Whether to disable the fade animation when switching bottom nav tabs.
 final ValueNotifier<bool> snappyTransitionsNotifier = ValueNotifier(false);
@@ -101,8 +133,15 @@ ThemeMode parseThemeMode(String value) {
 
 void applyThemeMode(String value) {
   themeNotifier.value = parseThemeMode(value);
-  oledNotifier.value = value == 'oled';
+  // Legacy 'oled' is now expressed as dark + flat background.
+  if (value == 'oled') flatNotifier.value = true;
 }
+
+void applyFlatBackground(bool value) => flatNotifier.value = value;
+void applyColorSource(String value) => colorSourceNotifier.value = value;
+void applyManualSeed(int argb) => manualSeedNotifier.value = Color(argb);
+void applyGradientIntensity(double value) => gradientIntensityNotifier.value = value;
+void applyUseColorEverywhere(bool value) => useColorEverywhereNotifier.value = value;
 
 void main() async {
   HttpOverrides.global = _CertOverrides();
@@ -127,8 +166,19 @@ void main() async {
 
   // Load saved theme preference so we render the correct theme immediately
   try {
-    final savedTheme = await PlayerSettings.getThemeMode();
+    var savedTheme = await PlayerSettings.getThemeMode();
+    // Migrate legacy OLED mode to dark + flat background.
+    if (savedTheme == 'oled') {
+      await PlayerSettings.setThemeMode('dark');
+      await PlayerSettings.setFlatBackground(true);
+      savedTheme = 'dark';
+    }
     applyThemeMode(savedTheme);
+    flatNotifier.value = await PlayerSettings.getFlatBackground();
+    colorSourceNotifier.value = await PlayerSettings.getColorSource();
+    manualSeedNotifier.value = Color(await PlayerSettings.getManualSeedColor());
+    gradientIntensityNotifier.value = await PlayerSettings.getGradientIntensity();
+    useColorEverywhereNotifier.value = await PlayerSettings.getUseColorEverywhere();
     final savedLang = await PlayerSettings.getLanguage();
     if (savedLang.isNotEmpty) localeNotifier.value = Locale(savedLang);
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
@@ -189,21 +239,25 @@ class AbsorbApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: themeNotifier,
-      builder: (context, currentMode, _) {
-        return ValueListenableBuilder<bool>(
-          valueListenable: oledNotifier,
-          builder: (context, isOled, _) {
-        return ValueListenableBuilder<Locale?>(
-          valueListenable: localeNotifier,
-          builder: (context, overrideLocale, _) {
-        return ValueListenableBuilder<ColorScheme?>(
-          valueListenable: coverSchemeNotifier,
-          builder: (context, coverScheme, _) {
-        return ValueListenableBuilder<bool>(
-          valueListenable: classicWordingNotifier,
-          builder: (context, _, __) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        themeNotifier,
+        flatNotifier,
+        localeNotifier,
+        coverSchemeNotifier,
+        classicWordingNotifier,
+        colorSourceNotifier,
+        manualSeedNotifier,
+        gradientIntensityNotifier,
+        useColorEverywhereNotifier,
+      ]),
+      builder: (context, _) {
+        final currentMode = themeNotifier.value;
+        final isFlat = flatNotifier.value;
+        final overrideLocale = localeNotifier.value;
+        final coverScheme = coverSchemeNotifier.value;
+        final isManual = colorSourceNotifier.value == 'manual';
+
         // Set system chrome to match active theme
         final isDark = currentMode == ThemeMode.dark ||
             (currentMode == ThemeMode.system &&
@@ -212,33 +266,63 @@ class AbsorbApp extends StatelessWidget {
         SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
           statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-          systemNavigationBarColor: isDark ? Colors.black : const Color(0xFFF5F5F5),
+          systemNavigationBarColor: isDark
+              ? Colors.black
+              : (isFlat ? Colors.white : const Color(0xFFF5F5F5)),
           systemNavigationBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
         ));
 
         const defaultSeed = Color(0xFF7C6FBF); // deep muted purple
-        final seedColor = coverScheme?.primary ?? defaultSeed;
+        final seedColor = isManual
+            ? manualSeedNotifier.value
+            : (coverScheme?.primary ?? defaultSeed);
 
-        ColorScheme darkScheme = ColorScheme.fromSeed(
-          seedColor: seedColor,
-          brightness: Brightness.dark,
+        // Manual presets use the vibrant variant so the app color closely
+        // matches the chosen swatch. Flat mode also goes vibrant: with the
+        // gradient glow gone, the accent color is the only place color shows,
+        // so it needs to pop. Dynamic + non-flat keeps the softer default.
+        final variant = (isManual || isFlat)
+            ? DynamicSchemeVariant.vibrant
+            : DynamicSchemeVariant.tonalSpot;
+
+        ColorScheme darkScheme = isManual
+            ? manualColorScheme(seedColor, Brightness.dark)
+            : ColorScheme.fromSeed(
+                seedColor: seedColor,
+                brightness: Brightness.dark,
+                dynamicSchemeVariant: variant,
+              );
+
+        // Keep dark surfaces neutral so cards/sheets match the scaffold and
+        // app bars; the seed color shows through the gradient glow and accents,
+        // not tinted surfaces (tinted dark surfaces read as muddy/mismatched).
+        // Flat goes pure black so OLED pixels turn fully off.
+        darkScheme = darkScheme.copyWith(
+          surface: isFlat ? Colors.black : const Color(0xFF0E0E0E),
+          surfaceContainerLowest: isFlat ? Colors.black : const Color(0xFF0A0A0A),
+          surfaceContainerLow: isFlat ? Colors.black : const Color(0xFF141414),
+          surfaceContainer: isFlat ? const Color(0xFF050505) : const Color(0xFF181818),
+          surfaceContainerHigh: isFlat ? const Color(0xFF0A0A0A) : const Color(0xFF1E1E1E),
+          surfaceContainerHighest: isFlat ? const Color(0xFF0F0F0F) : const Color(0xFF242424),
         );
 
-        // OLED: pure black surfaces so OLED pixels turn fully off
-        if (isOled) {
-          darkScheme = darkScheme.copyWith(
-            surface: Colors.black,
-            surfaceContainerLowest: Colors.black,
-            surfaceContainerLow: Colors.black,
-            surfaceContainer: const Color(0xFF050505),
-            surfaceContainerHigh: const Color(0xFF0A0A0A),
-            surfaceContainerHighest: const Color(0xFF0F0F0F),
-          );
-        }
+        ColorScheme lightScheme = isManual
+            ? manualColorScheme(seedColor, Brightness.light)
+            : ColorScheme.fromSeed(
+                seedColor: seedColor,
+                brightness: Brightness.light,
+                dynamicSchemeVariant: variant,
+              );
 
-        final lightScheme = ColorScheme.fromSeed(
-          seedColor: seedColor,
-          brightness: Brightness.light,
+        // Same idea in light: neutral surfaces, color from the glow + accents.
+        // Flat goes clean white.
+        lightScheme = lightScheme.copyWith(
+          surface: isFlat ? Colors.white : const Color(0xFFF6F6F6),
+          surfaceContainerLowest: Colors.white,
+          surfaceContainerLow: isFlat ? Colors.white : const Color(0xFFF1F1F1),
+          surfaceContainer: isFlat ? const Color(0xFFF7F7F7) : const Color(0xFFECECEC),
+          surfaceContainerHigh: isFlat ? const Color(0xFFF2F2F2) : const Color(0xFFE6E6E6),
+          surfaceContainerHighest: isFlat ? const Color(0xFFEDEDED) : const Color(0xFFE0E0E0),
         );
 
             const pageTransition = PageTransitionsTheme(
@@ -325,7 +409,7 @@ class AbsorbApp extends StatelessWidget {
               darkTheme: ThemeData(
                 useMaterial3: true,
                 colorScheme: darkScheme,
-                scaffoldBackgroundColor: isOled ? Colors.black : const Color(0xFF0E0E0E),
+                scaffoldBackgroundColor: isFlat ? Colors.black : const Color(0xFF0E0E0E),
                 cardTheme: CardThemeData(
                   color: darkScheme.surfaceContainerHigh,
                   elevation: 0,
@@ -334,7 +418,7 @@ class AbsorbApp extends StatelessWidget {
                   ),
                 ),
                 navigationBarTheme: NavigationBarThemeData(
-                  backgroundColor: isOled ? Colors.black : const Color(0xFF0E0E0E),
+                  backgroundColor: isFlat ? Colors.black : const Color(0xFF0E0E0E),
                   indicatorColor: darkScheme.primary.withValues(alpha: 0.15),
                   labelTextStyle: WidgetStatePropertyAll(
                     TextStyle(
@@ -345,7 +429,7 @@ class AbsorbApp extends StatelessWidget {
                   ),
                 ),
                 appBarTheme: AppBarTheme(
-                  backgroundColor: isOled ? Colors.black : const Color(0xFF0E0E0E),
+                  backgroundColor: isFlat ? Colors.black : const Color(0xFF0E0E0E),
                   surfaceTintColor: Colors.transparent,
                   scrolledUnderElevation: 0,
                 ),
@@ -361,7 +445,7 @@ class AbsorbApp extends StatelessWidget {
                   ),
                 ),
                 bottomSheetTheme: BottomSheetThemeData(
-                  backgroundColor: isOled ? Colors.black : const Color(0xFF1A1A1A),
+                  backgroundColor: isFlat ? Colors.black : const Color(0xFF1A1A1A),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                   ),
@@ -379,14 +463,6 @@ class AbsorbApp extends StatelessWidget {
               ),
               home: const AuthGate(),
             );
-        },
-        );
-        },
-        );
-        },
-        );
-        },
-        );
       },
     );
   }
@@ -443,8 +519,18 @@ class _AuthGateState extends State<AuthGate> {
     await ScopedPrefs.migrateToScope();
 
     // Reload settings that were read in main() before scope was active
-    final scopedTheme = await PlayerSettings.getThemeMode();
+    var scopedTheme = await PlayerSettings.getThemeMode();
+    if (scopedTheme == 'oled') {
+      await PlayerSettings.setThemeMode('dark');
+      await PlayerSettings.setFlatBackground(true);
+      scopedTheme = 'dark';
+    }
     applyThemeMode(scopedTheme);
+    flatNotifier.value = await PlayerSettings.getFlatBackground();
+    colorSourceNotifier.value = await PlayerSettings.getColorSource();
+    manualSeedNotifier.value = Color(await PlayerSettings.getManualSeedColor());
+    gradientIntensityNotifier.value = await PlayerSettings.getGradientIntensity();
+    useColorEverywhereNotifier.value = await PlayerSettings.getUseColorEverywhere();
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
     classicWordingNotifier.value = await PlayerSettings.getClassicWording();
     PlayerSettings.showExplicitBadge = await PlayerSettings.getShowExplicitBadge();

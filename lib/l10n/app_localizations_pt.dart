@@ -944,6 +944,36 @@ class AppLocalizationsPt extends AppLocalizations {
   String get colorSourceNowPlaying => 'Now Playing';
 
   @override
+  String get colorSourceDynamic => 'Dynamic';
+
+  @override
+  String get colorSourceManual => 'Manual';
+
+  @override
+  String get colorSourceManualDescription =>
+      'Use a fixed app color you choose below';
+
+  @override
+  String get colorSourceCustom => 'Custom';
+
+  @override
+  String get useColorEverywhereLabel => 'Use this color everywhere';
+
+  @override
+  String get useColorEverywhereSubtitle =>
+      'Also color book detail pages and the player card with your set color instead of each book\'s cover';
+
+  @override
+  String get flatBackgroundLabel => 'Flat background';
+
+  @override
+  String get flatBackgroundSubtitle =>
+      'Remove the background gradient. Pure black in dark mode for OLED screens.';
+
+  @override
+  String get backgroundIntensityLabel => 'Background intensity';
+
+  @override
   String get startScreenLabel => 'Start screen';
 
   @override

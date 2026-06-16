@@ -14,6 +14,7 @@ import 'absorbing_shared.dart';
 import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
 import 'card_buttons.dart';
+import '../main.dart' show colorSourceNotifier, useColorEverywhereNotifier, manualSeedNotifier, manualColorScheme;
 
 // ─── Custom route: slide-up + fade ────────────────────────────
 
@@ -69,8 +70,16 @@ class ExpandedCard extends StatefulWidget {
 }
 
 class _ExpandedCardState extends State<ExpandedCard> {
-  ColorScheme? _coverScheme;
+  ColorScheme? _rawCoverScheme;
   Brightness? _coverBrightness;
+
+  /// Cover-derived scheme, unless a manual app color is set to apply everywhere.
+  ColorScheme? get _coverScheme {
+    if (colorSourceNotifier.value == 'manual' && useColorEverywhereNotifier.value) {
+      return manualColorScheme(manualSeedNotifier.value, Theme.of(context).brightness);
+    }
+    return _rawCoverScheme;
+  }
   ImageProvider? _coverProvider;
   ui.Image? _blurredCover;
   List<dynamic>? _fetchedChapters;
@@ -166,7 +175,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
   void initState() {
     super.initState();
     _item = widget.item;
-    _coverScheme = widget.initialCoverScheme;
+    _rawCoverScheme = widget.initialCoverScheme;
     _cardBackground = widget.initialCardBackground;
     _fetchedChapters = widget.initialChapters;
     _currentItemId = widget.player.currentItemId;
@@ -334,7 +343,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
 
     setState(() {
       _item = newItem!;
-      _coverScheme = null;
+      _rawCoverScheme = null;
       _coverBrightness = null;
       _coverProvider = null;
       _fetchedChapters = null;
@@ -444,7 +453,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
   /// Resolve the cover image to derive [_coverScheme] without building the blur
   /// (used by the gradient / off backgrounds, which never paint the cover).
   void _deriveCoverScheme() {
-    if (_coverScheme != null || _coverProvider != null) return;
+    if (_rawCoverScheme != null || _coverProvider != null) return;
     final url = _coverUrl;
     if (url == null) return;
     final ImageProvider provider;
@@ -460,13 +469,13 @@ class _ExpandedCardState extends State<ExpandedCard> {
     final provider = _coverProvider;
     if (provider == null) return;
     final brightness = Theme.of(context).brightness;
-    if (_coverScheme != null && _coverBrightness == brightness) return;
+    if (_rawCoverScheme != null && _coverBrightness == brightness) return;
     _coverBrightness = brightness;
     ColorScheme.fromImageProvider(provider: provider, brightness: brightness)
         .then((s) {
           if (mounted) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) setState(() => _coverScheme = s);
+              if (mounted) setState(() => _rawCoverScheme = s);
             });
           }
         })
@@ -525,7 +534,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
       }
 
       // Also derive cover scheme if needed
-      if (_coverScheme == null) _onCoverLoaded(provider);
+      if (_rawCoverScheme == null) _onCoverLoaded(provider);
     } catch (_) {}
   }
 

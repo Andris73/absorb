@@ -9,7 +9,7 @@ import '../services/chromecast_service.dart';
 import '../services/download_service.dart';
 import '../services/scoped_prefs.dart';
 import '../widgets/absorb_page_header.dart';
-import '../main.dart' show oledNotifier, rootNavigatorKey;
+import '../main.dart' show flatNotifier, gradientIntensityNotifier, rootNavigatorKey;
 import '../widgets/absorbing_card.dart';
 import '../widgets/offline_status_icon.dart';
 import '../widgets/overlay_toast.dart';
@@ -614,13 +614,13 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       body: Container(
-        decoration: oledNotifier.value ? null : BoxDecoration(
+        decoration: flatNotifier.value ? null : BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             stops: const [0.0, 0.22, 0.72, 1.0],
             colors: [
-              cs.primary.withValues(alpha: 0.06),
+              cs.primary.withValues(alpha: gradientIntensityNotifier.value),
               cs.surface,
               lowerFade,
               scaffoldBg,

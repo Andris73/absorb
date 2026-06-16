@@ -17,6 +17,7 @@ import 'card_playback_controls.dart';
 import 'card_buttons.dart';
 import '../services/chromecast_service.dart';
 import 'expanded_card.dart';
+import '../main.dart' show colorSourceNotifier, useColorEverywhereNotifier, manualSeedNotifier, manualColorScheme;
 
 class AbsorbingCard extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -28,8 +29,16 @@ class AbsorbingCard extends StatefulWidget {
 }
 
 class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveClientMixin {
-  ColorScheme? _coverScheme;
+  ColorScheme? _rawCoverScheme;
   Brightness? _coverBrightness; // brightness used to generate _coverScheme
+
+  /// Cover-derived scheme, unless a manual app color is set to apply everywhere.
+  ColorScheme? get _coverScheme {
+    if (colorSourceNotifier.value == 'manual' && useColorEverywhereNotifier.value) {
+      return manualColorScheme(manualSeedNotifier.value, Theme.of(context).brightness);
+    }
+    return _rawCoverScheme;
+  }
   ImageProvider? _coverProvider; // cached for re-deriving on theme change
   bool _isStarting = false;
   List<dynamic>? _fetchedChapters;
@@ -300,7 +309,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     final oldId = oldWidget.item['id'] as String? ?? '';
     if (oldId != _itemId) {
       // Item changed — reset all stale state
-      _coverScheme = null;
+      _rawCoverScheme = null;
       _coverBrightness = null;
       _coverProvider = null;
       _blurredCover?.dispose();
@@ -353,13 +362,13 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     final provider = _coverProvider;
     if (provider == null) return;
     final brightness = Theme.of(context).brightness;
-    if (_coverScheme != null && _coverBrightness == brightness) return;
+    if (_rawCoverScheme != null && _coverBrightness == brightness) return;
     _coverBrightness = brightness;
     ColorScheme.fromImageProvider(provider: provider, brightness: brightness)
         .then((s) {
           if (mounted) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) setState(() => _coverScheme = s);
+              if (mounted) setState(() => _rawCoverScheme = s);
             });
           }
         })
