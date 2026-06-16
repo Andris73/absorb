@@ -198,20 +198,19 @@ class BookmarkService {
 
     await _ensureHydrated();
 
-    // Push to server
+    // Flag the bookmark pending BEFORE pushing it to the server. If the app is
+    // suspended or killed mid-push (common on iOS right after bookmarking then
+    // pausing), the flag is already persisted, so the next sync keeps and
+    // retries it instead of seeing it missing on the server and deleting it.
+    // Cleared only once the server confirms the create.
     final unpushedKey = '$itemId::${positionSeconds.toStringAsFixed(1)}';
-    bool needsPersist = false;
-    if (api != null) {
-      final ok = await api.createBookmark(itemId, time: positionSeconds, title: bookmark.serverTitle);
-      if (!ok) {
-        _unpushed.add(unpushedKey);
-        needsPersist = true;
-      }
-    } else {
-      _unpushed.add(unpushedKey);
-      needsPersist = true;
+    _unpushed.add(unpushedKey);
+    await _persistUnpushed();
+    if (api != null &&
+        await api.createBookmark(itemId, time: positionSeconds, title: bookmark.serverTitle)) {
+      _unpushed.remove(unpushedKey);
+      await _persistUnpushed();
     }
-    if (needsPersist) await _persistUnpushed();
 
     return bookmark;
   }
@@ -297,8 +296,15 @@ class BookmarkService {
 
     await _ensureHydrated();
 
-    // The old position's pending-create (if any) no longer applies.
+    // The old position's pending-create (if any) no longer applies. Flag the
+    // new position pending BEFORE the network calls (same write-ahead reasoning
+    // as addBookmark) so a suspend or kill mid-move can't orphan the moved
+    // bookmark and have the next sync delete it. Cleared once the server
+    // confirms the create.
+    final newKey = '$itemId::${newPos.toStringAsFixed(1)}';
     _unpushed.remove('$itemId::${oldTime.toStringAsFixed(1)}');
+    _unpushed.add(newKey);
+    await _persistUnpushed();
 
     bool deletedOk = false;
     bool createdOk = false;
@@ -306,8 +312,8 @@ class BookmarkService {
       deletedOk = await api.deleteBookmark(itemId, time: oldTime);
       createdOk = await api.createBookmark(itemId, time: newPos, title: serverTitle ?? '');
     }
+    if (createdOk) _unpushed.remove(newKey);
     if (!deletedOk) _pendingDeletes.putIfAbsent(itemId, () => {}).add(oldTime);
-    if (!createdOk) _unpushed.add('$itemId::${newPos.toStringAsFixed(1)}');
     await _persistUnpushed();
     await _persistPendingDeletes();
     debugPrint('[Bookmarks] Moved $bookmarkId: ${oldTime}s -> ${newPos}s');
