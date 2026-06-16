@@ -138,6 +138,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         debugPrint('[Library] Manual offline off — flushing pending syncs');
         ProgressSyncService().flushPendingSync(api: _api!);
         ProgressSyncService().flushOfflineListeningTime(api: _api!);
+        LocalSessionService().flushPending(api: _api!);
       }
       if (_selectedLibraryId == null) {
         (this as LibraryProvider).loadLibraries();
@@ -238,6 +239,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         debugPrint('[Library] Back online — flushing pending syncs');
         ProgressSyncService().flushPendingSync(api: _api!);
         ProgressSyncService().flushOfflineListeningTime(api: _api!);
+        LocalSessionService().flushPending(api: _api!);
       }
       if (_selectedLibraryId == null) {
         (this as LibraryProvider).loadLibraries();

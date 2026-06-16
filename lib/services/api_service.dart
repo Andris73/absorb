@@ -5,6 +5,15 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+/// Outcome of a local-session upsert. [serverTooOld] flags a 404/501 (the
+/// server predates /api/session/local) so the caller can fall back to the
+/// legacy /play flush instead of stranding the session in the replay queue.
+class LocalSessionResult {
+  final bool ok;
+  final bool serverTooOld;
+  const LocalSessionResult({required this.ok, required this.serverTooOld});
+}
+
 class ApiService {
   static String appVersion = '1.3.0'; // fallback; overwritten by initVersion()
 
@@ -788,6 +797,17 @@ class ApiService {
   /// Expose clean base URL for audio player to build URLs
   String get cleanBaseUrl => _cleanBaseUrl;
 
+  /// The device descriptor ABS attaches to playback sessions. Shared by the
+  /// /play session calls and the client-owned local-session calls.
+  Map<String, dynamic> get _deviceInfo => {
+        'clientName': 'Absorb',
+        'clientVersion': appVersion,
+        'deviceId': deviceId,
+        'deviceName': '${deviceManufacturer.isNotEmpty ? "$deviceManufacturer " : ""}$deviceModel'.trim(),
+        'manufacturer': deviceManufacturer,
+        'model': deviceModel,
+      };
+
   /// Start a playback session for a library item.
   /// POST /api/items/:id/play
   /// Returns the full session object including audioTracks with contentUrl.
@@ -797,14 +817,7 @@ class ApiService {
       final url = '$_cleanBaseUrl/api/items/$itemId/play$epPath';
       debugPrint('[ABS] Starting playback session: POST $url (forceDirectPlay: $forceDirectPlay, forceTranscode: $forceTranscode)');
       final body = <String, dynamic>{
-        'deviceInfo': {
-          'clientName': 'Absorb',
-          'clientVersion': appVersion,
-          'deviceId': deviceId,
-          'deviceName': '${deviceManufacturer.isNotEmpty ? "$deviceManufacturer " : ""}$deviceModel'.trim(),
-          'manufacturer': deviceManufacturer,
-          'model': deviceModel,
-        },
+        'deviceInfo': _deviceInfo,
         'forceDirectPlay': !forceTranscode,
         'forceTranscode': forceTranscode,
         // Match what the native ABS Android app sends so the server treats us
@@ -912,6 +925,57 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/session/$sessionId/close'),
         timeout: const Duration(seconds: 10));
     } catch (_) {}
+  }
+
+  /// Upsert a client-owned local playback session (downloaded/offline plays).
+  /// POST /api/session/local — preserves our playMethod (LOCAL) and the
+  /// client-supplied date/timestamps, unlike /play which forces Direct Play.
+  /// [session] is a fully-built session map; deviceInfo/mediaPlayer/playMethod
+  /// are stamped here so they can't be omitted.
+  Future<LocalSessionResult> syncLocalSession(Map<String, dynamic> session) async {
+    try {
+      final body = {
+        ...session,
+        'deviceInfo': _deviceInfo,
+        'mediaPlayer': 'exo-player',
+        'playMethod': 3, // LOCAL
+      };
+      final resp = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/session/local'),
+        body: jsonEncode(body),
+        timeout: const Duration(seconds: 10));
+      return LocalSessionResult(
+        ok: resp.statusCode == 200,
+        serverTooOld: resp.statusCode == 404 || resp.statusCode == 501,
+      );
+    } catch (_) {
+      return const LocalSessionResult(ok: false, serverTooOld: false);
+    }
+  }
+
+  /// Batch-upsert local sessions, used to replay the offline queue on reconnect.
+  /// POST /api/session/local-all
+  Future<LocalSessionResult> syncLocalSessionsAll(
+      List<Map<String, dynamic>> sessions) async {
+    if (sessions.isEmpty) return const LocalSessionResult(ok: true, serverTooOld: false);
+    try {
+      final body = {
+        'sessions': sessions
+            .map((s) => {...s, 'mediaPlayer': 'exo-player', 'playMethod': 3})
+            .toList(),
+        'deviceInfo': _deviceInfo,
+      };
+      final resp = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/session/local-all'),
+        body: jsonEncode(body),
+        timeout: const Duration(seconds: 20));
+      return LocalSessionResult(
+        ok: resp.statusCode == 200,
+        serverTooOld: resp.statusCode == 404 || resp.statusCode == 501,
+      );
+    } catch (_) {
+      return const LocalSessionResult(ok: false, serverTooOld: false);
+    }
   }
 
   /// Get server progress for a single item.
@@ -1072,14 +1136,7 @@ class ApiService {
       final response = await _authPost(
         Uri.parse(url),
         body: jsonEncode({
-          'deviceInfo': {
-            'clientName': 'Absorb',
-            'clientVersion': appVersion,
-            'deviceId': deviceId,
-            'deviceName': '${deviceManufacturer.isNotEmpty ? "$deviceManufacturer " : ""}$deviceModel'.trim(),
-            'manufacturer': deviceManufacturer,
-            'model': deviceModel,
-          },
+          'deviceInfo': _deviceInfo,
           'forceDirectPlay': !forceTranscode,
           'forceTranscode': forceTranscode,
           'mediaPlayer': 'exo-player',

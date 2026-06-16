@@ -21,6 +21,7 @@ import 'services/audio_player_service.dart';
 import 'services/api_service.dart';
 import 'services/download_service.dart';
 import 'services/progress_sync_service.dart';
+import 'services/local_session_service.dart';
 import 'services/equalizer_service.dart';
 import 'services/sleep_timer_service.dart';
 import 'services/scoped_prefs.dart';
@@ -520,6 +521,7 @@ class _AuthGateState extends State<AuthGate> {
     debugPrint('[Init] remaining services... (${sw.elapsedMilliseconds}ms)');
     try {
       await ProgressSyncService().init();
+      await LocalSessionService().init();
       await EqualizerService().init();
       await SleepTimerService().loadAutoSleepSettings();
       if (Platform.isAndroid) {
