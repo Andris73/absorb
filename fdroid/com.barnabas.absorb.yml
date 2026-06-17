@@ -24,11 +24,9 @@ Builds:
       - mv lib/services/chromecast_service_stub.dart lib/services/chromecast_service.dart
       - mv lib/widgets/chromecast_button_stub.dart lib/widgets/chromecast_button.dart
       - sed -i '/flutter_chrome_cast:/d' pubspec.yaml
-      - |-
-        awk '/^  [A-Za-z0-9_]+:$/ { drop = ($0 ~ /^  (fading_edge_scrollview|flutter_chrome_cast|get|marquee):$/) } !drop' pubspec.lock > pubspec.lock.new
-        mv pubspec.lock.new pubspec.lock
       - export PUB_CACHE=$(pwd)/.pub-cache
       - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get
       - $$flutter$$/bin/flutter pub get --enforce-lockfile
     scandelete:
       - .pub-cache
@@ -50,11 +48,9 @@ Builds:
       - mv lib/services/chromecast_service_stub.dart lib/services/chromecast_service.dart
       - mv lib/widgets/chromecast_button_stub.dart lib/widgets/chromecast_button.dart
       - sed -i '/flutter_chrome_cast:/d' pubspec.yaml
-      - |-
-        awk '/^  [A-Za-z0-9_]+:$/ { drop = ($0 ~ /^  (fading_edge_scrollview|flutter_chrome_cast|get|marquee):$/) } !drop' pubspec.lock > pubspec.lock.new
-        mv pubspec.lock.new pubspec.lock
       - export PUB_CACHE=$(pwd)/.pub-cache
       - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get
       - $$flutter$$/bin/flutter pub get --enforce-lockfile
     scandelete:
       - .pub-cache
@@ -76,11 +72,9 @@ Builds:
       - mv lib/services/chromecast_service_stub.dart lib/services/chromecast_service.dart
       - mv lib/widgets/chromecast_button_stub.dart lib/widgets/chromecast_button.dart
       - sed -i '/flutter_chrome_cast:/d' pubspec.yaml
-      - |-
-        awk '/^  [A-Za-z0-9_]+:$/ { drop = ($0 ~ /^  (fading_edge_scrollview|flutter_chrome_cast|get|marquee):$/) } !drop' pubspec.lock > pubspec.lock.new
-        mv pubspec.lock.new pubspec.lock
       - export PUB_CACHE=$(pwd)/.pub-cache
       - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get
       - $$flutter$$/bin/flutter pub get --enforce-lockfile
     scandelete:
       - .pub-cache
