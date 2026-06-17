@@ -95,6 +95,8 @@ class LocalSessionService {
         'libraryItemId': s['libraryItemId'],
         'episodeId': s['episodeId'],
         'mediaType': s['mediaType'],
+        'displayTitle': s['displayTitle'],
+        'displayAuthor': s['displayAuthor'],
         'duration': s['duration'],
         'startTime': s['startTime'],
         'currentTime': s['currentTime'],
@@ -139,6 +141,8 @@ class LocalSessionService {
     required String mediaType,
     required double duration,
     required double startTime,
+    String? displayTitle,
+    String? displayAuthor,
   }) async {
     await _loadActive();
     final now = clock();
@@ -171,6 +175,10 @@ class LocalSessionService {
       'updatedAt': nowMs,
       'date': today,
       'dayOfWeek': _dayOfWeek(now),
+      // Sent so the server session shows the episode (for podcasts) rather than
+      // defaulting to the library item title (the show). Books send their title.
+      'displayTitle': displayTitle,
+      'displayAuthor': displayAuthor,
     };
     await _persistActive();
     debugPrint('[LocalSession] Began session ${_active!['id']} for $progressKey ($today)');
@@ -226,6 +234,8 @@ class LocalSessionService {
         'updatedAt': nowMs,
         'date': today,
         'dayOfWeek': _dayOfWeek(effective),
+        'displayTitle': old['displayTitle'],
+        'displayAuthor': old['displayAuthor'],
       };
       // Ship the just-closed day promptly when online.
       if (api != null) await flushPending(api: api);

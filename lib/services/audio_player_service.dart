@@ -2349,6 +2349,19 @@ class AudioPlayerService extends ChangeNotifier {
     // source is loading (avoids briefly hearing the previous book).
     await _player?.pause();
 
+    // Podcast episodes arrive two ways: episode-shaped (title = the episode)
+    // and show-shaped continue/queue entries (title = the show, episodeTitle =
+    // the episode, author often blank). Normalise to episode-as-title +
+    // show-as-artist so the episode shows everywhere — notification, lock
+    // screen, Android Auto, and the server listening session.
+    if (episodeId != null &&
+        episodeTitle != null &&
+        episodeTitle.isNotEmpty &&
+        episodeTitle != title) {
+      if (author.isEmpty) author = title; // `title` is the show name here
+      title = episodeTitle;
+    }
+
     _isLoadingNewItem = true;
     _api = api;
     _currentItemId = itemId;
@@ -2767,6 +2780,8 @@ class AudioPlayerService extends ChangeNotifier {
         mediaType: _currentEpisodeId != null ? 'podcast' : 'book',
         duration: totalDuration,
         startTime: startTime,
+        displayTitle: title,
+        displayAuthor: author,
       );
       Future.delayed(const Duration(milliseconds: 500), () {
         _handler?.refreshPlaybackState();
@@ -3431,7 +3446,7 @@ class AudioPlayerService extends ChangeNotifier {
     // (BT car display stuck on prior chapter). If this fires with fresh
     // artist/chapter text but the car still shows old, the issue is downstream
     // of audio_service's MediaSession push.
-    debugPrint('[Handler] mediaItem.add: item=$itemId artist="$displayArtist" dur=${displayDuration.round()}s chapter=$chapter hasHandler=${_handler != null}');
+    debugPrint('[Handler] mediaItem.add: item=$itemId title="$title" artist="$displayArtist" dur=${displayDuration.round()}s chapter=$chapter hasHandler=${_handler != null}');
     _handler!.mediaItem.add(MediaItem(
       id: itemId,
       title: title,
