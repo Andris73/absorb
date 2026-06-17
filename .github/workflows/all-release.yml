@@ -5,10 +5,11 @@ name: All Platforms Release
 # APK, the playstore-flavor AAB, and the iOS IPA, uploads all three to the
 # GitHub draft release, and pushes the IPA to TestFlight.
 #
-# Runs on macOS (needed for the iOS build); Java is installed for the Android
-# build. Android signing uses the base64 keystore secret; iOS signing uses
-# codemagic-cli-tools to fetch profiles via the App Store Connect API, exactly
-# like ios-release.yml.
+# These run in PARALLEL: a `prepare` job creates the draft up front, then the
+# two Android flavors (matrix, on ubuntu) and the iOS IPA (on macOS) build at
+# the same time and each upload their own artifact to that draft. Wall-clock is
+# the slower of Android/iOS rather than their sum. F-Droid is intentionally not
+# built here — F-Droid's own servers build it from the tagged source.
 
 on:
   workflow_dispatch:
@@ -28,46 +29,24 @@ on:
         type: string
         default: ""
 
+# Every job that touches the release needs write access to Releases.
+permissions:
+  contents: write
+
 jobs:
-  build:
-    name: Build APK + AAB + IPA, publish to GitHub + TestFlight
-    runs-on: macos-latest
-    timeout-minutes: 120
-
-    # Allow GITHUB_TOKEN to create/upload to GitHub Releases.
-    permissions:
-      contents: write
-
-    env:
-      BUNDLE_ID: com.barnabas.absorb
-      APPLE_TEAM_ID: 3W9C9PWP64
-      # Mapped here so the Play upload step can guard on its presence and skip
-      # silently when the service account secret isn't configured.
-      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-
+  # Fast ubuntu job: compute the version/tag and create the draft release before
+  # the parallel build jobs start, so they only ever `upload --clobber` into an
+  # existing draft and never race to create one with conflicting flags.
+  prepare:
+    name: Prepare draft release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      fname: ${{ steps.version.outputs.fname }}
+      pre: ${{ steps.version.outputs.pre }}
+      raw: ${{ steps.version.outputs.raw }}
     steps:
       - uses: actions/checkout@v4
-
-      # Apple requires Xcode 26+ / iOS 26 SDK for App Store uploads. Pick the
-      # newest Xcode installed on the runner.
-      - name: Select latest Xcode
-        run: |
-          LATEST_XCODE=$(ls /Applications/ | grep -E '^Xcode_[0-9]+(\.[0-9]+)?(\.app)?$' | sort -V | tail -1)
-          echo "Available Xcodes:"
-          ls /Applications/ | grep -E '^Xcode' || true
-          echo "Selecting: $LATEST_XCODE"
-          sudo xcode-select -s "/Applications/$LATEST_XCODE/Contents/Developer"
-          xcodebuild -version
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
 
       - name: Read pubspec version
         id: version
@@ -93,6 +72,26 @@ jobs:
           echo "raw=$RAW" >> "$GITHUB_OUTPUT"
           echo "pre=$PRE" >> "$GITHUB_OUTPUT"
 
+      - name: Create draft release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION_TAG: ${{ steps.version.outputs.tag }}
+          PRE: ${{ steps.version.outputs.pre }}
+        run: |
+          if gh release view "$VERSION_TAG" &>/dev/null; then
+            IS_DRAFT=$(gh release view "$VERSION_TAG" --json isDraft -q .isDraft)
+            IS_PRE=$(gh release view "$VERSION_TAG" --json isPrerelease -q .isPrerelease)
+            if [ "$IS_DRAFT" = "false" ] && [ "$IS_PRE" = "false" ]; then
+              echo "Refusing: $VERSION_TAG is a published full release. Bump the build number or mark it a draft first."
+              exit 1
+            fi
+            echo "Release $VERSION_TAG already exists - artifacts will be added to it."
+          else
+            CREATE_ARGS=(--draft --title "$VERSION_TAG" --notes "# $VERSION_TAG")
+            [ "$PRE" = "true" ] && CREATE_ARGS+=(--prerelease)
+            gh release create "$VERSION_TAG" "${CREATE_ARGS[@]}" < /dev/null
+          fi
+
       - name: Notify Discord (build started)
         if: env.DISCORD_WEBHOOK_URL != ''
         env:
@@ -105,7 +104,42 @@ jobs:
             -d "{\"embeds\":[{\"title\":\"Build started\",\"description\":\"**All Platforms Release** v$VERSION\\n[Build log]($RUN_URL)\",\"color\":3447003}]}" \
             > /dev/null 2>&1 || true
 
-      # --- Android signing ---
+  # Two parallel ubuntu jobs (github APK, playstore AAB). Android doesn't need
+  # macOS, so these are fast + cheap and run alongside the iOS job below.
+  android:
+    name: Android (${{ matrix.flavor }})
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavor: github
+            build_type: apk
+            define: GITHUB_BUILD=true
+            out_dir: build/app/outputs/apk/github/release
+            ext: apk
+          - flavor: playstore
+            build_type: appbundle
+            define: PLAYSTORE_BUILD=true
+            out_dir: build/app/outputs/bundle/playstoreRelease
+            ext: aab
+    env:
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
       - name: Set up Android signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -121,7 +155,68 @@ jobs:
           storeFile=$RUNNER_TEMP/absorb-upload-key.jks
           EOF
 
-      # --- iOS signing (mirrors ios-release.yml) ---
+      - name: Build ${{ matrix.flavor }}
+        run: flutter build ${{ matrix.build_type }} --release --flavor ${{ matrix.flavor }} --dart-define=${{ matrix.define }}
+
+      - name: Rename artifact
+        env:
+          FNAME: ${{ needs.prepare.outputs.fname }}
+          OUT_DIR: ${{ matrix.out_dir }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          SRC=$(ls "$OUT_DIR"/*.$EXT | head -1)
+          DST="$OUT_DIR/${FNAME}.${EXT}"
+          # gradle already names the APK absorb-<version>-<code>.apk, so the
+          # source can equal the destination; only mv when they differ.
+          [ "$SRC" = "$DST" ] || mv "$SRC" "$DST"
+          echo "ARTIFACT=$DST" >> "$GITHUB_ENV"
+
+      - name: Upload to GitHub draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION_TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$VERSION_TAG" "$ARTIFACT" --clobber
+
+      # Park the AAB in Play Console as an internal-track DRAFT (nothing
+      # submitted or rolled out). Skips silently if the secret isn't set.
+      - name: Upload AAB to Play Console (internal, draft)
+        if: matrix.flavor == 'playstore' && env.PLAY_SERVICE_ACCOUNT_JSON != ''
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.barnabas.absorb
+          releaseFiles: ${{ env.ARTIFACT }}
+          track: internal
+          status: draft
+
+  # iOS must build on macOS; runs in parallel with the Android jobs above.
+  ios:
+    name: iOS IPA + TestFlight
+    needs: prepare
+    runs-on: macos-latest
+    timeout-minutes: 120
+    env:
+      BUNDLE_ID: com.barnabas.absorb
+      APPLE_TEAM_ID: 3W9C9PWP64
+    steps:
+      - uses: actions/checkout@v4
+
+      # Apple requires Xcode 26+ / iOS 26 SDK for App Store uploads. Pick the
+      # newest Xcode installed on the runner.
+      - name: Select latest Xcode
+        run: |
+          LATEST_XCODE=$(ls /Applications/ | grep -E '^Xcode_[0-9]+(\.[0-9]+)?(\.app)?$' | sort -V | tail -1)
+          echo "Available Xcodes:"
+          ls /Applications/ | grep -E '^Xcode' || true
+          echo "Selecting: $LATEST_XCODE"
+          sudo xcode-select -s "/Applications/$LATEST_XCODE/Contents/Developer"
+          xcodebuild -version
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
       - name: Install codemagic-cli-tools
         run: pipx install codemagic-cli-tools
 
@@ -159,64 +254,21 @@ jobs:
 
           xcode-project use-profiles --project ios/Runner.xcodeproj
 
-      # --- Builds ---
-      - name: Build GitHub APK
-        run: flutter build apk --release --flavor github --dart-define=GITHUB_BUILD=true
-
-      - name: Build Play Store AAB
-        run: flutter build appbundle --release --flavor playstore --dart-define=PLAYSTORE_BUILD=true
-
       - name: Build iOS IPA
         run: flutter build ipa --release --export-options-plist=$HOME/export_options.plist
 
-      - name: Rename APK, AAB and IPA
+      - name: Rename IPA
         env:
-          FNAME: ${{ steps.version.outputs.fname }}
+          FNAME: ${{ needs.prepare.outputs.fname }}
         run: |
-          # gradle already names the APK absorb-<version>-<code>.apk, so skip
-          # the mv when source and destination are the same file.
-          APK_SRC=$(ls build/app/outputs/apk/github/release/*.apk | head -1)
-          APK_DST="build/app/outputs/apk/github/release/${FNAME}.apk"
-          [ "$APK_SRC" = "$APK_DST" ] || mv "$APK_SRC" "$APK_DST"
-          AAB_SRC=$(ls build/app/outputs/bundle/playstoreRelease/*.aab | head -1)
-          mv "$AAB_SRC" "build/app/outputs/bundle/playstoreRelease/${FNAME}.aab"
           IPA_SRC=$(ls build/ios/ipa/*.ipa | head -1)
           mv "$IPA_SRC" "build/ios/ipa/${FNAME}.ipa"
 
-      - name: Upload all to GitHub draft release
+      - name: Upload IPA to GitHub draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION_TAG: ${{ steps.version.outputs.tag }}
-          PRE: ${{ steps.version.outputs.pre }}
-        run: |
-          if gh release view "$VERSION_TAG" &>/dev/null; then
-            gh release upload "$VERSION_TAG" \
-              build/app/outputs/apk/github/release/*.apk \
-              build/app/outputs/bundle/playstoreRelease/*.aab \
-              build/ios/ipa/*.ipa \
-              --clobber
-          else
-            CREATE_ARGS=(--draft --title "$VERSION_TAG")
-            [ "$PRE" = "true" ] && CREATE_ARGS+=(--prerelease)
-            gh release create "$VERSION_TAG" \
-              build/app/outputs/apk/github/release/*.apk \
-              build/app/outputs/bundle/playstoreRelease/*.aab \
-              build/ios/ipa/*.ipa \
-              "${CREATE_ARGS[@]}"
-          fi
-
-      # Upload the AAB to Play Console as a DRAFT on the internal track. It just
-      # parks in the console for you to roll out manually - nothing is submitted
-      # or sent for review. Skips silently if the service account secret is unset.
-      - name: Upload AAB to Play Console (internal, draft)
-        if: ${{ env.PLAY_SERVICE_ACCOUNT_JSON != '' }}
-        uses: r0adkll/upload-google-play@v1
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: com.barnabas.absorb
-          releaseFiles: build/app/outputs/bundle/playstoreRelease/*.aab
-          track: internal
-          status: draft
+          VERSION_TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$VERSION_TAG" build/ios/ipa/*.ipa --clobber
 
       # Upload the IPA to TestFlight but DO NOT submit it for beta review. The
       # build still lands in TestFlight (available to internal testers) once Apple
@@ -261,15 +313,23 @@ jobs:
           fi
           app-store-connect publish "${ARGS[@]}"
 
+  # Single Discord ping once both halves finish, success or fail.
+  notify:
+    name: Notify Discord (finished)
+    needs: [prepare, android, ios]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
       - name: Notify Discord (build finished)
-        if: always() && env.DISCORD_WEBHOOK_URL != ''
+        if: env.DISCORD_WEBHOOK_URL != ''
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          VERSION: ${{ steps.version.outputs.raw }}
+          VERSION: ${{ needs.prepare.outputs.raw }}
           RUN_URL: ${{ format('https://github.com/{0}/actions/runs/{1}', github.repository, github.run_id) }}
-          STATUS: ${{ job.status }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+          IOS_RESULT: ${{ needs.ios.result }}
         run: |
-          if [ "$STATUS" = "success" ]; then
+          if [ "$ANDROID_RESULT" = "success" ] && [ "$IOS_RESULT" = "success" ]; then
             TITLE="Build successful"
             COLOR=3066993
           else
@@ -278,5 +338,5 @@ jobs:
           fi
           curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
-            -d "{\"embeds\":[{\"title\":\"$TITLE\",\"description\":\"**All Platforms Release** v$VERSION\\n[Build log]($RUN_URL)\",\"color\":$COLOR}]}" \
+            -d "{\"embeds\":[{\"title\":\"$TITLE\",\"description\":\"**All Platforms Release** v$VERSION (android: $ANDROID_RESULT, ios: $IOS_RESULT)\\n[Build log]($RUN_URL)\",\"color\":$COLOR}]}" \
             > /dev/null 2>&1 || true
