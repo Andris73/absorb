@@ -604,6 +604,12 @@ class HomeWidgetService {
       await HomeWidget.saveWidgetData<String>('np_api_token', api.token);
     }
 
+    // EQ-enabled flag in the app group so a cold widget-launch (engine never
+    // loaded this process) applies the user's EQ. `eq_enabled` itself lives in
+    // the default (non-group) prefs, so mirror it here as `np_eq_enabled`.
+    final eqEnabled = await ScopedPrefs.getBool('eq_enabled') ?? false;
+    await HomeWidget.saveWidgetData<bool>('np_eq_enabled', eqEnabled);
+
     // Cover path piggybacks on the existing widget_cover_path entry, but
     // expose it under the np_ namespace too for clarity on the native side.
     final coverPath = await HomeWidget.getWidgetData<String>('widget_cover_path');

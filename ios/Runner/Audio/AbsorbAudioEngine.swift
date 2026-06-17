@@ -31,6 +31,12 @@ final class AbsorbAudioEngine: NSObject {
   private var currentItem: AVPlayerItem?
   private var currentEpoch: UInt = 0
 
+  // Book id of whatever is currently loaded. Set by load() so the
+  // Flutter-suspended controller (AbsorbPlayerCore) can tell whether the engine
+  // already holds the book it was asked to resume - if so it just resumes the
+  // live engine rather than reloading. Read off the engine queue.
+  private var _currentItemId: String?
+
   // Pre-prepared next book waiting for the cross-book swap.
   private var nextTrackUrls: [URL] = []
   private var nextTrackHeaders: [String: String] = [:]
@@ -38,6 +44,7 @@ final class AbsorbAudioEngine: NSObject {
   private var nextTotalDurationS: Double = 0
   private var nextItem: AVPlayerItem?
   private var nextStartS: Double = 0
+  private var nextItemId: String?
 
   // Configured player state.
   private var speed: Float = 1.0
@@ -77,11 +84,13 @@ final class AbsorbAudioEngine: NSObject {
             speed: Float,
             volume: Float,
             eqEnabled: Bool,
+            itemId: String? = nil,
             completion: @escaping (Double?) -> Void) {
     queue.async { [weak self] in
       guard let self = self else { completion(nil); return }
       self.activateSession()
 
+      if let itemId = itemId { self._currentItemId = itemId }
       self.trackUrls = tracks.map { $0.url }
       self.trackHeaders = tracks.first?.headers ?? [:]
       self.trackOffsets = Self.normalizeOffsets(trackOffsets, trackCount: tracks.count, totalDurationS: totalDurationS)
@@ -121,6 +130,7 @@ final class AbsorbAudioEngine: NSObject {
     queue.async { [weak self] in
       guard let self = self else { return }
       self.currentItem = nil
+      self._currentItemId = nil
       self.processingState = .idle
       self.emitState()
       DispatchQueue.main.async {
@@ -184,6 +194,7 @@ final class AbsorbAudioEngine: NSObject {
                      trackOffsets: [Double],
                      startPositionS: Double,
                      totalDurationS: Double,
+                     itemId: String? = nil,
                      completion: @escaping (Bool) -> Void) {
     queue.async { [weak self] in
       guard let self = self else { completion(false); return }
@@ -192,6 +203,7 @@ final class AbsorbAudioEngine: NSObject {
       self.nextTrackOffsets = Self.normalizeOffsets(trackOffsets, trackCount: tracks.count, totalDurationS: totalDurationS)
       self.nextTotalDurationS = totalDurationS
       self.nextStartS = startPositionS
+      self.nextItemId = itemId
 
       guard let firstUrl = tracks.first?.url else {
         self.nextItem = nil
@@ -229,6 +241,7 @@ final class AbsorbAudioEngine: NSObject {
       self?.nextTotalDurationS = 0
       self?.nextStartS = 0
       self?.nextItem = nil
+      self?.nextItemId = nil
     }
   }
 
@@ -276,6 +289,56 @@ final class AbsorbAudioEngine: NSObject {
     let range = last.timeRangeValue
     let bufferedLocal = CMTimeGetSeconds(range.start + range.duration)
     return bufferedLocal.isFinite ? max(0, bufferedLocal) : 0
+  }
+
+  // MARK: - Adoption helpers (for the Flutter-suspended controller)
+  //
+  // AbsorbPlayerCore drives this same shared engine when Flutter is suspended.
+  // These let it decide whether to reload, and read/save position in the
+  // global coordinate space (the engine works in track-local space internally,
+  // but the app group and server store global seconds).
+
+  /// Book id of the currently-loaded book, or nil if nothing is loaded.
+  var currentItemId: String? {
+    queue.sync { _currentItemId }
+  }
+
+  /// True once a source has been loaded (and not stopped).
+  var isLoaded: Bool {
+    queue.sync { !trackUrls.isEmpty && currentItem != nil }
+  }
+
+  /// True while the player is actively playing (rate > 0).
+  var isPlaying: Bool {
+    player.rate > 0 || player.timeControlStatus == .playing
+  }
+
+  /// Current track index within the loaded book.
+  var currentTrackIndex: Int {
+    queue.sync { trackIndex }
+  }
+
+  /// Global position = track-local position + the current track's offset.
+  func globalPositionS() -> Double {
+    queue.sync {
+      let local = player.currentItem?.currentTime().seconds ?? 0
+      let safeLocal = local.isFinite ? max(0, local) : 0
+      let base = trackOffsets.indices.contains(trackIndex) ? trackOffsets[trackIndex] : 0
+      let baseSafe = base.isFinite ? base : 0
+      return baseSafe + safeLocal
+    }
+  }
+
+  /// Convert a global position to (localS, trackIndex) and seek there. Used by
+  /// the controller's skip / scrub handlers, which think in global seconds.
+  func seekToGlobal(_ globalSeconds: Double, completion: @escaping (Bool) -> Void) {
+    queue.async { [weak self] in
+      guard let self = self else { completion(false); return }
+      let target = self.trackIndexFor(globalSeconds: globalSeconds)
+      let base = self.trackOffsets.indices.contains(target) ? self.trackOffsets[target] : 0
+      let local = max(0, globalSeconds - (base.isFinite ? base : 0))
+      self.seek(toLocalS: local, trackIndex: target, completion: completion)
+    }
   }
 
   // MARK: - Track loading
@@ -463,6 +526,10 @@ final class AbsorbAudioEngine: NSObject {
     trackOffsets = nextTrackOffsets
     totalDurationS = nextTotalDurationS
     trackIndex = 0
+    // Promote the next book's id so the widget controller recognises the book
+    // the engine is now actually playing (otherwise a widget tap after an
+    // auto-advance would reload and restart the new book's stream).
+    if let nextId = nextItemId { _currentItemId = nextId }
 
     currentItem = item
     currentEpoch &+= 1
@@ -477,6 +544,7 @@ final class AbsorbAudioEngine: NSObject {
     nextTotalDurationS = 0
     nextStartS = 0
     nextItem = nil
+    nextItemId = nil
 
     DispatchQueue.main.async { [weak self] in
       guard let self = self else { return }

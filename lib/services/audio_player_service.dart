@@ -1425,6 +1425,7 @@ class AudioPlayerService extends ChangeNotifier {
           source,
           startPositionS: startS,
           totalDurationS: (next['duration'] as num?)?.toDouble() ?? 0,
+          itemId: nextItemId,
         );
         if (!ok) {
           debugPrint('[PreBuffer] Native setNextSource failed');
@@ -1627,6 +1628,55 @@ class AudioPlayerService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[QueueAdvance] resync playItem failed: $e');
     }
+  }
+
+  /// iOS foreground reconciliation after a possible widget-driven session.
+  ///
+  /// The shared engine (AbsorbAudioEngine) persists across Flutter suspension,
+  /// so when the user tapped the widget while we were suspended the engine kept
+  /// playing the same book. On resume we must NOT reload it - that restarts the
+  /// stream. Instead, if the engine is still on our current book, adopt its
+  /// playing-state, track index, and global position. If the engine has been
+  /// stopped or holds a different book, leave the existing paths to handle it
+  /// (the idle-on-resume re-init in play(), or a fresh playItem).
+  Future<void> _iosReconcileEngineOnForeground() async {
+    if (!Platform.isIOS) return;
+    final player = _player;
+    final itemId = _currentItemId;
+    if (player == null || itemId == null) return;
+    final state = await player.engineState();
+    if (state == null) return;
+    // Engine isn't on our book (stopped, disposed, or swapped) - nothing to
+    // adopt; the normal play()/idle-reinit path will rebuild if needed.
+    if (!state.isLoaded || state.itemId != itemId) {
+      debugPrint('[Player] iOS resume: engine not on current book '
+          '(engine=${state.itemId} loaded=${state.isLoaded}) - skipping adopt');
+      return;
+    }
+    // Sync our track index to whatever track the engine actually reached while
+    // we were suspended, so absolute-position math is correct.
+    if (_trackStartOffsets.length > 1) {
+      final clamped = state.trackIndex.clamp(0, _trackStartOffsets.length - 2);
+      if (clamped != _currentTrackIndex) {
+        debugPrint('[Player] iOS resume: track index $_currentTrackIndex -> $clamped (from engine)');
+        _currentTrackIndex = clamped;
+      }
+    }
+    // Adopt the engine's playing-state without issuing a new command, then let
+    // the handler re-publish so the lock screen / notification reflect reality.
+    final wasPlaying = isPlaying;
+    player.adoptPlayingState(state.isPlaying);
+    debugPrint('[Player] iOS resume: adopted engine state playing=${state.isPlaying} '
+        '(was $wasPlaying) global=${state.globalPositionS.toStringAsFixed(1)}s');
+    // Persist the adopted position locally so a subsequent sync/save doesn't
+    // overwrite it with a stale value.
+    if (state.globalPositionS > 0) {
+      _lastKnownPositionSec = state.globalPositionS;
+      await _saveProgressLocal(
+          Duration(milliseconds: (state.globalPositionS * 1000).round()));
+    }
+    _handler?.refreshPlaybackState();
+    notifyListeners();
   }
 
   Future<void> _primeNowPlaying({
@@ -2186,6 +2236,12 @@ class AudioPlayerService extends ChangeNotifier {
     if (Platform.isIOS && service._iosResyncPending) {
       unawaited(service._iosForegroundResyncIfNeeded());
     }
+    // After a widget-driven session the shared engine may have kept playing
+    // (or advanced) while Flutter was suspended. Adopt its live state rather
+    // than reloading - reloading would restart the same stream (bug #285).
+    if (Platform.isIOS && service.hasBook) {
+      await service._iosReconcileEngineOnForeground();
+    }
     if (!service.hasBook) return;
     final sessionAlive = service._playbackSessionId != null;
     debugPrint('[MediaSession] Foregrounded - refreshing (playing=${service.isPlaying}, session=$sessionAlive, item=${service._currentItemId})');
@@ -2486,7 +2542,7 @@ class AudioPlayerService extends ChangeNotifier {
         source = ConcatenatingAudioSource(children: sources);
       }
 
-      await _player!.setAudioSource(source);
+      await _player!.setAudioSource(source, itemId: _currentItemId);
 
       // Seek to the same absolute position
       final posSeconds = currentAbsolutePos.inMilliseconds / 1000.0;
@@ -2653,7 +2709,7 @@ class AudioPlayerService extends ChangeNotifier {
         debugPrint('[Player] Pre-source setActive failed (local): $e');
       }
       _resetPreBufferState();
-      final decoded = await _player!.setAudioSource(source);
+      final decoded = await _player!.setAudioSource(source, itemId: _currentItemId);
       _activeConcatSource = source;
       _currentBookTrackCount = trackSources.length;
 
@@ -2787,7 +2843,7 @@ class AudioPlayerService extends ChangeNotifier {
         debugPrint('[Player] Pre-source setActive failed (cached-session): $e');
       }
       _resetPreBufferState();
-      await _player!.setAudioSource(source);
+      await _player!.setAudioSource(source, itemId: _currentItemId);
       _activeConcatSource = source as ConcatenatingAudioSource;
       _currentBookTrackCount = trackSources.length;
 
@@ -3050,7 +3106,7 @@ class AudioPlayerService extends ChangeNotifier {
         debugPrint('[Player] Pre-source setActive failed (stream): $e');
       }
       _resetPreBufferState();
-      await _player!.setAudioSource(source);
+      await _player!.setAudioSource(source, itemId: _currentItemId);
       _activeConcatSource = source;
       _currentBookTrackCount = trackSources.length;
 
@@ -3156,7 +3212,7 @@ class AudioPlayerService extends ChangeNotifier {
                 }
                 retrySource = ConcatenatingAudioSource(children: sources);
               }
-              await _player!.setAudioSource(retrySource);
+              await _player!.setAudioSource(retrySource, itemId: _currentItemId);
               if (totalDuration > 0 && startTime >= totalDuration - 1.0) startTime = 0;
               if (startTime > 0) await _seekAbsolute(startTime);
               clearSeekTarget();
@@ -3256,7 +3312,7 @@ class AudioPlayerService extends ChangeNotifier {
         }
         retrySource = ConcatenatingAudioSource(children: sources);
       }
-      await _player!.setAudioSource(retrySource);
+      await _player!.setAudioSource(retrySource, itemId: _currentItemId);
       if (startTime > 0) await _seekAbsolute(startTime);
       clearSeekTarget();
       _subscribeTrackIndex();

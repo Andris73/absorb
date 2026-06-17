@@ -4,10 +4,13 @@ import Foundation
 import MediaPlayer
 import UIKit
 
-/// Native player core for iOS. Drives downloaded and streaming audiobooks
-/// via AVPlayer when Flutter isn't alive, exposes lock-screen / Control
-/// Center / CarPlay metadata, handles remote commands, and pushes progress
-/// directly to ABS so the server stays in sync during widget-only sessions.
+/// Controller that drives audiobook playback while Flutter is suspended.
+///
+/// It does NOT own an AVPlayer. All audio runs through the single process-wide
+/// `AbsorbAudioEngine.shared`, which also serves in-app playback and survives
+/// Flutter suspension. So a widget play just resumes the already-loaded engine
+/// rather than starting a second AVPlayer - that's what made bug #285 possible
+/// (two concurrent streams from the same book).
 ///
 /// State source: app group `np_*` keys written by `home_widget_service.dart`.
 /// Hand-off: `audio_owner_alive_at` heartbeat - if recent, Flutter is in
@@ -21,21 +24,14 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
 
   private let queue = DispatchQueue(label: "com.barnabas.absorb.nativecore")
 
-  private var _player: AVPlayer?
+  // Bookkeeping for server push + Now Playing. The actual audio state lives in
+  // AbsorbAudioEngine.shared; these just mirror what book we last targeted.
   private var _currentItemId: String?
   private var _currentEpisodeId: String?
 
-  // Multi-track state
-  private var _trackUrls: [URL] = []
-  private var _trackHeaders: [String: String] = [:]
-  private var _trackOffsets: [Double] = [0]
-  private var _trackIndex: Int = 0
-
-  private var _periodicObserver: Any?
-  private var _itemEndObserver: NSObjectProtocol?
   private var _commandsConfigured = false
 
-  // Server sync timer (separate from periodic position observer)
+  // Server sync timer (separate from the engine's position observer).
   private var _serverSyncTimer: Timer?
   private static let serverSyncIntervalSec: TimeInterval = 60.0
 
@@ -53,17 +49,15 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
         self.emit("[NativeCore] play(): Flutter is alive, bailing")
         return
       }
-      self.ensureLoaded()
-      guard let p = self._player else {
-        self.emit("[NativeCore] play(): no player loaded")
+      guard self.ensureLoaded() else {
+        self.emit("[NativeCore] play(): no engine source loaded")
         return
       }
       self.activateAudioSession()
-      p.play()
-      self.applySpeed(to: p)
-      self.emit("[NativeCore] play(): rate=\(p.rate) trackIdx=\(self._trackIndex)")
+      AbsorbAudioEngine.shared.play()
+      self.emit("[NativeCore] play(): global=\(self.globalPosition())s")
       self.startServerSyncTimer()
-      self.updateNowPlayingInfo(rate: Double(p.rate))
+      self.updateNowPlayingInfo(rate: Double(self.currentSpeed()))
     }
   }
 
@@ -74,11 +68,7 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
         self.emit("[NativeCore] pause(): Flutter is alive, bailing")
         return
       }
-      guard let p = self._player else {
-        self.emit("[NativeCore] pause(): no player")
-        return
-      }
-      p.pause()
+      AbsorbAudioEngine.shared.pause()
       self.emit("[NativeCore] pause(): pos=\(self.globalPosition())s")
       self.savePosition()
       self.pushProgressToServer()
@@ -94,13 +84,12 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
         self.emit("[NativeCore] toggle(): Flutter is alive, bailing")
         return
       }
-      self.ensureLoaded()
-      guard let p = self._player else {
-        self.emit("[NativeCore] toggle(): no player loaded")
+      guard self.ensureLoaded() else {
+        self.emit("[NativeCore] toggle(): no engine source loaded")
         return
       }
-      if p.rate > 0 {
-        p.pause()
+      if AbsorbAudioEngine.shared.isPlaying {
+        AbsorbAudioEngine.shared.pause()
         self.emit("[NativeCore] toggle(): paused at \(self.globalPosition())s")
         self.savePosition()
         self.pushProgressToServer()
@@ -108,11 +97,10 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
         self.updateNowPlayingInfo(rate: 0)
       } else {
         self.activateAudioSession()
-        p.play()
-        self.applySpeed(to: p)
-        self.emit("[NativeCore] toggle(): playing rate=\(p.rate) global=\(self.globalPosition())s")
+        AbsorbAudioEngine.shared.play()
+        self.emit("[NativeCore] toggle(): playing global=\(self.globalPosition())s")
         self.startServerSyncTimer()
-        self.updateNowPlayingInfo(rate: Double(p.rate))
+        self.updateNowPlayingInfo(rate: Double(self.currentSpeed()))
       }
     }
   }
@@ -124,6 +112,7 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
         self.emit("[NativeCore] skipForward(\(seconds)): Flutter is alive, bailing")
         return
       }
+      guard self.ensureLoaded() else { return }
       let now = self.globalPosition()
       let dur = self.totalDuration()
       let target = min(dur > 0 ? dur : .greatestFiniteMagnitude, now + Double(seconds))
@@ -139,6 +128,7 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
         self.emit("[NativeCore] skipBackward(\(seconds)): Flutter is alive, bailing")
         return
       }
+      guard self.ensureLoaded() else { return }
       let now = self.globalPosition()
       let target = max(0, now - Double(seconds))
       self.emit("[NativeCore] skipBackward(\(seconds)s): \(now)s -> \(target)s")
@@ -164,17 +154,32 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
 
   // MARK: - State plumbing
 
-  /// Build the URL list, track offsets, headers, and active-track index
-  /// from app group state. Loads the AVPlayer to the right starting track.
-  private func ensureLoaded() {
+  /// Make sure the shared engine holds the book the app group points at.
+  ///
+  /// Warm case: the engine is already on this book (`currentItemId` matches) -
+  /// do nothing and adopt its live position. This is the common widget-resume
+  /// path and is what keeps a single stream.
+  ///
+  /// Cold case: the engine has nothing (or a different book) loaded - build
+  /// the source from app-group state and load it at the saved position.
+  ///
+  /// Returns false only when there's no playable source at all.
+  @discardableResult
+  private func ensureLoaded() -> Bool {
     let defaults = UserDefaults(suiteName: Self.appGroup)
     guard let itemId = defaults?.string(forKey: "np_item_id") else {
       emit("[NativeCore] ensureLoaded: no np_item_id in app group")
-      return
+      return false
     }
     let episodeId = defaults?.string(forKey: "np_episode_id")
-    if _player != nil && itemId == _currentItemId && episodeId == _currentEpisodeId {
-      return
+
+    // Engine already holds this exact book: adopt it, no reload.
+    if AbsorbAudioEngine.shared.currentItemId == itemId, AbsorbAudioEngine.shared.isLoaded {
+      _currentItemId = itemId
+      _currentEpisodeId = episodeId
+      configureRemoteCommandsIfNeeded()
+      emit("[NativeCore] ensureLoaded: engine already on \(itemId), adopting live playback")
+      return true
     }
 
     let isDownloaded = defaults?.bool(forKey: "np_is_downloaded") ?? false
@@ -205,17 +210,16 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
       emit("[NativeCore] ensureLoaded: \(itemId) streaming, \(urls.count) tracks, \(headers.count) custom headers")
     } else {
       emit("[NativeCore] ensureLoaded: no playable source for \(itemId)")
-      return
+      return false
     }
 
     if urls.isEmpty {
       emit("[NativeCore] ensureLoaded: source list empty after filtering for \(itemId)")
-      return
+      return false
     }
 
-    // Track offsets (cumulative, length = urls.count + 1). Fall back to
-    // [0, +inf] if the stash is missing or shorter than expected so we
-    // still play track 0.
+    // Track offsets (cumulative, length = urls.count + 1). The engine
+    // normalizes/fills in a fallback if the stash is missing or short.
     var offsets: [Double] = [0]
     if let offsetsJson = defaults?.string(forKey: "np_track_offsets_json"),
        let offsetsData = offsetsJson.data(using: .utf8),
@@ -223,170 +227,62 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
        raw.count >= urls.count + 1 {
       offsets = raw.map { $0.doubleValue }
     } else {
-      // Fallback: assume single track, or unknown durations -> can't seek
-      // across tracks correctly but at least track 0 plays.
-      offsets = [0]
-      for _ in urls { offsets.append(.greatestFiniteMagnitude) }
-      emit("[NativeCore] ensureLoaded: track offsets unknown, falling back to single-track logic")
+      offsets = []
+      emit("[NativeCore] ensureLoaded: track offsets unknown, engine will fall back")
     }
 
     let savedPos = defaults?.double(forKey: "np_position_s") ?? 0
-    let startTrackIndex = trackIndexForGlobal(savedPos, offsets: offsets)
-    let localStart = savedPos - offsets[startTrackIndex]
+    let totalS = defaults?.double(forKey: "np_total_s") ?? 0
+    let speed = defaults?.double(forKey: "np_speed") ?? 1.0
+    // Mirrored from the default prefs into the app group by home_widget_service
+    // (eq_enabled itself isn't in the group suite).
+    let eqEnabled = defaults?.bool(forKey: "np_eq_enabled") ?? false
 
-    _trackUrls = urls
-    _trackHeaders = headers
-    _trackOffsets = offsets
-    _trackIndex = startTrackIndex
     _currentItemId = itemId
     _currentEpisodeId = episodeId
 
-    let player = AVPlayer()
-    _player = player
-    loadCurrentTrack(seekTo: localStart)
+    let tracks = urls.map { (url: $0, headers: headers) }
+    AbsorbAudioEngine.shared.load(
+      tracks: tracks,
+      trackOffsets: offsets,
+      startPositionS: savedPos,
+      totalDurationS: totalS,
+      speed: Float(speed > 0 ? speed : 1.0),
+      volume: 1.0,
+      eqEnabled: eqEnabled,
+      itemId: itemId
+    ) { _ in }
+
     configureRemoteCommandsIfNeeded()
     updateNowPlayingInfo(rate: 0)
-
-    emit("[NativeCore] ensureLoaded done: \(itemId) trackIdx=\(startTrackIndex)/\(urls.count) localStart=\(localStart)s globalStart=\(savedPos)s")
+    emit("[NativeCore] ensureLoaded done: \(itemId) global=\(savedPos)s speed=\(speed) eq=\(eqEnabled)")
+    return true
   }
 
-  /// Build an AVPlayerItem for the current track (with auth headers if
-  /// streaming) and assign it to the player. Sets up end-of-track observer
-  /// so playback rolls onto the next track automatically.
-  private func loadCurrentTrack(seekTo localSeconds: Double) {
-    guard let p = _player, _trackIndex < _trackUrls.count else { return }
-    let url = _trackUrls[_trackIndex]
-    var options: [String: Any] = [:]
-    if !_trackHeaders.isEmpty {
-      options["AVURLAssetHTTPHeaderFieldsKey"] = _trackHeaders
-    }
-    let asset = AVURLAsset(url: url, options: options)
-    let item = AVPlayerItem(asset: asset)
-    p.replaceCurrentItem(with: item)
-    if localSeconds > 0 {
-      p.seek(to: CMTime(seconds: localSeconds, preferredTimescale: 1000))
-    }
-    observeItemEnd(item)
-    addPeriodicObserver(player: p)
-    emit("[NativeCore] loadCurrentTrack: idx=\(_trackIndex) url=\(url) localSeek=\(localSeconds)s")
-  }
-
-  private func trackIndexForGlobal(_ globalSeconds: Double, offsets: [Double]) -> Int {
-    if globalSeconds <= 0 { return 0 }
-    // offsets is [0, dur0, dur0+dur1, ..., total]. Find largest index i
-    // where offsets[i] <= globalSeconds. Number of tracks = offsets.count - 1
-    // so result must be in [0, offsets.count - 2].
-    let trackCount = max(1, offsets.count - 1)
-    for i in 0..<trackCount {
-      let nextOffset = i + 1 < offsets.count ? offsets[i + 1] : .greatestFiniteMagnitude
-      if globalSeconds < nextOffset {
-        return i
-      }
-    }
-    return trackCount - 1
-  }
-
-  /// Compute global position = trackOffset + position-within-current-track.
-  /// Returns 0 if state hasn't loaded.
+  /// Global position straight from the engine (already offset-aware).
   private func globalPosition() -> Double {
-    guard let p = _player else { return 0 }
-    let local = p.currentTime().seconds
-    guard local.isFinite else { return _trackOffsets.indices.contains(_trackIndex) ? _trackOffsets[_trackIndex] : 0 }
-    let baseOffset = _trackOffsets.indices.contains(_trackIndex) ? _trackOffsets[_trackIndex] : 0
-    return baseOffset + local
+    return AbsorbAudioEngine.shared.globalPositionS()
   }
 
   private func totalDuration() -> Double {
     let defaults = UserDefaults(suiteName: Self.appGroup)
     let stashed = defaults?.double(forKey: "np_total_s") ?? 0
-    if stashed > 0 { return stashed }
-    return _trackOffsets.last ?? 0
+    return stashed > 0 ? stashed : 0
+  }
+
+  private func currentSpeed() -> Float {
+    let defaults = UserDefaults(suiteName: Self.appGroup)
+    let speed = defaults?.double(forKey: "np_speed") ?? 1.0
+    return Float(speed > 0 ? speed : 1.0)
   }
 
   private func seekToGlobal(_ globalSeconds: Double) {
-    guard !_trackOffsets.isEmpty else { return }
-    let targetIndex = trackIndexForGlobal(globalSeconds, offsets: _trackOffsets)
-    let localTarget = max(0, globalSeconds - _trackOffsets[targetIndex])
-
-    if targetIndex == _trackIndex {
-      // Same track, simple seek.
-      _player?.seek(
-        to: CMTime(seconds: localTarget, preferredTimescale: 1000),
-        toleranceBefore: .zero, toleranceAfter: .zero
-      ) { [weak self] _ in
-        self?.queue.async {
-          self?.savePosition()
-          self?.updateNowPlayingInfo(rate: Double(self?._player?.rate ?? 0))
-          self?.emit("[NativeCore] seekToGlobal in-track: \(globalSeconds)s")
-        }
-      }
-    } else {
-      // Cross-track seek: load the new track, then seek inside it.
-      let wasPlaying = (_player?.rate ?? 0) > 0
-      _trackIndex = targetIndex
-      loadCurrentTrack(seekTo: localTarget)
-      if wasPlaying {
-        _player?.play()
-        applySpeed(to: _player!)
-      }
-      savePosition()
-      updateNowPlayingInfo(rate: Double(_player?.rate ?? 0))
-      emit("[NativeCore] seekToGlobal cross-track: \(globalSeconds)s -> idx=\(targetIndex) local=\(localTarget)s")
-    }
-  }
-
-  private func applySpeed(to player: AVPlayer) {
-    let defaults = UserDefaults(suiteName: Self.appGroup)
-    let speed = defaults?.double(forKey: "np_speed") ?? 1.0
-    player.rate = Float(speed > 0 ? speed : 1.0)
-  }
-
-  private func observeItemEnd(_ item: AVPlayerItem) {
-    if let prev = _itemEndObserver {
-      NotificationCenter.default.removeObserver(prev)
-    }
-    _itemEndObserver = NotificationCenter.default.addObserver(
-      forName: .AVPlayerItemDidPlayToEndTime,
-      object: item,
-      queue: nil
-    ) { [weak self] _ in
+    AbsorbAudioEngine.shared.seekToGlobal(globalSeconds) { [weak self] _ in
       self?.queue.async {
-        self?.handleTrackEnd()
+        self?.savePosition()
+        self?.updateNowPlayingInfo(rate: Double(AbsorbAudioEngine.shared.isPlaying ? (self?.currentSpeed() ?? 1.0) : 0))
+        self?.emit("[NativeCore] seekToGlobal done: \(globalSeconds)s")
       }
-    }
-  }
-
-  private func handleTrackEnd() {
-    let nextIndex = _trackIndex + 1
-    if nextIndex < _trackUrls.count {
-      emit("[NativeCore] track \(_trackIndex) ended, advancing to \(nextIndex)")
-      _trackIndex = nextIndex
-      loadCurrentTrack(seekTo: 0)
-      let wasPlaying = (_player?.rate ?? 0) > 0
-      if wasPlaying {
-        _player?.play()
-        if let p = _player { applySpeed(to: p) }
-      }
-      savePosition()
-      updateNowPlayingInfo(rate: Double(_player?.rate ?? 0))
-    } else {
-      emit("[NativeCore] last track ended, stopping")
-      savePosition()
-      pushProgressToServer()
-      stopServerSyncTimer()
-      updateNowPlayingInfo(rate: 0)
-    }
-  }
-
-  private func addPeriodicObserver(player: AVPlayer) {
-    if let prev = _periodicObserver {
-      player.removeTimeObserver(prev)
-    }
-    _periodicObserver = player.addPeriodicTimeObserver(
-      forInterval: CMTime(seconds: 5, preferredTimescale: 1),
-      queue: .main
-    ) { [weak self] _ in
-      self?.queue.async { self?.savePosition() }
     }
   }
 
@@ -405,7 +301,7 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
     if !pos.isFinite { return }
     let defaults = UserDefaults(suiteName: Self.appGroup)
     defaults?.set(pos, forKey: "np_position_s")
-    defaults?.set((_player?.rate ?? 0) > 0, forKey: "widget_is_playing")
+    defaults?.set(AbsorbAudioEngine.shared.isPlaying, forKey: "widget_is_playing")
   }
 
   // MARK: - Server sync
@@ -483,7 +379,7 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
   // MARK: - MPNowPlayingInfoCenter
 
   private func updateNowPlayingInfo(rate: Double) {
-    guard _player != nil else { return }
+    guard _currentItemId != nil else { return }
     let defaults = UserDefaults(suiteName: Self.appGroup)
     let title = defaults?.string(forKey: "np_title")
       ?? defaults?.string(forKey: "widget_title")
@@ -535,7 +431,7 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
 
     // Each handler bails when Flutter is alive so audio_service handlers
     // win on the lock screen. When native is in charge, these drive the
-    // AVPlayer directly.
+    // shared engine directly.
     cc.playCommand.addTarget { [weak self] _ in
       if self?.flutterIsAlive() == true {
         self?.emit("[NativeCore] remote: play - Flutter is alive, deferring")
@@ -593,7 +489,10 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
         self?.emit("[NativeCore] remote: scrub - Flutter is alive, deferring")
         return .success
       }
-      self?.queue.async { self?.seekToGlobal(event.positionTime) }
+      self?.queue.async {
+        guard self?.ensureLoaded() == true else { return }
+        self?.seekToGlobal(event.positionTime)
+      }
       return .success
     }
     emit("[NativeCore] remote command center wired")

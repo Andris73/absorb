@@ -54,6 +54,7 @@ final class AbsorbAudioBridge: NSObject {
       let speed = (args?["speed"] as? Double).map { Float($0) } ?? 1.0
       let volume = (args?["volume"] as? Double).map { Float($0) } ?? 1.0
       let eq = (args?["eqEnabled"] as? Bool) ?? false
+      let itemId = args?["itemId"] as? String
       AbsorbAudioEngine.shared.load(
         tracks: trackList,
         trackOffsets: offsets,
@@ -61,7 +62,8 @@ final class AbsorbAudioBridge: NSObject {
         totalDurationS: dur,
         speed: speed,
         volume: volume,
-        eqEnabled: eq
+        eqEnabled: eq,
+        itemId: itemId
       ) { duration in
         result(["durationS": duration as Any])
       }
@@ -101,11 +103,13 @@ final class AbsorbAudioBridge: NSObject {
         let offsets = (args?["trackOffsets"] as? [NSNumber])?.map { $0.doubleValue } ?? []
         let start = (args?["startPositionS"] as? Double) ?? 0
         let dur = (args?["totalDurationS"] as? Double) ?? 0
+        let nextItemId = args?["itemId"] as? String
         AbsorbAudioEngine.shared.setNextSource(
           tracks: trackList,
           trackOffsets: offsets,
           startPositionS: start,
-          totalDurationS: dur
+          totalDurationS: dur,
+          itemId: nextItemId
         ) { ok in result(ok) }
       } else {
         AbsorbAudioEngine.shared.clearNextSource()
@@ -129,6 +133,18 @@ final class AbsorbAudioBridge: NSObject {
 
     case "getBufferedPositionS":
       result(AbsorbAudioEngine.shared.getBufferedPositionS())
+
+    case "engineState":
+      // Lets Dart reconcile after a widget-driven session: read what book the
+      // engine actually holds and whether it's playing, so foreground resume
+      // can adopt rather than reload.
+      result([
+        "itemId": AbsorbAudioEngine.shared.currentItemId as Any,
+        "isLoaded": AbsorbAudioEngine.shared.isLoaded,
+        "isPlaying": AbsorbAudioEngine.shared.isPlaying,
+        "trackIndex": AbsorbAudioEngine.shared.currentTrackIndex,
+        "globalPositionS": AbsorbAudioEngine.shared.globalPositionS(),
+      ])
 
     case "dispose":
       AbsorbAudioEngine.shared.stop()

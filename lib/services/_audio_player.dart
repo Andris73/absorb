@@ -92,10 +92,13 @@ class AudioPlayer {
     Duration? initialPosition,
     int? initialIndex,
     bool preload = true,
+    String? itemId,
   }) async {
     if (_isNative) {
-      return _native!.setAudioSource(source, initialPosition: initialPosition, initialIndex: initialIndex, preload: preload);
+      return _native!.setAudioSource(source, initialPosition: initialPosition, initialIndex: initialIndex, preload: preload, itemId: itemId);
     }
+    // just_audio doesn't track an item id; it's only meaningful for the iOS
+    // engine, which uses it to recognise a book on widget-driven resume.
     return _ja!.setAudioSource(source, initialPosition: initialPosition, initialIndex: initialIndex, preload: preload);
   }
 
@@ -103,9 +106,9 @@ class AudioPlayer {
   /// On iOS-native this swaps via replaceCurrentItem when current ends.
   /// On just_audio this is left as a no-op; caller still appends to its
   /// ConcatenatingAudioSource the old way.
-  Future<bool> setNextSource(ja.AudioSource? source, {double startPositionS = 0, double totalDurationS = 0}) async {
+  Future<bool> setNextSource(ja.AudioSource? source, {double startPositionS = 0, double totalDurationS = 0, String? itemId}) async {
     if (_isNative) {
-      return _native!.setNextSource(source, startPositionS: startPositionS, totalDurationS: totalDurationS);
+      return _native!.setNextSource(source, startPositionS: startPositionS, totalDurationS: totalDurationS, itemId: itemId);
     }
     return false;
   }
@@ -116,6 +119,17 @@ class AudioPlayer {
 
   Future<void> detachEqualizerTap() async {
     if (_isNative) await _native!.detachEqualizerTap();
+  }
+
+  /// iOS-only: read the native engine's live state for foreground-resume
+  /// reconciliation. Null off iOS or on failure.
+  Future<NativeEngineState?> engineState() async =>
+      _isNative ? _native!.engineState() : null;
+
+  /// iOS-only: sync the Dart mirror to the engine's actual playing state
+  /// without issuing a new play/pause command.
+  void adoptPlayingState(bool playing) {
+    if (_isNative) _native!.adoptPlayingState(playing);
   }
 
   // ─── Control ───
