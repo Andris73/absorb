@@ -2353,6 +2353,10 @@ class AudioPlayerService extends ChangeNotifier {
     _api = api;
     _currentItemId = itemId;
     _currentEpisodeId = episodeId;
+    // Reset local-session mode for every new play; _playFromLocal re-enables it
+    // for downloaded items. Without this it leaks from a prior downloaded play
+    // into a following streaming play and misroutes the listening time.
+    _localSessionMode = false;
     _currentEpisodeTitle = episodeTitle;
     _currentTitle = title;
     _currentAuthor = author;
@@ -2597,7 +2601,11 @@ class AudioPlayerService extends ChangeNotifier {
     // online) the way the /play response used to, sourced from GET /me/progress.
     _localSessionMode = true;
     _logEvent(PlaybackEventType.sessionStart, detail: 'local-session');
-    final pKey = _currentEpisodeId != null ? '$itemId-$_currentEpisodeId' : itemId;
+    // `itemId` here is the progress key (already `id-episodeId` for a podcast),
+    // so build the key from the raw parts to avoid double-appending the episode.
+    final pKey = _currentEpisodeId != null
+        ? '$_currentItemId-$_currentEpisodeId'
+        : _currentItemId!;
     if (_api != null && !manualOffline && !_knownOffline) {
       try {
         final serverProgress = await _api!
@@ -2754,7 +2762,7 @@ class AudioPlayerService extends ChangeNotifier {
       _setupSync();
       await LocalSessionService().beginSession(
         progressKey: pKey,
-        libraryItemId: itemId,
+        libraryItemId: _currentItemId!,
         episodeId: _currentEpisodeId,
         mediaType: _currentEpisodeId != null ? 'podcast' : 'book',
         duration: totalDuration,
