@@ -106,6 +106,17 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
       AbsorbPlayerCore.logSink?("[NativeCore] Registered as AppIntent dependency")
     }
 
+    // When the app backgrounds, wire the native core's lock-screen / headphone
+    // command handlers. They defer to Flutter while it's alive, but staying
+    // registered means a play command after iOS suspends a paused Flutter still
+    // has a native target - so Absorb resumes instead of iOS handing the play to
+    // Apple Music. We arm on background (not launch) because Flutter is
+    // guaranteed alive here, and an app must background before iOS suspends it.
+    NotificationCenter.default.addObserver(
+      forName: UIApplication.didEnterBackgroundNotification,
+      object: nil, queue: .main
+    ) { _ in AbsorbPlayerCore.shared.armRemoteCommands() }
+
     registerAudioSessionObservers()
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

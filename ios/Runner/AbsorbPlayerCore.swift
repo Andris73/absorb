@@ -515,6 +515,19 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
 
   // MARK: - MPRemoteCommandCenter
 
+  /// Register the remote command handlers up front, without loading a player or
+  /// starting playback. They defer to Flutter while it's alive, so this is a
+  /// no-op for normal foreground use - but it guarantees a native target stays
+  /// registered for the play command. Without it, the handlers were only wired
+  /// the first time the native core played, so a play after iOS suspended a
+  /// paused Flutter found no responsive Now Playing app and iOS handed control
+  /// to Apple Music. Idempotent.
+  func armRemoteCommands() {
+    queue.async { [weak self] in
+      self?.configureRemoteCommandsIfNeeded()
+    }
+  }
+
   private func configureRemoteCommandsIfNeeded() {
     if _commandsConfigured { return }
     _commandsConfigured = true
