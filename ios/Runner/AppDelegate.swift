@@ -3,6 +3,7 @@ import AppIntents
 import Flutter
 import UIKit
 import AVFoundation
+import AudioToolbox
 import MediaPlayer
 import just_audio
 
@@ -503,12 +504,13 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
 
 }
 
-/// Extracts a time window of an audiobook and exports it as an AAC .m4a clip
-/// via AVAssetExportSession (bookmark clip export). Local files always work;
-/// streamed URLs carry the access token in the URL and pass any custom headers
-/// best-effort - a server that needs custom headers AVFoundation can't send
-/// (some reverse proxies) may fail to export while streaming, which the UI
-/// surfaces as a normal export failure.
+/// Extracts a time window of an audiobook and writes it as an AAC .m4a clip
+/// (bookmark clip export). Uses an AVAssetReader -> AVAssetWriter transcode with
+/// a time range, which - unlike AVAssetExportSession - works on a remote
+/// (streaming) AVURLAsset: AVFoundation byte-range-requests only the bytes
+/// around the window rather than downloading the whole file, mirroring Android's
+/// MediaExtractor. Local downloaded files work the same way. The streamed URL
+/// carries the access token in the URL and passes any custom headers best-effort.
 enum AudioClipExporter {
   static func exportM4a(
     source: String,
@@ -534,31 +536,133 @@ enum AudioClipExporter {
       asset = AVURLAsset(url: url, options: options)
     }
 
+    // Load tracks/duration first so a remote asset is ready before we read it.
+    asset.loadValuesAsynchronously(forKeys: ["tracks", "duration"]) {
+      var keyError: NSError?
+      guard asset.statusOfValue(forKey: "tracks", error: &keyError) == .loaded else {
+        completion(false, keyError?.localizedDescription ?? "asset tracks not loaded")
+        return
+      }
+      guard let track = asset.tracks(withMediaType: .audio).first else {
+        completion(false, "no audio track")
+        return
+      }
+      runTranscode(
+        asset: asset, track: track,
+        startSeconds: startSeconds, durationSeconds: durationSeconds,
+        outPath: outPath, completion: completion)
+    }
+  }
+
+  private static func runTranscode(
+    asset: AVAsset,
+    track: AVAssetTrack,
+    startSeconds: Double,
+    durationSeconds: Double,
+    outPath: String,
+    completion: @escaping (Bool, String?) -> Void
+  ) {
     let outURL = URL(fileURLWithPath: outPath)
     try? FileManager.default.createDirectory(
       at: outURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-    // AVAssetExportSession refuses to overwrite an existing file.
     try? FileManager.default.removeItem(at: outURL)
 
-    guard let export = AVAssetExportSession(
-      asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
-      completion(false, "could not create export session")
+    func fail(_ message: String) {
+      try? FileManager.default.removeItem(at: outURL)
+      completion(false, message)
+    }
+
+    // Source sample rate / channel count, capped to stereo.
+    var srcRate = 44100.0
+    var srcChannels = 2
+    if let fmt = track.formatDescriptions.first {
+      let desc = fmt as! CMFormatDescription
+      if let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc)?.pointee {
+        if asbd.mSampleRate > 0 { srcRate = asbd.mSampleRate }
+        if asbd.mChannelsPerFrame > 0 { srcChannels = Int(asbd.mChannelsPerFrame) }
+      }
+    }
+    let channels = min(max(srcChannels, 1), 2)
+
+    let timescale: CMTimeScale = 44100
+    let start = CMTime(seconds: max(0, startSeconds), preferredTimescale: timescale)
+    let dur = CMTime(seconds: max(0.5, durationSeconds), preferredTimescale: timescale)
+
+    let reader: AVAssetReader
+    let writer: AVAssetWriter
+    do {
+      reader = try AVAssetReader(asset: asset)
+      writer = try AVAssetWriter(outputURL: outURL, fileType: .m4a)
+    } catch {
+      fail(error.localizedDescription)
       return
     }
-    export.outputURL = outURL
-    export.outputFileType = .m4a
-    let start = CMTime(seconds: max(0, startSeconds), preferredTimescale: 600)
-    let duration = CMTime(seconds: max(1, durationSeconds), preferredTimescale: 600)
-    export.timeRange = CMTimeRange(start: start, duration: duration)
+    reader.timeRange = CMTimeRange(start: start, duration: dur)
 
-    export.exportAsynchronously {
-      switch export.status {
-      case .completed:
-        completion(true, nil)
-      default:
-        let message = export.error?.localizedDescription ?? "status \(export.status.rawValue)"
-        try? FileManager.default.removeItem(at: outURL)
-        completion(false, message)
+    let pcmSettings: [String: Any] = [
+      AVFormatIDKey: kAudioFormatLinearPCM,
+      AVSampleRateKey: srcRate,
+      AVNumberOfChannelsKey: channels,
+      AVLinearPCMBitDepthKey: 16,
+      AVLinearPCMIsFloatKey: false,
+      AVLinearPCMIsBigEndianKey: false,
+      AVLinearPCMIsNonInterleaved: false,
+    ]
+    let readerOutput = AVAssetReaderTrackOutput(track: track, outputSettings: pcmSettings)
+    readerOutput.alwaysCopiesSampleData = false
+    guard reader.canAdd(readerOutput) else { fail("cannot add reader output"); return }
+    reader.add(readerOutput)
+
+    let aacSettings: [String: Any] = [
+      AVFormatIDKey: kAudioFormatMPEG4AAC,
+      AVSampleRateKey: srcRate,
+      AVNumberOfChannelsKey: channels,
+      AVEncoderBitRateKey: 128_000,
+    ]
+    let writerInput = AVAssetWriterInput(mediaType: .audio, outputSettings: aacSettings)
+    writerInput.expectsMediaDataInRealTime = false
+    guard writer.canAdd(writerInput) else { fail("cannot add writer input"); return }
+    writer.add(writerInput)
+
+    guard reader.startReading() else {
+      fail(reader.error?.localizedDescription ?? "reader failed to start")
+      return
+    }
+    guard writer.startWriting() else {
+      fail(writer.error?.localizedDescription ?? "writer failed to start")
+      return
+    }
+    writer.startSession(atSourceTime: start)
+
+    var done = false
+    let queue = DispatchQueue(label: "com.absorb.clip.export")
+    writerInput.requestMediaDataWhenReady(on: queue) {
+      while writerInput.isReadyForMoreMediaData {
+        guard let buffer = readerOutput.copyNextSampleBuffer() else {
+          // No more samples - finish (or surface a read failure).
+          writerInput.markAsFinished()
+          if reader.status == .failed {
+            if !done { done = true; fail(reader.error?.localizedDescription ?? "reader failed") }
+            return
+          }
+          writer.finishWriting {
+            if done { return }
+            done = true
+            if writer.status == .completed {
+              completion(true, nil)
+            } else {
+              try? FileManager.default.removeItem(at: outURL)
+              completion(false, writer.error?.localizedDescription ?? "writer status \(writer.status.rawValue)")
+            }
+          }
+          return
+        }
+        if !writerInput.append(buffer) {
+          reader.cancelReading()
+          writerInput.markAsFinished()
+          if !done { done = true; fail(writer.error?.localizedDescription ?? "append failed") }
+          return
+        }
       }
     }
   }
