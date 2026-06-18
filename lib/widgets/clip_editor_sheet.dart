@@ -114,10 +114,23 @@ class _ClipEditorSheetState extends State<ClipEditorSheet> {
       debugPrint('[ClipEditor] save failed: $e');
       if (!mounted) return;
       setState(() => _saving = false);
-      messenger.showSnackBar(SnackBar(
-        content: Text(l.clipExportFailed),
-        behavior: SnackBarBehavior.floating,
-      ));
+      // Show the reason in a dialog rather than a SnackBar: the editor is a
+      // bottom sheet, and on iPad a SnackBar shown from within it hides behind
+      // the sheet, so a failure looked like "nothing happened".
+      final detail = e is ClipExportException ? e.message : e.toString();
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l.clipExportFailed),
+          content: Text(detail),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(MaterialLocalizations.of(ctx).okButtonLabel),
+            ),
+          ],
+        ),
+      );
     }
   }
 
