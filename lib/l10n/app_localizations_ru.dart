@@ -6171,6 +6171,10 @@ class AppLocalizationsRu extends AppLocalizations {
   String get clipExportFailed => 'Couldn\'t export the clip.';
 
   @override
+  String get clipDownloadToExport =>
+      'Download this book first to export a clip on iPhone.';
+
+  @override
   String get fsPickerTitle => 'Select folder';
 
   @override

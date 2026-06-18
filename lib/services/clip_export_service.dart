@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -21,22 +23,27 @@ class ClipExportResult {
 }
 
 class ClipExportException implements Exception {
-  ClipExportException(this.message);
+  ClipExportException(this.message, {this.code});
   final String message;
+  /// Optional machine-readable reason so the UI can react specially (e.g.
+  /// 'needs_download' -> offer to download the book on iOS).
+  final String? code;
   @override
   String toString() => 'ClipExportException: $message';
 }
 
 /// Extracts a short audio clip starting at a bookmark and encodes it to .m4a
-/// (AAC) via native code - Android MediaCodec + MediaMuxer, iOS
-/// AVAssetExportSession. Works on downloaded files and streamed URLs (the
-/// native side range-requests just the needed window with the auth headers).
+/// (AAC) via native code (Android MediaCodec + MediaMuxer, iOS
+/// AVAssetExportSession). Downloaded books export from the local file on both
+/// platforms. Streamed books: Android's native side range-requests just the
+/// window from the URL; iOS can't export from a remote URL, so a streamed book
+/// must be downloaded first ([ClipExportException] code 'needs_download').
 class ClipExportService {
   static const _channel = MethodChannel('com.absorb.clip');
 
   /// Build a clip for [itemId] starting at [startSeconds] (global book
   /// position) running [requestedDuration] seconds. Throws
-  /// [ClipExportException] on any failure so the UI can show one message.
+  /// [ClipExportException] on any failure so the UI can react.
   Future<ClipExportResult> exportClip({
     required String itemId,
     required double startSeconds,
@@ -49,6 +56,13 @@ class ClipExportService {
     }
     final hit = BookTrackResolver.mapGlobal(tracks, startSeconds);
     final track = hit.track;
+
+    // iOS can't extract a clip from a remote URL (neither AVAssetExportSession
+    // nor AVAssetReader handle it). Rather than silently download a whole file,
+    // ask the user to download the book first.
+    if (!track.local && Platform.isIOS) {
+      throw ClipExportException('book must be downloaded', code: 'needs_download');
+    }
 
     // Don't run past the end of this track - cross-file stitching is a v1
     // limitation, so shorten and tell the user.
@@ -67,7 +81,7 @@ class ClipExportService {
     final outPath =
         '${tmp.path}/absorb_clip_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
-    bool ok;
+    var ok = false;
     try {
       ok = await _channel.invokeMethod<bool>('exportClip', {
             'source': track.source,

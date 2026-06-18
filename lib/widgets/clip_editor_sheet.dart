@@ -3,11 +3,14 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
+import '../providers/library_provider.dart';
 import '../services/api_service.dart';
 import '../services/clip_editor_controller.dart';
 import '../services/clip_export_service.dart';
+import '../services/download_service.dart';
 
 /// Play-and-mark clip editor. Opened from the bookmark sheet's "Export clip".
 /// Plays a navigable window around the bookmark; the user marks in/out by ear
@@ -114,6 +117,11 @@ class _ClipEditorSheetState extends State<ClipEditorSheet> {
       debugPrint('[ClipEditor] save failed: $e');
       if (!mounted) return;
       setState(() => _saving = false);
+      // iOS can't export from a streaming URL - offer to download the book.
+      if (e is ClipExportException && e.code == 'needs_download') {
+        await _promptDownload();
+        return;
+      }
       // Show the reason in a dialog rather than a SnackBar: the editor is a
       // bottom sheet, and on iPad a SnackBar shown from within it hides behind
       // the sheet, so a failure looked like "nothing happened".
@@ -132,6 +140,56 @@ class _ClipEditorSheetState extends State<ClipEditorSheet> {
         ),
       );
     }
+  }
+
+  // iOS streamed export isn't possible, so offer to download the book; the user
+  // re-exports once it finishes. Cancel just closes the dialog.
+  Future<void> _promptDownload() async {
+    final l = AppLocalizations.of(context)!;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: Text(l.clipDownloadToExport),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l.download),
+          ),
+        ],
+      ),
+    );
+    if (go == true) await _startDownload();
+  }
+
+  Future<void> _startDownload() async {
+    final api = widget.api;
+    if (api == null) return;
+    final navigator = Navigator.of(context);
+    final libraryId = context.read<LibraryProvider>().selectedLibraryId;
+    var title = widget.bookmarkTitle;
+    var author = '';
+    try {
+      final item = await api.getLibraryItem(widget.itemId);
+      final meta = (item?['media'] as Map<String, dynamic>?)?['metadata']
+          as Map<String, dynamic>?;
+      title = meta?['title'] as String? ?? title;
+      author = meta?['authorName'] as String? ?? '';
+    } catch (_) {}
+    await DownloadService().downloadItem(
+      api: api,
+      itemId: widget.itemId,
+      title: title,
+      author: author,
+      coverUrl: api.getCoverUrl(widget.itemId, width: 400),
+      libraryId: libraryId,
+    );
+    // Close the editor - the user re-exports once the download finishes (the
+    // download has its own progress notification).
+    if (mounted) navigator.pop();
   }
 
   @override

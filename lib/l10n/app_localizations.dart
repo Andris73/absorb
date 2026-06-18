@@ -10770,6 +10770,12 @@ abstract class AppLocalizations {
   /// **'Couldn\'t export the clip.'**
   String get clipExportFailed;
 
+  /// No description provided for @clipDownloadToExport.
+  ///
+  /// In en, this message translates to:
+  /// **'Download this book first to export a clip on iPhone.'**
+  String get clipDownloadToExport;
+
   /// No description provided for @fsPickerTitle.
   ///
   /// In en, this message translates to:
