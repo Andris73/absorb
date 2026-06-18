@@ -1153,6 +1153,13 @@ class AudioPlayerService extends ChangeNotifier {
   Timer? _bgSaveTimer;
   Timer? _pauseStopTimer;
   static const _pauseStopTimeout = Duration(minutes: 10);
+  // A streamed book's cover isn't in the content-provider cache on first play,
+  // so the notification's first art request races the on-demand fetch and the
+  // OS caches the empty result against the fixed cover URI. We re-push the
+  // MediaItem once with a cache-busting URI so the OS re-requests it after the
+  // cover has been fetched. Tracks the item already scheduled for this.
+  String? _coverRepushItem;
+  Timer? _coverRepushTimer;
   /// Last known position in seconds — used to detect end→0 position jumps.
   double _lastKnownPositionSec = 0;
   // ── Stream error retry tracking ──
@@ -3401,7 +3408,7 @@ class AudioPlayerService extends ChangeNotifier {
   static const _coverAuthority = 'com.barnabas.absorb.covers';
 
   void _pushMediaItem(String itemId, String title, String author,
-      String? coverUrl, double totalDuration, {String? chapter}) {
+      String? coverUrl, double totalDuration, {String? chapter, int? coverCacheBust}) {
     // Alpha [PodDur]: trace every push-site. We want to see which callers
     // pass only the parent itemId (missing -episodeId suffix) and/or a zero
     // duration, so we can pinpoint what to fix for the AA podcast progress
@@ -3423,8 +3430,33 @@ class AudioPlayerService extends ChangeNotifier {
       }
     } else {
       effectiveCoverUrl = 'content://$_coverAuthority/cover/$itemId';
+      if (coverCacheBust != null) effectiveCoverUrl += '?cb=$coverCacheBust';
+      // Streamed cover (no local file) won't be cached on first play - schedule
+      // one cache-busted re-push so the art shows up the first time too.
+      final localCover = DownloadService().getInfo(itemId).localCoverPath;
+      final streamed = localCover == null || localCover.isEmpty;
+      if (streamed && coverCacheBust == null && _coverRepushItem != itemId) {
+        _coverRepushItem = itemId;
+        _scheduleStreamedCoverRepush(itemId);
+      }
     }
     _updateNotificationMediaItem(itemId, title, author, effectiveCoverUrl, totalDuration, chapter: chapter);
+  }
+
+  void _scheduleStreamedCoverRepush(String itemId) {
+    _coverRepushTimer?.cancel();
+    _coverRepushTimer = Timer(const Duration(seconds: 3), () {
+      // Only re-push if we're still on the same item.
+      if (_currentItemId == null) return;
+      if (_currentItemId != itemId && _mediaItemKey != itemId) return;
+      final chapterTitle = _lastNotifiedChapterIndex >= 0 && _chapters.isNotEmpty
+          ? (_chapters[_lastNotifiedChapterIndex] as Map<String, dynamic>)['title'] as String?
+          : null;
+      _pushMediaItem(itemId, _currentTitle ?? '', _currentAuthor ?? '',
+          _currentCoverUrl, _totalDuration,
+          chapter: chapterTitle,
+          coverCacheBust: DateTime.now().millisecondsSinceEpoch);
+    });
   }
 
   void _updateNotificationMediaItem(String itemId, String title, String author,
@@ -3465,6 +3497,8 @@ class AudioPlayerService extends ChangeNotifier {
     _currentTitle = null;
     _currentAuthor = null;
     _currentCoverUrl = null;
+    _coverRepushTimer?.cancel();
+    _coverRepushItem = null;
     _playbackSessionId = null;
     _isOfflineMode = false;
     _localSessionMode = false;
