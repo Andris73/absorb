@@ -222,12 +222,12 @@ class _AdminStatsScreenState extends State<AdminStatsScreen> {
           child: Column(
             children: list.map((e) {
               final name = e[labelKey]?.toString() ?? '–';
-              final ms = (e['time'] as num?)?.toDouble() ?? 0;
+              final secs = (e['time'] as num?)?.toDouble() ?? 0;
               return ListTile(
                 dense: true,
                 title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
-                trailing: Text(formatHm(ms / 1000),
+                trailing: Text(formatHm(secs),
                     style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
               );
             }).toList(),
