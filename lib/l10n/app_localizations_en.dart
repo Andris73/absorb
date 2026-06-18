@@ -6132,6 +6132,46 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bookmarkPreviewFailed => 'Couldn\'t play this spot.';
 
   @override
+  String get clipExport => 'Export clip';
+
+  @override
+  String get clipJumpToStart => 'Jump to start';
+
+  @override
+  String get clipJumpToEnd => 'Jump to end';
+
+  @override
+  String get clipSetStart => 'Set start';
+
+  @override
+  String get clipSetEnd => 'Set end';
+
+  @override
+  String get clipInLabel => 'In';
+
+  @override
+  String get clipOutLabel => 'Out';
+
+  @override
+  String get clipSave => 'Save clip';
+
+  @override
+  String clipExportSaved(String filename) {
+    return 'Saved $filename';
+  }
+
+  @override
+  String get clipExportClamped =>
+      'Clip saved, shortened to the end of this track';
+
+  @override
+  String get clipExportFailed => 'Couldn\'t export the clip.';
+
+  @override
+  String get clipDownloadToExport =>
+      'Download this book first to export a clip on iPhone.';
+
+  @override
   String get fsPickerTitle => 'Select folder';
 
   @override

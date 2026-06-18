@@ -3667,6 +3667,26 @@
   "bookmarkPause": "Pause",
   "bookmarkPreviewFailed": "Couldn't play this spot.",
 
+  "clipExport": "Export clip",
+  "clipJumpToStart": "Jump to start",
+  "clipJumpToEnd": "Jump to end",
+  "clipSetStart": "Set start",
+  "clipSetEnd": "Set end",
+  "clipInLabel": "In",
+  "clipOutLabel": "Out",
+  "clipSave": "Save clip",
+  "clipExportSaved": "Saved {filename}",
+  "@clipExportSaved": {
+    "placeholders": {
+      "filename": {
+        "type": "String"
+      }
+    }
+  },
+  "clipExportClamped": "Clip saved, shortened to the end of this track",
+  "clipExportFailed": "Couldn't export the clip.",
+  "clipDownloadToExport": "Download this book first to export a clip on iPhone.",
+
   "fsPickerTitle": "Select folder",
   "fsServerRoot": "Server root",
   "fsEmptyFolder": "No subfolders here",

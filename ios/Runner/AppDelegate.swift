@@ -306,6 +306,35 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
       }
     }
 
+    // Bookmark clip export: extract a time window of a book and write a .m4a.
+    let clipChannel = FlutterMethodChannel(name: "com.absorb.clip",
+                                           binaryMessenger: messenger)
+    clipChannel.setMethodCallHandler { (call, result) in
+      guard call.method == "exportClip" else { result(FlutterMethodNotImplemented); return }
+      let args = call.arguments as? [String: Any]
+      guard let source = args?["source"] as? String,
+            let outPath = args?["outPath"] as? String else {
+        result(FlutterError(code: "CLIP_ARGS", message: "Missing source or outPath", details: nil))
+        return
+      }
+      let isLocal = args?["isLocal"] as? Bool ?? true
+      let headers = args?["headers"] as? [String: String]
+      let start = args?["startSeconds"] as? Double ?? 0
+      let duration = args?["durationSeconds"] as? Double ?? 60
+      AudioClipExporter.exportM4a(
+        source: source, isLocal: isLocal, headers: headers,
+        startSeconds: start, durationSeconds: duration, outPath: outPath
+      ) { ok, errMessage in
+        DispatchQueue.main.async {
+          if ok {
+            result(true)
+          } else {
+            result(FlutterError(code: "CLIP_FAILED", message: errMessage ?? "export failed", details: nil))
+          }
+        }
+      }
+    }
+
     let widgetChannel = FlutterMethodChannel(name: "com.absorb.widget",
                                                binaryMessenger: messenger)
     self.widgetChannel = widgetChannel
@@ -472,4 +501,64 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
     }
   }
 
+}
+
+/// Extracts a time window of an audiobook and exports it as an AAC .m4a clip
+/// via AVAssetExportSession, which copies the source's artwork so the clip keeps
+/// the book cover. iOS can't reliably export from a remote URL, so a streamed
+/// book is fetched to a temp file in Dart first and handed in as a local path -
+/// the native side here always works on a local file.
+enum AudioClipExporter {
+  static func exportM4a(
+    source: String,
+    isLocal: Bool,
+    headers: [String: String]?,
+    startSeconds: Double,
+    durationSeconds: Double,
+    outPath: String,
+    completion: @escaping (Bool, String?) -> Void
+  ) {
+    let asset: AVURLAsset
+    if isLocal {
+      asset = AVURLAsset(url: URL(fileURLWithPath: source))
+    } else {
+      guard let url = URL(string: source) else {
+        completion(false, "bad url")
+        return
+      }
+      var options: [String: Any] = [:]
+      if let headers = headers, !headers.isEmpty {
+        options["AVURLAssetHTTPHeaderFieldsKey"] = headers
+      }
+      asset = AVURLAsset(url: url, options: options)
+    }
+
+    let outURL = URL(fileURLWithPath: outPath)
+    try? FileManager.default.createDirectory(
+      at: outURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    // AVAssetExportSession refuses to overwrite an existing file.
+    try? FileManager.default.removeItem(at: outURL)
+
+    guard let export = AVAssetExportSession(
+      asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
+      completion(false, "could not create export session")
+      return
+    }
+    export.outputURL = outURL
+    export.outputFileType = .m4a
+    let start = CMTime(seconds: max(0, startSeconds), preferredTimescale: 600)
+    let duration = CMTime(seconds: max(1, durationSeconds), preferredTimescale: 600)
+    export.timeRange = CMTimeRange(start: start, duration: duration)
+
+    export.exportAsynchronously {
+      switch export.status {
+      case .completed:
+        completion(true, nil)
+      default:
+        let message = export.error?.localizedDescription ?? "status \(export.status.rawValue)"
+        try? FileManager.default.removeItem(at: outURL)
+        completion(false, message)
+      }
+    }
+  }
 }

@@ -110,6 +110,14 @@ class MainActivity : AudioServiceActivity() {
                 }
             }
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.absorb.clip")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "exportClip" -> handleExportClip(call, result)
+                    else -> result.notImplemented()
+                }
+            }
+
         // GMS-backed channels (cast foreground service, wear bridges).
         // Resolves to the real impl in github/playstore, no-op in fdroid.
         PlatformIntegration.registerChannels(this, flutterEngine)
@@ -166,6 +174,29 @@ class MainActivity : AudioServiceActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "moveBookToSaf failed: ${e.message}", e)
                 runOnUiThread { result.error("SAF_MOVE_ERROR", e.message, null) }
+            }
+        }.start()
+    }
+
+    // Extract a short audio window starting at a bookmark and write it as an
+    // AAC .m4a clip (bookmark clip export). Runs off the main thread.
+    private fun handleExportClip(call: MethodCall, result: MethodChannel.Result) {
+        val source = call.argument<String>("source")
+        val isLocal = call.argument<Boolean>("isLocal") ?: true
+        val headers = call.argument<Map<String, String>>("headers")
+        val startSeconds = call.argument<Double>("startSeconds") ?: 0.0
+        val durationSeconds = call.argument<Double>("durationSeconds") ?: 60.0
+        val outPath = call.argument<String>("outPath")
+        if (source == null || outPath == null) {
+            result.error("CLIP_ARGS", "Missing source or outPath", null)
+            return
+        }
+        Thread {
+            val ok = AudioClipExporter.exportM4a(
+                applicationContext, source, isLocal, headers, startSeconds, durationSeconds, outPath)
+            runOnUiThread {
+                if (ok) result.success(true)
+                else result.error("CLIP_FAILED", "Could not export clip", null)
             }
         }.start()
     }
