@@ -25,7 +25,7 @@ import '../widgets/update_dialog.dart';
 import '../screens/admin_screen.dart';
 import '../screens/downloads_screen.dart';
 import '../screens/bookmarks_screen.dart';
-import '../main.dart' show applyThemeMode, applyTrustAllCerts, applyFlatBackground, applyColorSource, applyManualSeed, applyGradientIntensity, applyUseColorEverywhere, localeNotifier, flatNotifier, gradientIntensityNotifier, snappyTransitionsNotifier;
+import '../main.dart' show applyThemeMode, applyTrustAllCerts, applyFlatBackground, applyColorSource, applyManualSeed, applyGradientIntensity, applyUseColorEverywhere, applyOrientationLock, localeNotifier, flatNotifier, gradientIntensityNotifier, snappyTransitionsNotifier;
 import '../services/wording.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/theme_presets.dart';
@@ -108,6 +108,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _showExplicitBadge = true;
   bool _loggingEnabled = false;
   bool _fullScreenPlayer = false;
+  bool _lockPortrait = false;
   // card button layout is now managed in the edit sheet (more menu)
   bool _snappyTransitions = false;
   bool _classicWording = false;
@@ -701,8 +702,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final rmabBaseUrl = await ScopedPrefs.getString(kRmabBaseUrlKey);
     final rmabApiToken = await ScopedPrefs.getString(kRmabApiTokenKey);
     final sleepRewind = await PlayerSettings.getSleepRewindSeconds();
+    final lockPortrait = await PlayerSettings.getLockPortrait();
     if (mounted) setState(() {
       _sleepRewindSeconds = sleepRewind;
+      _lockPortrait = lockPortrait;
       _rmabBaseUrl = rmabBaseUrl;
       _rmabApiToken = rmabApiToken;
       _rewindSettings = s;
@@ -1337,6 +1340,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         setState(() => _classicWording = v);
                         PlayerSettings.setClassicWording(v);
                         classicWordingNotifier.value = v;
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    SwitchListTile(
+                      title: const Text('Lock rotation'),
+                      subtitle: Text(
+                        _lockPortrait
+                            ? 'Screen stays in portrait'
+                            : 'Screen can rotate with the device',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _lockPortrait,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _lockPortrait = v);
+                        PlayerSettings.setLockPortrait(v);
+                        applyOrientationLock();
                       } : null,
                     ),
                   ],

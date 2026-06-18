@@ -471,6 +471,11 @@ class PlayerSettings {
   static Future<bool> getFullScreenPlayer() => _get('fullScreenPlayer', false);
   static Future<void> setFullScreenPlayer(bool value) => _set('fullScreenPlayer', value);
 
+  /// When on, the screen is locked to portrait (rotation disabled). Default off
+  /// keeps the current behaviour where all orientations are allowed.
+  static Future<bool> getLockPortrait() => _get('lockPortrait', false);
+  static Future<void> setLockPortrait(bool value) => _set('lockPortrait', value);
+
   static Future<bool> getSnappyTransitions() => _get('snappyTransitions', false);
   static Future<void> setSnappyTransitions(bool value) => _set('snappyTransitions', value);
 
