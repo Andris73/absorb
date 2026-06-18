@@ -101,6 +101,19 @@ class BackupService {
       'queuePlaylistId': await PlayerSettings.getQueuePlaylistId(),
       'coverSeedColor': await PlayerSettings.getCoverSeedColor(),
       'speedPresets': await PlayerSettings.getSpeedPresets(),
+      'cardBackground': await PlayerSettings.getCardBackground(),
+      'lockSeekBar': await PlayerSettings.getLockSeekBar(),
+      'mediaControlsSpeedBookmark': await PlayerSettings.getMediaControlsSpeedBookmark(),
+      'progressTextScale': await PlayerSettings.getProgressTextScale(),
+      'lockPortrait': await PlayerSettings.getLockPortrait(),
+      'autoSeriesDownloadDefault': await PlayerSettings.getAutoSeriesDownloadDefault(),
+      'statsGoalType': await PlayerSettings.getStatsGoalType(),
+      'statsGoalMinutes': await PlayerSettings.getStatsGoalMinutes(),
+      'statsBookGoal': await PlayerSettings.getStatsBookGoal(),
+      'statsChartStyle': await PlayerSettings.getStatsChartStyle(),
+      'statsChartRange': await PlayerSettings.getStatsChartRange(),
+      'statsSectionOrder': await PlayerSettings.getStatsSectionOrder(),
+      'statsHiddenSections': await PlayerSettings.getStatsHiddenSections(),
     };
 
     // AutoRewind (scoped)
@@ -152,17 +165,6 @@ class BackupService {
 
     // Offline mode (global)
     final offlineMode = prefs.getBool('manual_offline_mode') ?? false;
-
-    // Bookmarks for current account (scoped)
-    final bookmarks = <String, List<String>>{};
-    final bmPrefix = scope.isNotEmpty ? '$scope:bookmarks_' : 'bookmarks_';
-    for (final key in prefs.getKeys()) {
-      if (key.startsWith(bmPrefix)) {
-        final itemId = key.substring(bmPrefix.length);
-        final list = prefs.getStringList(key);
-        if (list != null && list.isNotEmpty) bookmarks[itemId] = list;
-      }
-    }
 
     // Notes for current account (scoped)
     final notes = <String, String>{};
@@ -281,7 +283,6 @@ class BackupService {
       'equalizer': equalizer,
       'bookSpeeds': bookSpeeds,
       'offlineMode': offlineMode,
-      'bookmarks': bookmarks,
       'notes': notes,
       'savedEbooks': savedEbooks,
       'rollingDownloadSeries': rollingDownloadSeries,
@@ -455,6 +456,19 @@ class BackupService {
     if (s['speedPresets'] is List) {
       await PlayerSettings.setSpeedPresets((s['speedPresets'] as List).map((e) => (e as num).toDouble()).toList());
     }
+    if (s['cardBackground'] != null) await PlayerSettings.setCardBackground(s['cardBackground'] as String);
+    if (s['lockSeekBar'] != null) await PlayerSettings.setLockSeekBar(s['lockSeekBar'] as bool);
+    if (s['mediaControlsSpeedBookmark'] != null) await PlayerSettings.setMediaControlsSpeedBookmark(s['mediaControlsSpeedBookmark'] as bool);
+    if (s['progressTextScale'] != null) await PlayerSettings.setProgressTextScale((s['progressTextScale'] as num).toDouble());
+    if (s['lockPortrait'] != null) await PlayerSettings.setLockPortrait(s['lockPortrait'] as bool);
+    if (s['autoSeriesDownloadDefault'] != null) await PlayerSettings.setAutoSeriesDownloadDefault(s['autoSeriesDownloadDefault'] as bool);
+    if (s['statsGoalType'] != null) await PlayerSettings.setStatsGoalType(s['statsGoalType'] as String);
+    if (s['statsGoalMinutes'] != null) await PlayerSettings.setStatsGoalMinutes(s['statsGoalMinutes'] as int);
+    if (s['statsBookGoal'] != null) await PlayerSettings.setStatsBookGoal(s['statsBookGoal'] as int);
+    if (s['statsChartStyle'] != null) await PlayerSettings.setStatsChartStyle(s['statsChartStyle'] as String);
+    if (s['statsChartRange'] != null) await PlayerSettings.setStatsChartRange(s['statsChartRange'] as int);
+    if (s['statsSectionOrder'] is List) await PlayerSettings.setStatsSectionOrder((s['statsSectionOrder'] as List).cast<String>());
+    if (s['statsHiddenSections'] is List) await PlayerSettings.setStatsHiddenSections((s['statsHiddenSections'] as List).cast<String>());
 
     // AutoRewind (scoped via save())
     final r = data['autoRewind'] as Map<String, dynamic>?;
@@ -509,15 +523,6 @@ class BackupService {
     // Offline mode (global)
     if (data['offlineMode'] != null) {
       await prefs.setBool('manual_offline_mode', data['offlineMode'] as bool);
-    }
-
-    // Bookmarks (scoped)
-    final bookmarks = data['bookmarks'] as Map<String, dynamic>?;
-    if (bookmarks != null) {
-      for (final entry in bookmarks.entries) {
-        final list = (entry.value as List<dynamic>).cast<String>();
-        await ScopedPrefs.setStringList('bookmarks_${entry.key}', list);
-      }
     }
 
     // Notes (scoped)

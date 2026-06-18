@@ -3617,8 +3617,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       final accounts = data['accounts'] as List<dynamic>?;
       final hasAccounts = accounts != null && accounts.isNotEmpty;
-      final bookmarks = data['bookmarks'] as Map<String, dynamic>?;
-      final hasBookmarks = bookmarks != null && bookmarks.isNotEmpty;
       final hasCustomHeaders = data['customHeaders'] != null;
       final createdAt = data['createdAt'] as String?;
       final appVersion = data['appVersion'] as String?;
@@ -3647,7 +3645,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 12),
                 Text(details, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
               ],
-              if (hasAccounts || hasBookmarks || hasCustomHeaders) ...[
+              if (hasAccounts || hasCustomHeaders) ...[
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
@@ -3655,8 +3653,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     if (hasAccounts)
                       _restoreChip(Icons.people_rounded, l.restoreAccountsChip(accounts.length), cs),
-                    if (hasBookmarks)
-                      _restoreChip(Icons.bookmark_rounded, l.restoreBookmarksChip(bookmarks.length), cs),
                     if (hasCustomHeaders)
                       _restoreChip(Icons.vpn_key_rounded, l.restoreCustomHeadersChip, cs),
                   ],
