@@ -1345,21 +1345,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         classicWordingNotifier.value = v;
                       } : null,
                     ),
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    SwitchListTile(
-                      title: const Text('Lock rotation'),
-                      subtitle: Text(
-                        _lockPortrait
-                            ? 'Screen stays in portrait'
-                            : 'Screen can rotate with the device',
-                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                      value: _lockPortrait,
-                      onChanged: _loaded ? (v) {
-                        setState(() => _lockPortrait = v);
-                        PlayerSettings.setLockPortrait(v);
-                        applyOrientationLock();
-                      } : null,
-                    ),
+                    // iPadOS ignores orientation preferences for multitasking
+                    // apps, so the lock can't work there - hide it on iPad.
+                    if (!(Platform.isIOS && MediaQuery.sizeOf(context).shortestSide >= 600)) ...[
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      SwitchListTile(
+                        title: const Text('Lock rotation'),
+                        subtitle: Text(
+                          _lockPortrait
+                              ? 'Screen stays in portrait'
+                              : 'Screen can rotate with the device',
+                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                        value: _lockPortrait,
+                        onChanged: _loaded ? (v) {
+                          setState(() => _lockPortrait = v);
+                          PlayerSettings.setLockPortrait(v);
+                          applyOrientationLock();
+                        } : null,
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 16),
