@@ -11,6 +11,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:http/http.dart' show Client, runWithClient;
+import 'package:http/io_client.dart' show IOClient;
+import 'package:cupertino_http/cupertino_http.dart' show CupertinoClient, URLSessionConfiguration;
 import 'l10n/app_localizations.dart';
 
 import 'package:device_info_plus/device_info_plus.dart';
@@ -113,6 +116,28 @@ void applyTrustAllCerts(bool enabled) {
   trustAllCerts = enabled;
 }
 
+/// Builds the HTTP client used by every `package:http` call in the app
+/// (installed via [runWithClient] in [main]).
+///
+/// On iOS we route through NSURLSession (CupertinoClient) so the app talks to
+/// the server the same way Safari does: it honours the system proxy and uses
+/// the OS TLS stack. That gets past proxies/firewalls that reset Dart's own
+/// connections even when the browser gets through (GH #268).
+///
+/// Self-signed / custom-CA users (trustAllCerts on) stay on the dart:io client,
+/// because the trust-all override lives in [_CertOverrides.badCertificateCallback]
+/// and NSURLSession wouldn't honour it. The flag is read per request, so toggling
+/// it in settings takes effect on the next call. Everywhere else keeps the
+/// existing dart:io client.
+Client _createHttpClient() {
+  if (Platform.isIOS && !trustAllCerts) {
+    return CupertinoClient.fromSessionConfiguration(
+      URLSessionConfiguration.ephemeralSessionConfiguration(),
+    );
+  }
+  return IOClient();
+}
+
 /// Global key so non-widget code (e.g. providers) can show snackbars.
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
@@ -143,7 +168,30 @@ void applyManualSeed(int argb) => manualSeedNotifier.value = Color(argb);
 void applyGradientIntensity(double value) => gradientIntensityNotifier.value = value;
 void applyUseColorEverywhere(bool value) => useColorEverywhereNotifier.value = value;
 
-void main() async {
+/// Apply the saved rotation preference. When "lock portrait" is on the app is
+/// pinned to portrait; otherwise all orientations are allowed (the default).
+/// Safe to call any time the setting changes.
+Future<void> applyOrientationLock() async {
+  final lock = await PlayerSettings.getLockPortrait();
+  await SystemChrome.setPreferredOrientations(lock
+      ? const [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]
+      : const [
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+}
+
+void main() {
+  // Run the whole app inside the runWithClient zone so that package:http calls
+  // pick up _createHttpClient. The binding must be initialised inside the zone
+  // (in _runApp) or platform/gesture callbacks would escape it and fall back to
+  // the default client.
+  runWithClient(_runApp, _createHttpClient);
+}
+
+Future<void> _runApp() async {
   HttpOverrides.global = _CertOverrides();
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
 
@@ -156,12 +204,7 @@ void main() async {
   } catch (_) {}
 
   try {
-    await SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]).timeout(const Duration(seconds: 2));
+    await applyOrientationLock().timeout(const Duration(seconds: 2));
   } catch (_) {}
 
   // Load saved theme preference so we render the correct theme immediately
