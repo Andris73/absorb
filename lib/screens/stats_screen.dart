@@ -787,7 +787,8 @@ class _StatsScreenState extends State<StatsScreen>
 
     final body = <Widget>[];
     final d = _yirData;
-    final totalMs = (d?['totalListeningTime'] as num?)?.toDouble() ?? 0;
+    // The server reports listening time in seconds (summed timeListening).
+    final totalSeconds = (d?['totalListeningTime'] as num?)?.toDouble() ?? 0;
     final sessions = (d?['totalListeningSessions'] as num?)?.toInt() ?? 0;
     final finished = (d?['numBooksFinished'] as num?)?.toInt() ?? 0;
     final listened = (d?['numBooksListened'] as num?)?.toInt() ?? 0;
@@ -797,7 +798,7 @@ class _StatsScreenState extends State<StatsScreen>
         padding: EdgeInsets.symmetric(vertical: 28),
         child: Center(child: CircularProgressIndicator()),
       ));
-    } else if (d == null || (totalMs <= 0 && sessions == 0 && finished == 0)) {
+    } else if (d == null || (totalSeconds <= 0 && sessions == 0 && finished == 0)) {
       body.add(Container(
         width: double.infinity,
         decoration: _cardDeco(cs),
@@ -812,7 +813,7 @@ class _StatsScreenState extends State<StatsScreen>
           ((d['booksWithCovers'] as List?) ?? const []).whereType<String>().toList();
       if (api != null && coverIds.isNotEmpty) {
         body.add(SizedBox(
-          height: 84,
+          height: 64,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: coverIds.length,
@@ -821,11 +822,11 @@ class _StatsScreenState extends State<StatsScreen>
               borderRadius: BorderRadius.circular(6),
               child: CachedNetworkImage(
                 imageUrl: api.getCoverUrl(coverIds[i], width: 120),
-                width: 56,
-                height: 84,
+                width: 64,
+                height: 64,
                 fit: BoxFit.cover,
                 errorWidget: (_, __, ___) =>
-                    Container(width: 56, height: 84, color: cs.surfaceContainerHigh),
+                    Container(width: 64, height: 64, color: cs.surfaceContainerHigh),
               ),
             ),
           ),
@@ -835,7 +836,7 @@ class _StatsScreenState extends State<StatsScreen>
 
       body.add(Row(children: [
         Expanded(child: _accentStatCard(tt, cs, Icons.headphones_rounded,
-            cs.primary, _formatDuration(totalMs / 1000), 'Listened')),
+            cs.primary, _formatDuration(totalSeconds), 'Listened')),
         const SizedBox(width: 8),
         Expanded(child: _accentStatCard(tt, cs, Icons.menu_book_rounded,
             Colors.green, '$finished', 'Books finished')),
@@ -915,12 +916,12 @@ class _StatsScreenState extends State<StatsScreen>
         child: Column(
           children: list.map((e) {
             final name = e[labelKey]?.toString() ?? '';
-            final ms = (e['time'] as num?)?.toDouble() ?? 0;
+            final secs = (e['time'] as num?)?.toDouble() ?? 0;
             return ListTile(
               dense: true,
               title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
-              trailing: Text(_formatDuration(ms / 1000),
+              trailing: Text(_formatDuration(secs),
                   style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
             );
           }).toList(),
