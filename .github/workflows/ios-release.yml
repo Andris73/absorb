@@ -38,7 +38,7 @@ jobs:
       APPLE_TEAM_ID: 3W9C9PWP64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Apple requires Xcode 26+ / iOS 26 SDK for App Store uploads. Pick the
       # newest Xcode installed on the runner; if it's still <26 we'll need to

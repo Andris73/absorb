@@ -46,7 +46,7 @@ jobs:
       pre: ${{ steps.version.outputs.pre }}
       raw: ${{ steps.version.outputs.raw }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Read pubspec version
         id: version
@@ -128,9 +128,9 @@ jobs:
     env:
       PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -199,7 +199,7 @@ jobs:
       BUNDLE_ID: com.barnabas.absorb
       APPLE_TEAM_ID: 3W9C9PWP64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Apple requires Xcode 26+ / iOS 26 SDK for App Store uploads. Pick the
       # newest Xcode installed on the runner.
