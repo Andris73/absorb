@@ -3,6 +3,7 @@ import AppIntents
 import Flutter
 import UIKit
 import AVFoundation
+import AVKit
 import MediaPlayer
 import just_audio
 
@@ -275,7 +276,8 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
 
     // iOS audio output device switching is not implemented yet — iOS routes
     // through the system's MPVolumeView/AVRoutePicker rather than letting apps
-    // pick output devices directly. Stub these so the channel responds.
+    // pick output devices directly. Stub those, but do expose the AirPlay
+    // picker (the one piece the in-app button needs).
     let channel = FlutterMethodChannel(name: "com.absorb.audio_output",
                                        binaryMessenger: messenger)
     channel.setMethodCallHandler { (call, result) in
@@ -284,6 +286,34 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
         result([])
       case "setAudioOutputDevice", "resetAudioOutput":
         result(false)
+      case "showRoutePicker":
+        // There is no public API to present the AirPlay picker directly, so
+        // add a transient AVRoutePickerView to the key window and tap its
+        // button. The view is removed again shortly after.
+        DispatchQueue.main.async {
+          let scenes = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+          let host = scenes.flatMap { $0.windows }.first { $0.isKeyWindow }
+            ?? scenes.flatMap { $0.windows }.first
+          guard let window = host else { result(false); return }
+          let picker = AVRoutePickerView(frame: CGRect(x: -1000, y: -1000, width: 0, height: 0))
+          picker.prioritizesVideoDevices = false
+          window.addSubview(picker)
+          func findButton(_ view: UIView) -> UIButton? {
+            if let b = view as? UIButton { return b }
+            for sub in view.subviews { if let b = findButton(sub) { return b } }
+            return nil
+          }
+          var triggered = false
+          if let button = findButton(picker) {
+            button.sendActions(for: .touchUpInside)
+            triggered = true
+          }
+          DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            picker.removeFromSuperview()
+          }
+          result(triggered)
+        }
       default:
         result(FlutterMethodNotImplemented)
       }

@@ -1578,6 +1578,12 @@ class CardActionDelegate {
             );
           },
         );
+      case 'airplay':
+        return CardWideButton(
+          icon: Icons.airplay_rounded, label: 'AirPlay',
+          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
+          onTap: () => handleAirPlayTap(),
+        );
       case 'history':
         return CardWideButton(
           icon: Icons.history_rounded, label: (compact || short) ? l.historyShort : l.playbackHistory,
@@ -1690,6 +1696,11 @@ class CardActionDelegate {
               onTap: () { Navigator.pop(ctx); handleCastTap(context, accent); },
             );
           },
+        );
+      case 'airplay':
+        return MoreMenuItem(
+          icon: Icons.airplay_rounded, label: 'AirPlay', accent: accent,
+          onTap: () { Navigator.pop(ctx); handleAirPlayTap(); },
         );
       case 'history':
         return MoreMenuItem(
@@ -1809,6 +1820,14 @@ class CardActionDelegate {
         episodeTitle: recentEpisode?['title'] as String?,
       ),
     ));
+  }
+
+  /// iOS only: open the system AirPlay route picker. Routed through the native
+  /// AVRoutePickerView (see AppDelegate's com.absorb.audio_output channel).
+  static const MethodChannel _audioOutputChannel =
+      MethodChannel('com.absorb.audio_output');
+  void handleAirPlayTap() {
+    _audioOutputChannel.invokeMethod('showRoutePicker').catchError((_) => null);
   }
 
   void handleCastTap(BuildContext ctx, Color accent) {
