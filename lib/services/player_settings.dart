@@ -143,6 +143,12 @@ class PlayerSettings {
   static Future<bool> getAutoDownloadOnStream() => _get('autoDownloadOnStream', false);
   static Future<void> setAutoDownloadOnStream(bool value) => _set('autoDownloadOnStream', value);
 
+  /// When on, starting a book that's part of a series automatically turns on
+  /// series auto-download for that series (the same per-series toggle shown in
+  /// the series sheet). Default off.
+  static Future<bool> getAutoSeriesDownloadDefault() => _get('autoSeriesDownloadDefault', false);
+  static Future<void> setAutoSeriesDownloadDefault(bool value) => _set('autoSeriesDownloadDefault', value);
+
   /// Bookmark sort: 'newest' (default) or 'position'
   static Future<String> getBookmarkSort() => _get('bookmarkSort', 'newest');
   static Future<void> setBookmarkSort(String value) => _set('bookmarkSort', value);

@@ -109,6 +109,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loggingEnabled = false;
   bool _fullScreenPlayer = false;
   bool _lockPortrait = false;
+  bool _autoSeriesDownloadDefault = false;
   // card button layout is now managed in the edit sheet (more menu)
   bool _snappyTransitions = false;
   bool _classicWording = false;
@@ -703,9 +704,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final rmabApiToken = await ScopedPrefs.getString(kRmabApiTokenKey);
     final sleepRewind = await PlayerSettings.getSleepRewindSeconds();
     final lockPortrait = await PlayerSettings.getLockPortrait();
+    final autoSeriesDownload = await PlayerSettings.getAutoSeriesDownloadDefault();
     if (mounted) setState(() {
       _sleepRewindSeconds = sleepRewind;
       _lockPortrait = lockPortrait;
+      _autoSeriesDownloadDefault = autoSeriesDownload;
       _rmabBaseUrl = rmabBaseUrl;
       _rmabApiToken = rmabApiToken;
       _rewindSettings = s;
@@ -2493,6 +2496,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onChanged: _loaded ? (v) {
                         setState(() => _autoDownloadOnStream = v);
                         PlayerSettings.setAutoDownloadOnStream(v);
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    SwitchListTile(
+                      title: const Text('Auto-download series'),
+                      subtitle: Text(
+                        _autoSeriesDownloadDefault
+                            ? 'Starting a book in a series keeps the next books downloaded'
+                            : 'Turn on series downloads yourself from the series menu',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _autoSeriesDownloadDefault,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _autoSeriesDownloadDefault = v);
+                        PlayerSettings.setAutoSeriesDownloadDefault(v);
                       } : null,
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),

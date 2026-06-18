@@ -2021,9 +2021,12 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   }
 
   void _checkRollingDownloads(String playingKey) async {
-    if (_api == null || isOffline || _rollingDownloadSeries.isEmpty) {
-      return;
-    }
+    if (_api == null || isOffline) return;
+    // With the "auto series download" default on, a book in a series enables
+    // rolling download for that series on first play (books only).
+    final autoSeriesDefault =
+        await PlayerSettings.getAutoSeriesDownloadDefault();
+    if (_rollingDownloadSeries.isEmpty && !autoSeriesDefault) return;
     final count = await PlayerSettings.getRollingDownloadCount();
 
     if (playingKey.length > 36) {
@@ -2040,7 +2043,13 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           (seriesId, _) = _StateMixin._extractSeries(fullItem);
         }
       }
-      if (seriesId != null && _rollingDownloadSeries.contains(seriesId)) {
+      if (seriesId == null) return;
+      if (autoSeriesDefault && !_rollingDownloadSeries.contains(seriesId)) {
+        _rollingDownloadSeries.add(seriesId);
+        await _saveRollingDownloadSeries();
+        notifyListeners();
+      }
+      if (_rollingDownloadSeries.contains(seriesId)) {
         _rollingDownloadBook(playingKey, count);
       }
     }
