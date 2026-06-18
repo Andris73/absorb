@@ -234,7 +234,8 @@ class BookmarkService {
         final bm = Bookmark.fromJson(jsonDecode(json));
         if (bm.id == bookmarkId) {
           if (title != null) bm.title = title;
-          bm.note = note ?? bm.note;
+          // null = leave the note as-is; empty string = clear it.
+          if (note != null) bm.note = note.isEmpty ? null : note;
           time = bm.positionSeconds;
           serverTitle = bm.serverTitle;
           updated.add(jsonEncode(bm.toJson()));
