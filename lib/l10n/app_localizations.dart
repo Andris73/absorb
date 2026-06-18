@@ -10704,6 +10704,72 @@ abstract class AppLocalizations {
   /// **'Couldn\'t play this spot.'**
   String get bookmarkPreviewFailed;
 
+  /// No description provided for @clipExport.
+  ///
+  /// In en, this message translates to:
+  /// **'Export clip'**
+  String get clipExport;
+
+  /// No description provided for @clipJumpToStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Jump to start'**
+  String get clipJumpToStart;
+
+  /// No description provided for @clipJumpToEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'Jump to end'**
+  String get clipJumpToEnd;
+
+  /// No description provided for @clipSetStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Set start'**
+  String get clipSetStart;
+
+  /// No description provided for @clipSetEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'Set end'**
+  String get clipSetEnd;
+
+  /// No description provided for @clipInLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'In'**
+  String get clipInLabel;
+
+  /// No description provided for @clipOutLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Out'**
+  String get clipOutLabel;
+
+  /// No description provided for @clipSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save clip'**
+  String get clipSave;
+
+  /// No description provided for @clipExportSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved {filename}'**
+  String clipExportSaved(String filename);
+
+  /// No description provided for @clipExportClamped.
+  ///
+  /// In en, this message translates to:
+  /// **'Clip saved, shortened to the end of this track'**
+  String get clipExportClamped;
+
+  /// No description provided for @clipExportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t export the clip.'**
+  String get clipExportFailed;
+
   /// No description provided for @fsPickerTitle.
   ///
   /// In en, this message translates to:

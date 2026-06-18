@@ -850,9 +850,17 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
                       final hasNote = bm.note != null && bm.note!.isNotEmpty;
                       return InkWell(
                         onTap: () async {
-                          final result = await showDialog<BookmarkDetailResult>(
+                          final result = await showModalBottomSheet<BookmarkDetailResult>(
                             context: ctx,
-                            builder: (_) => BookmarkDetailDialog(
+                            isScrollControlled: true,
+                            showDragHandle: true,
+                            backgroundColor:
+                                Theme.of(ctx).bottomSheetTheme.backgroundColor,
+                            shape: const RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.vertical(top: Radius.circular(24)),
+                            ),
+                            builder: (_) => BookmarkDetailSheet(
                               itemId: widget.itemId,
                               bookmark: bm,
                               api: context.read<AuthProvider>().apiService,

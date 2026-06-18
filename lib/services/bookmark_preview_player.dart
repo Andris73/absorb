@@ -1,12 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'api_service.dart';
 import 'audio_player_service.dart';
-import 'download_service.dart';
+import 'book_track_resolver.dart';
 import 'offline_source.dart';
 
 /// Auditions a book at a given position WITHOUT moving the user's real playback
@@ -27,13 +26,18 @@ class BookmarkPreviewPlayer extends ChangeNotifier {
   bool? _mainWasPlaying;
   Timer? _autoStop;
 
-  /// The audition auto-stops after this long so a single tap never plays the
-  /// rest of the book (a single-file m4b would otherwise run for hours). Plenty
-  /// for a bookmark preview; easy to bump or wire to a setting.
-  static const Duration _autoStopAfter = Duration(seconds: 60);
+  // Track-local position (ms) the current audition started at, so pausing then
+  // hitting Listen again restarts the clip from the top instead of resuming
+  // mid-clip - makes it easy to re-judge the in-point while trimming.
+  int? _lastSeekMs;
 
-  // (source path/url, track duration seconds, isLocal) resolved once per book.
-  List<({String source, double duration, bool local})>? _tracks;
+  /// The audition auto-stops after this long so a single tap never plays the
+  /// rest of the book (a single-file m4b would otherwise run for hours). The
+  /// bookmark dialog keeps this in sync with the chosen clip length, so what you
+  /// preview is exactly what an export would produce.
+  Duration clipLength = const Duration(seconds: 60);
+
+  List<BookTrack>? _tracks;
 
   bool get isLoading => _loading;
   bool get isPlaying => _playing;
@@ -49,6 +53,11 @@ class BookmarkPreviewPlayer extends ChangeNotifier {
         await p.pause();
       } else {
         _pauseMain();
+        // Restart from the clip start so every replay auditions the beginning
+        // of the selection (also recovers from the auto-stop at the clip end).
+        if (_lastSeekMs != null) {
+          await p.seek(Duration(milliseconds: _lastSeekMs!));
+        }
         _startAutoStop();
         await p.play();
       }
@@ -71,22 +80,11 @@ class BookmarkPreviewPlayer extends ChangeNotifier {
       throw StateError('no audio for $itemId');
     }
 
-    // Map the global position to a track + local offset.
-    var acc = 0.0;
-    var idx = tracks.length - 1;
-    var local = globalSeconds;
-    for (var i = 0; i < tracks.length; i++) {
-      if (globalSeconds < acc + tracks[i].duration || i == tracks.length - 1) {
-        idx = i;
-        final upper = tracks[i].duration > 0 ? tracks[i].duration : globalSeconds;
-        local = (globalSeconds - acc).clamp(0.0, upper);
-        break;
-      }
-      acc += tracks[i].duration;
-    }
-    final track = tracks[idx];
+    final hit = BookTrackResolver.mapGlobal(tracks, globalSeconds);
+    final track = hit.track;
+    final local = hit.localOffset;
     debugPrint('[BookmarkPreview] $itemId: play ${globalSeconds.toStringAsFixed(1)}s -> '
-        'track[$idx] ${track.local ? "local" : "stream"} @${local.toStringAsFixed(1)}s');
+        'track[${hit.index}] ${track.local ? "local" : "stream"} @${local.toStringAsFixed(1)}s');
 
     try {
       await _disposePlayer();
@@ -111,10 +109,11 @@ class BookmarkPreviewPlayer extends ChangeNotifier {
         await player.setAudioSource(
             AudioSource.uri(Uri.parse(track.source), headers: api?.mediaHeaders));
       }
-      await player.seek(Duration(milliseconds: (local * 1000).round()));
+      _lastSeekMs = (local * 1000).round();
+      await player.seek(Duration(milliseconds: _lastSeekMs!));
       // Start the auto-stop BEFORE awaiting play(): just_audio's play() future
       // doesn't complete until playback ends, so a timer after it never armed -
-      // that's why the 60s cap wasn't firing.
+      // that's why the cap wasn't firing.
       _startAutoStop();
       await player.play();
     } catch (e) {
@@ -125,59 +124,8 @@ class BookmarkPreviewPlayer extends ChangeNotifier {
     }
   }
 
-  Future<List<({String source, double duration, bool local})>?> _resolveTracks() async {
-    if (_tracks != null) return _tracks;
-
-    // Downloaded book: local files + cached track durations.
-    final localPaths = DownloadService().getLocalPaths(itemId);
-    final sessionRaw = DownloadService().getCachedSessionData(itemId);
-    if (localPaths != null && localPaths.isNotEmpty && sessionRaw != null) {
-      try {
-        final session = jsonDecode(sessionRaw) as Map<String, dynamic>;
-        final audioTracks = session['audioTracks'] as List<dynamic>?;
-        if (audioTracks != null && audioTracks.length == localPaths.length) {
-          _tracks = [
-            for (var i = 0; i < localPaths.length; i++)
-              (
-                source: localPaths[i],
-                duration: ((audioTracks[i] as Map<String, dynamic>)['duration'] as num?)?.toDouble() ?? 0,
-                local: true,
-              ),
-          ];
-          debugPrint('[BookmarkPreview] $itemId: ${_tracks!.length} local track(s)');
-          return _tracks;
-        }
-      } catch (_) {}
-    }
-
-    // Streamed book: build per-file URLs from the library item.
-    if (api == null) {
-      debugPrint('[BookmarkPreview] $itemId: no api (not downloaded, not logged in?)');
-      return null;
-    }
-    final item = await api!.getLibraryItem(itemId);
-    if (item == null) {
-      debugPrint('[BookmarkPreview] $itemId: getLibraryItem returned null');
-      return null;
-    }
-    final media = item['media'] as Map<String, dynamic>? ?? {};
-    final audioFiles = ((media['audioFiles'] as List<dynamic>?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .toList()
-      ..sort((a, b) => ((a['index'] as num?) ?? 0).compareTo((b['index'] as num?) ?? 0));
-    if (audioFiles.isEmpty) {
-      debugPrint('[BookmarkPreview] $itemId: library item has no audioFiles');
-      return null;
-    }
-    _tracks = [
-      for (final af in audioFiles)
-        (
-          source: api!.buildFileUrl(itemId, af['ino']?.toString() ?? ''),
-          duration: (af['duration'] as num?)?.toDouble() ?? 0,
-          local: false,
-        ),
-    ];
-    debugPrint('[BookmarkPreview] $itemId: ${_tracks!.length} streamed track(s)');
+  Future<List<BookTrack>?> _resolveTracks() async {
+    _tracks ??= await BookTrackResolver.resolve(itemId, api);
     return _tracks;
   }
 
@@ -189,8 +137,8 @@ class BookmarkPreviewPlayer extends ChangeNotifier {
 
   void _startAutoStop() {
     _autoStop?.cancel();
-    _autoStop = Timer(_autoStopAfter, () {
-      debugPrint('[BookmarkPreview] auto-stop after ${_autoStopAfter.inSeconds}s');
+    _autoStop = Timer(clipLength, () {
+      debugPrint('[BookmarkPreview] auto-stop after ${clipLength.inSeconds}s');
       _player?.pause();
     });
   }
@@ -198,6 +146,7 @@ class BookmarkPreviewPlayer extends ChangeNotifier {
   Future<void> _disposePlayer() async {
     _autoStop?.cancel();
     _autoStop = null;
+    _lastSeekMs = null;
     await _stateSub?.cancel();
     _stateSub = null;
     final p = _player;
