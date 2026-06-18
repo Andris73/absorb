@@ -605,7 +605,27 @@ class AndroidAutoService {
         }
       }
 
+      // Order Continue to match the in-app Absorbing page: the user's actively
+      // absorbing items come first, in that page's order (most recent first).
+      // The server's mediaProgress.lastUpdate gets bumped on download/sync, so
+      // sorting by it alone looks like "download order" (GH #287); the persisted
+      // absorbing list is the real listening order. Items not in that list
+      // (e.g. continue-series next books) fall after, by lastUpdate.
+      final absorbingOrder =
+          await ScopedPrefs.getStringList('absorbing_seen_ids');
+      final absorbingIndex = <String, int>{};
+      for (var i = 0; i < absorbingOrder.length; i++) {
+        absorbingIndex.putIfAbsent(absorbingOrder[i], () => i);
+      }
+      String continueKey(Map<String, dynamic> e) {
+        final id = e['id'] as String? ?? '';
+        final ep = e['recentEpisode'] as Map<String, dynamic>?;
+        return ep != null ? '$id-${ep['id'] ?? ''}' : id;
+      }
       continueEntities.sort((a, b) {
+        final ai = absorbingIndex[continueKey(a)] ?? (1 << 30);
+        final bi = absorbingIndex[continueKey(b)] ?? (1 << 30);
+        if (ai != bi) return ai.compareTo(bi);
         final aTime = ((a['mediaProgress'] as Map<String, dynamic>?)?['lastUpdate'] as num?)?.toDouble() ?? 0;
         final bTime = ((b['mediaProgress'] as Map<String, dynamic>?)?['lastUpdate'] as num?)?.toDouble() ?? 0;
         return bTime.compareTo(aTime);
