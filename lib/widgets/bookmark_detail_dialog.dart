@@ -202,12 +202,18 @@ class _BookmarkDetailSheetState extends State<BookmarkDetailSheet> {
     final l = AppLocalizations.of(context)!;
     final tt = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
+    final mq = MediaQuery.of(context);
+    // Clear the keyboard when it's open, otherwise the system navigation bar
+    // (3-button mode) so the buttons aren't hidden behind it.
+    final bottomInset = mq.viewInsets.bottom > mq.viewPadding.bottom
+        ? mq.viewInsets.bottom
+        : mq.viewPadding.bottom;
     return Padding(
       padding: EdgeInsets.only(
         left: 20,
         right: 20,
         top: 4,
-        bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
+        bottom: 20 + bottomInset,
       ),
       child: SingleChildScrollView(
         child: Column(
@@ -302,19 +308,9 @@ class _BookmarkDetailSheetState extends State<BookmarkDetailSheet> {
                   child: Text(l.bookmarksScreenClose),
                 ),
                 const SizedBox(width: 8),
-                TextButton(
-                  onPressed: _saving
-                      ? null
-                      : () async {
-                          await _persist();
-                          if (mounted) {
-                            Navigator.pop(context, (action: 'saved', position: _seconds));
-                          }
-                        },
-                  child: Text(l.save),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
+                // Jump is the secondary action; Save is the prominent primary
+                // (rightmost, filled) so it's not easy to hit Jump by mistake.
+                OutlinedButton(
                   onPressed: _saving
                       ? null
                       : () async {
@@ -324,6 +320,18 @@ class _BookmarkDetailSheetState extends State<BookmarkDetailSheet> {
                           }
                         },
                   child: Text(l.bookmarksJump),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _saving
+                      ? null
+                      : () async {
+                          await _persist();
+                          if (mounted) {
+                            Navigator.pop(context, (action: 'saved', position: _seconds));
+                          }
+                        },
+                  child: Text(l.save),
                 ),
               ],
             ),

@@ -139,12 +139,18 @@ class _ClipEditorSheetState extends State<ClipEditorSheet> {
     final l = AppLocalizations.of(context)!;
     final tt = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
+    final mq = MediaQuery.of(context);
+    // Clear the keyboard when it's open, otherwise the system navigation bar
+    // (3-button mode) so the buttons aren't hidden behind it.
+    final bottomInset = mq.viewInsets.bottom > mq.viewPadding.bottom
+        ? mq.viewInsets.bottom
+        : mq.viewPadding.bottom;
     return Padding(
       padding: EdgeInsets.only(
         left: 20,
         right: 20,
         top: 4,
-        bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
+        bottom: 20 + bottomInset,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -242,7 +248,14 @@ class _ClipEditorSheetState extends State<ClipEditorSheet> {
           ),
         ],
       ),
-      const SizedBox(height: 20),
+      Center(
+        child: TextButton.icon(
+          icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
+          label: const Text('Preview ending'),
+          onPressed: busy ? null : () => _c.previewEnd(),
+        ),
+      ),
+      const SizedBox(height: 12),
       Row(
         children: [
           Expanded(

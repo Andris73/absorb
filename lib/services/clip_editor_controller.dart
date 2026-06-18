@@ -97,11 +97,12 @@ class ClipEditorController extends ChangeNotifier {
       _posSub = player.positionStream.listen((d) {
         if (_disposed) return;
         _position = _trackBase + d.inMilliseconds / 1000.0;
-        // Free-play to the window end (not the out point) so the user can hear
-        // past where they think the clip ends and place the out mark by ear.
-        if (_playing && _position >= _winEnd) {
+        // Stop at the out point so the preview ends exactly where the clip does
+        // and you can hear where it stops.
+        if (_playing && _position >= _outPoint) {
           player.pause();
-          player.seek(Duration(milliseconds: ((_winEnd - _trackBase) * 1000).round()));
+          _position = _outPoint;
+          player.seek(Duration(milliseconds: ((_outPoint - _trackBase) * 1000).round()));
         }
         notifyListeners();
       });
@@ -130,10 +131,21 @@ class ClipEditorController extends ChangeNotifier {
     if (p.playing) {
       await p.pause();
     } else {
-      // Replaying from the window end restarts at the in point.
-      if (_position >= _winEnd - 0.1) await seekToGlobal(_inPoint);
+      // Once it's stopped at the out point, play restarts the clip from the in point.
+      if (_position >= _outPoint - 0.1) await seekToGlobal(_inPoint);
       await p.play();
     }
+  }
+
+  /// Audition just the tail of the clip: jump a few seconds before the out
+  /// point and play through to it. Playback stops at the out point, so this is
+  /// the quick way to fine-tune where the clip ends.
+  Future<void> previewEnd() async {
+    final p = _player;
+    if (p == null) return;
+    final from = (_outPoint - 4).clamp(_inPoint, _outPoint);
+    await seekToGlobal(from);
+    await p.play();
   }
 
   Future<void> seekToGlobal(double global) async {
