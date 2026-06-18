@@ -136,7 +136,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Recent sessions is intentionally absent: it infinite-scrolls, so it is
   // pinned to the bottom of the stats page and can't be reordered or hidden.
   static const _statsSectionIds = [
-    'hero', 'goals', 'periods', 'activity', 'chart', 'heatmap', 'dayofweek', 'top',
+    'hero', 'goals', 'periods', 'activity', 'chart', 'heatmap', 'dayofweek', 'top', 'yearreview',
   ];
   int _streamingCacheSizeMb = 0;
   bool _localServerEnabled = false;
@@ -483,6 +483,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case 'heatmap': return l.statsChartHeatmap;
       case 'dayofweek': return l.statsDayOfWeek;
       case 'top': return l.statsMostListened;
+      case 'yearreview': return 'Year in Review';
     }
     return id;
   }
@@ -497,6 +498,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case 'heatmap': return Icons.calendar_view_month_rounded;
       case 'dayofweek': return Icons.view_week_rounded;
       case 'top': return Icons.star_outline_rounded;
+      case 'yearreview': return Icons.auto_awesome_rounded;
     }
     return Icons.widgets_outlined;
   }

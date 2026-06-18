@@ -2149,6 +2149,16 @@ class ApiService {
     return null;
   }
 
+  /// GET /api/me/stats/year/:year — the signed-in user's year-in-review stats.
+  Future<Map<String, dynamic>?> getMyYearStats(int year) async {
+    try {
+      final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/me/stats/year/$year'),
+          timeout: const Duration(seconds: 30));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) { debugPrint('[API] getMyYearStats error: $e'); }
+    return null;
+  }
+
   /// Create a new user (admin only)
   Future<Map<String, dynamic>?> createUser({
     required String username,

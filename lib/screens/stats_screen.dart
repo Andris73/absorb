@@ -45,12 +45,21 @@ class _StatsScreenState extends State<StatsScreen>
   String? _selectedSection;
   double _selectedDaySeconds = 0;
   double _timeSavedSeconds = 0;
+  int _yirYear = DateTime.now().year;
+  Map<String, dynamic>? _yirData;
+  bool _yirLoading = false;
+  int? _yirLoadedYear;
   late AnimationController _animController;
 
   // Recent sessions stays out of the reorderable sections: it loads more as
   // you scroll, so anything placed under it would never be reachable.
   static const _defaultSectionOrder = [
-    'hero', 'goals', 'periods', 'activity', 'chart', 'heatmap', 'dayofweek', 'top',
+    'hero', 'goals', 'periods', 'activity', 'chart', 'heatmap', 'dayofweek', 'top', 'yearreview',
+  ];
+
+  static const _monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
   ];
   late Animation<double> _animValue;
 
@@ -135,6 +144,22 @@ class _StatsScreenState extends State<StatsScreen>
       _statsOrder = order;
       _statsHidden = hidden.toSet();
       _timeSavedSeconds = timeSaved;
+    });
+  }
+
+  Future<void> _loadYearReview(int year) async {
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) return;
+    setState(() {
+      _yirYear = year;
+      _yirLoading = true;
+    });
+    final data = await api.getMyYearStats(year);
+    if (!mounted) return;
+    setState(() {
+      _yirData = data;
+      _yirLoadedYear = year;
+      _yirLoading = false;
     });
   }
 
@@ -391,6 +416,14 @@ class _StatsScreenState extends State<StatsScreen>
     final avgDaily = _averageDailySeconds(dailyMap);
     final topItems = _topItems();
 
+    if (!_statsHidden.contains('yearreview') &&
+        _yirLoadedYear != _yirYear &&
+        !_yirLoading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadYearReview(_yirYear);
+      });
+    }
+
     final sections = <String, List<Widget>>{
       'hero': [
         _heroStat(tt, cs, l, totalSeconds),
@@ -514,6 +547,7 @@ class _StatsScreenState extends State<StatsScreen>
           const SizedBox(height: 28),
         ],
       ],
+      'yearreview': _yearReviewSection(cs, tt),
     };
 
     final order = [
@@ -722,6 +756,181 @@ class _StatsScreenState extends State<StatsScreen>
           letterSpacing: 0.5,
         ));
   }
+
+  List<Widget> _yearReviewSection(ColorScheme cs, TextTheme tt) {
+    final thisYear = DateTime.now().year;
+    final years = [for (var y = thisYear; y >= thisYear - 6; y--) y];
+    final header = Row(children: [
+      Expanded(child: _sectionTitle(tt, cs, 'Year in Review')),
+      Container(
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<int>(
+            value: _yirYear,
+            isDense: true,
+            borderRadius: BorderRadius.circular(12),
+            style: tt.bodyMedium?.copyWith(color: cs.onSurface),
+            items: [
+              for (final y in years) DropdownMenuItem(value: y, child: Text('$y')),
+            ],
+            onChanged: (y) {
+              if (y != null && y != _yirYear) _loadYearReview(y);
+            },
+          ),
+        ),
+      ),
+    ]);
+
+    final body = <Widget>[];
+    final d = _yirData;
+    final totalMs = (d?['totalListeningTime'] as num?)?.toDouble() ?? 0;
+    final sessions = (d?['totalListeningSessions'] as num?)?.toInt() ?? 0;
+    final finished = (d?['numBooksFinished'] as num?)?.toInt() ?? 0;
+    final listened = (d?['numBooksListened'] as num?)?.toInt() ?? 0;
+
+    if (_yirLoading) {
+      body.add(const Padding(
+        padding: EdgeInsets.symmetric(vertical: 28),
+        child: Center(child: CircularProgressIndicator()),
+      ));
+    } else if (d == null || (totalMs <= 0 && sessions == 0 && finished == 0)) {
+      body.add(Container(
+        width: double.infinity,
+        decoration: _cardDeco(cs),
+        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+        child: Text('Nothing listened in $_yirYear yet',
+            textAlign: TextAlign.center,
+            style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+      ));
+    } else {
+      final api = context.read<AuthProvider>().apiService;
+      final coverIds =
+          ((d['booksWithCovers'] as List?) ?? const []).whereType<String>().toList();
+      if (api != null && coverIds.isNotEmpty) {
+        body.add(SizedBox(
+          height: 84,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: coverIds.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) => ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: CachedNetworkImage(
+                imageUrl: api.getCoverUrl(coverIds[i], width: 120),
+                width: 56,
+                height: 84,
+                fit: BoxFit.cover,
+                errorWidget: (_, __, ___) =>
+                    Container(width: 56, height: 84, color: cs.surfaceContainerHigh),
+              ),
+            ),
+          ),
+        ));
+        body.add(const SizedBox(height: 14));
+      }
+
+      body.add(Row(children: [
+        Expanded(child: _accentStatCard(tt, cs, Icons.headphones_rounded,
+            cs.primary, _formatDuration(totalMs / 1000), 'Listened')),
+        const SizedBox(width: 8),
+        Expanded(child: _accentStatCard(tt, cs, Icons.menu_book_rounded,
+            Colors.green, '$finished', 'Books finished')),
+      ]));
+      body.add(const SizedBox(height: 8));
+      body.add(Row(children: [
+        Expanded(child: _accentStatCard(tt, cs, Icons.play_circle_outline_rounded,
+            cs.tertiary, '$sessions', 'Sessions')),
+        const SizedBox(width: 8),
+        Expanded(child: _accentStatCard(tt, cs, Icons.library_books_rounded,
+            Colors.teal, '$listened', 'Books listened')),
+      ]));
+      body.add(const SizedBox(height: 14));
+
+      final highlights = <Widget>[];
+      final mm = d['mostListenedMonth'];
+      if (mm is Map) {
+        final name = _monthName((mm['month'] as num?)?.toInt());
+        if (name.isNotEmpty) {
+          highlights.add(_yirRow(cs, tt, Icons.calendar_month_rounded, 'Top month', name));
+        }
+      }
+      final mn = d['mostListenedNarrator'];
+      if (mn is Map && (mn['name']?.toString().isNotEmpty ?? false)) {
+        highlights.add(_yirRow(cs, tt, Icons.record_voice_over_rounded,
+            'Top narrator', mn['name'].toString()));
+      }
+      final lb = d['longestAudiobookFinished'];
+      if (lb is Map && (lb['title']?.toString().isNotEmpty ?? false)) {
+        highlights.add(_yirRow(cs, tt, Icons.straighten_rounded,
+            'Longest finished', lb['title'].toString()));
+      }
+      if (highlights.isNotEmpty) {
+        body.add(Container(
+          decoration: _cardDeco(cs),
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(children: highlights),
+        ));
+        body.add(const SizedBox(height: 14));
+      }
+
+      body.add(_yirTopList(cs, tt, 'Top authors', d['topAuthors'], 'name'));
+      body.add(_yirTopList(cs, tt, 'Top genres', d['topGenres'], 'genre'));
+    }
+
+    return [header, const SizedBox(height: 10), ...body, const SizedBox(height: 28)];
+  }
+
+  Widget _yirRow(ColorScheme cs, TextTheme tt, IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      child: Row(children: [
+        Icon(icon, size: 18, color: cs.primary.withValues(alpha: 0.7)),
+        const SizedBox(width: 12),
+        Text(label, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(value,
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tt.bodyMedium?.copyWith(color: cs.onSurface, fontWeight: FontWeight.w600)),
+        ),
+      ]),
+    );
+  }
+
+  Widget _yirTopList(ColorScheme cs, TextTheme tt, String title, dynamic raw, String labelKey) {
+    final list = (raw as List?)?.whereType<Map>().toList() ?? [];
+    if (list.isEmpty) return const SizedBox.shrink();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _sectionTitle(tt, cs, title),
+      const SizedBox(height: 8),
+      Container(
+        decoration: _cardDeco(cs),
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          children: list.map((e) {
+            final name = e[labelKey]?.toString() ?? '';
+            final ms = (e['time'] as num?)?.toDouble() ?? 0;
+            return ListTile(
+              dense: true,
+              title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+              trailing: Text(_formatDuration(ms / 1000),
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+            );
+          }).toList(),
+        ),
+      ),
+      const SizedBox(height: 14),
+    ]);
+  }
+
+  String _monthName(int? m) => (m != null && m >= 0 && m < 12) ? _monthNames[m] : '';
 
   // --- GOAL CARD ---
 
