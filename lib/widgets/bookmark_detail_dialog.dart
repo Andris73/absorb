@@ -1,9 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
+import '../providers/library_provider.dart';
 import '../services/api_service.dart';
 import '../services/bookmark_service.dart';
 import '../services/bookmark_preview_player.dart';
+import '../services/download_service.dart';
 import 'clip_editor_sheet.dart';
 
 /// Result of [BookmarkDetailSheet]. [action] is 'jump' (caller should seek
@@ -96,6 +101,13 @@ class _BookmarkDetailSheetState extends State<BookmarkDetailSheet> {
   Future<void> _openClipEditor() async {
     await _preview.stop();
     if (!mounted) return;
+    // iOS can't export from a streaming book, so prompt to download up front
+    // rather than letting the user trim a clip and only fail at Save. Android
+    // exports streamed clips fine, so it always opens the editor.
+    if (Platform.isIOS && !DownloadService().isDownloaded(widget.itemId)) {
+      await _promptDownload();
+      return;
+    }
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -111,6 +123,51 @@ class _BookmarkDetailSheetState extends State<BookmarkDetailSheet> {
             _titleC.text.trim().isEmpty ? widget.bookmark.title : _titleC.text.trim(),
         api: widget.api,
       ),
+    );
+  }
+
+  Future<void> _promptDownload() async {
+    final l = AppLocalizations.of(context)!;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: Text(l.clipDownloadToExport),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l.download),
+          ),
+        ],
+      ),
+    );
+    if (go == true) await _startDownload();
+  }
+
+  Future<void> _startDownload() async {
+    final api = widget.api;
+    if (api == null) return;
+    final libraryId = context.read<LibraryProvider>().selectedLibraryId;
+    var title =
+        _titleC.text.trim().isEmpty ? widget.bookmark.title : _titleC.text.trim();
+    var author = '';
+    try {
+      final item = await api.getLibraryItem(widget.itemId);
+      final meta = (item?['media'] as Map<String, dynamic>?)?['metadata']
+          as Map<String, dynamic>?;
+      title = meta?['title'] as String? ?? title;
+      author = meta?['authorName'] as String? ?? '';
+    } catch (_) {}
+    await DownloadService().downloadItem(
+      api: api,
+      itemId: widget.itemId,
+      title: title,
+      author: author,
+      coverUrl: api.getCoverUrl(widget.itemId, width: 400),
+      libraryId: libraryId,
     );
   }
 
