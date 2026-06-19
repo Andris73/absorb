@@ -142,6 +142,28 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
 
   // MARK: - Hand-off
 
+  /// Another process (the foreground app) has claimed audio ownership. Stash our
+  /// spot so the owner can resume from it, drop the now-playing flag, and stop
+  /// the engine so we don't leave a second stream playing that the foreground
+  /// app can't reach. This is the fix for two concurrent streams (#285): a
+  /// widget play intent can start playback in a background process, and without
+  /// this that stream keeps going after the app is reopened and the user presses
+  /// play, leaving two overlapping streams from the same book.
+  func yieldToForegroundOwner() {
+    queue.async { [weak self] in
+      guard let self = self else { return }
+      guard AbsorbAudioEngine.shared.isLoaded || AbsorbAudioEngine.shared.isPlaying else {
+        self.emit("[NativeCore] yieldToForegroundOwner: engine idle, nothing to stop")
+        return
+      }
+      self.emit("[NativeCore] yieldToForegroundOwner: stopping at \(self.globalPosition())s so the foreground app can take over")
+      self.savePosition()
+      UserDefaults(suiteName: Self.appGroup)?.set(false, forKey: "widget_is_playing")
+      self.stopServerSyncTimer()
+      AbsorbAudioEngine.shared.stop()
+    }
+  }
+
   private func flutterIsAlive() -> Bool {
     let defaults = UserDefaults(suiteName: Self.appGroup)
     guard let aliveAt = defaults?.object(forKey: "audio_owner_alive_at") as? Int else {

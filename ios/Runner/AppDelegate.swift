@@ -13,6 +13,10 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
 @objc class AppDelegate: FlutterAppDelegate {
   private var widgetChannel: FlutterMethodChannel?
 
+  /// True once this process has become the foreground audio owner. Used to
+  /// ignore our own takeover broadcast so we don't stop our own playback (#285).
+  private var didClaimAudioOwnership = false
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -225,6 +229,7 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
       "com.barnabas.absorb.widget.playPause",
       "com.barnabas.absorb.widget.skipBack",
       "com.barnabas.absorb.widget.skipForward",
+      "com.barnabas.absorb.host.takeover",
     ]
     for name in names {
       CFNotificationCenterAddObserver(
@@ -234,6 +239,21 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
                 let rawName = name?.rawValue as String? else { return }
           NSLog("[WidgetDebug] AppDelegate received Darwin notification: %@", rawName)
           let appDelegate = Unmanaged<AppDelegate>.fromOpaque(observer).takeUnretainedValue()
+
+          // A foreground process claimed audio ownership. If that's not us,
+          // stop this process's engine so two streams can't overlap (#285).
+          // The owner itself set didClaimAudioOwnership and is .active, so it
+          // ignores its own broadcast.
+          if rawName == "com.barnabas.absorb.host.takeover" {
+            DispatchQueue.main.async {
+              if appDelegate.didClaimAudioOwnership { return }
+              if UIApplication.shared.applicationState == .active { return }
+              NSLog("[WidgetDebug] takeover: foreground app claimed audio, stopping this process's engine")
+              AbsorbPlayerCore.shared.yieldToForegroundOwner()
+            }
+            return
+          }
+
           let action: String
           switch rawName {
           case "com.barnabas.absorb.widget.playPause":   action = "playPause"
@@ -262,6 +282,16 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
       )
     }
     NSLog("[WidgetDebug] AppDelegate registered %d Darwin notification observers", names.count)
+  }
+
+  /// Mark this process as the foreground audio owner and tell any other process
+  /// (e.g. one a widget play intent launched in the background) to stop its
+  /// engine, so two streams can't overlap (#285). A no-op when this is the only
+  /// process. Called from SceneDelegate.sceneDidBecomeActive.
+  func claimAudioOwnershipAndNotifyOthers() {
+    didClaimAudioOwnership = true
+    UserDefaults(suiteName: absorbAppGroup)?.set(Int(getpid()), forKey: "audio_owner_pid")
+    postAbsorbDarwinNotification("com.barnabas.absorb.host.takeover")
   }
 
   private func registerPlatformChannels() {
