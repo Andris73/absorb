@@ -109,6 +109,10 @@ flutter:
   assets:
     - assets/icon/
     - assets/audio/
+  fonts:
+    - family: NotoSansJP
+      fonts:
+        - asset: assets/fonts/NotoSansJP-Regular.otf
 
 flutter_launcher_icons:
   android: true

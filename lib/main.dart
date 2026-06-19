@@ -298,6 +298,15 @@ class AbsorbApp extends StatelessWidget {
         final currentMode = themeNotifier.value;
         final isFlat = flatNotifier.value;
         final overrideLocale = localeNotifier.value;
+        // Japanese shares many codepoints with Chinese (Han unification) but
+        // draws some kanji differently. Flutter on Android doesn't hint the
+        // text engine per locale, so it falls back to Chinese glyph shapes.
+        // When the app is running in Japanese, prepend a bundled Japanese font
+        // so kanji render with the right shapes. Other languages are untouched.
+        final isJapanese =
+            (overrideLocale ?? WidgetsBinding.instance.platformDispatcher.locale)
+                .languageCode == 'ja';
+        final cjkFallback = isJapanese ? const ['NotoSansJP'] : null;
         final coverScheme = coverSchemeNotifier.value;
         final isManual = colorSourceNotifier.value == 'manual';
 
@@ -397,6 +406,7 @@ class AbsorbApp extends StatelessWidget {
               theme: ThemeData(
                 useMaterial3: true,
                 colorScheme: lightScheme,
+                fontFamilyFallback: cjkFallback,
                 scaffoldBackgroundColor: lightScheme.surface,
                 cardTheme: CardThemeData(
                   color: lightScheme.surfaceContainerHigh,
@@ -452,6 +462,7 @@ class AbsorbApp extends StatelessWidget {
               darkTheme: ThemeData(
                 useMaterial3: true,
                 colorScheme: darkScheme,
+                fontFamilyFallback: cjkFallback,
                 scaffoldBackgroundColor: isFlat ? Colors.black : const Color(0xFF0E0E0E),
                 cardTheme: CardThemeData(
                   color: darkScheme.surfaceContainerHigh,
