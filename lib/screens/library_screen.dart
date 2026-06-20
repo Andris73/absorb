@@ -149,6 +149,8 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
   // switch - playlists are per-user, so switching accounts must drop the old
   // user's lists.
   String? _listsLoadedKey;
+  Future<void>? _listsLoadFuture;
+  String? _listsLoadingKey;
   // When a collection/playlist is open the Library grid shows its items in
   // place, like a filter. null = normal library.
   String? _scopeId;
@@ -1204,15 +1206,26 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
 
   // ── Collections / Playlists ──
 
-  Future<void> _loadLists() async {
+  /// Loads the current library+account's collections/playlists. Returns the
+  /// in-flight load so callers (the sort sheet) can await it - that's what
+  /// makes the Lists tab show on first open instead of after a reopen.
+  Future<void> _loadLists() {
     final lib = context.read<LibraryProvider>();
     final api = context.read<AuthProvider>().apiService;
     final libId = lib.selectedLibraryId;
-    if (api == null || libId == null) return;
+    if (api == null || libId == null) return Future.value();
     final key = '${UserAccountService().activeScopeKey}|$libId';
-    if (_listsLoadedKey == key) return;
-    // Library or account changed: drop the previous lists + any open scope
-    // before loading the new ones. Mark the key now so concurrent calls dedupe.
+    if (_listsLoadingKey == key && _listsLoadFuture != null) return _listsLoadFuture!;
+    if (_listsLoadedKey == key) return Future.value();
+    _listsLoadingKey = key;
+    final f = _fetchLists(key, api, libId);
+    _listsLoadFuture = f;
+    return f;
+  }
+
+  Future<void> _fetchLists(String key, ApiService api, String libId) async {
+    // New key (library/account changed) or first load: drop the previous
+    // lists + any open scope before fetching the new ones.
     setState(() {
       _collections = [];
       _playlists = [];
@@ -1221,17 +1234,21 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
         _scopeName = null;
         _scopeItems = [];
       }
-      _listsLoadedKey = key;
     });
-    final results = await Future.wait([
-      api.getLibraryCollections(libId),
-      api.getLibraryPlaylists(libId),
-    ]);
-    if (!mounted || _listsLoadedKey != key) return;
-    setState(() {
-      _collections = results[0].whereType<Map<String, dynamic>>().toList();
-      _playlists = results[1].whereType<Map<String, dynamic>>().toList();
-    });
+    try {
+      final results = await Future.wait([
+        api.getLibraryCollections(libId),
+        api.getLibraryPlaylists(libId),
+      ]);
+      if (!mounted || _listsLoadingKey != key) return;
+      setState(() {
+        _collections = results[0].whereType<Map<String, dynamic>>().toList();
+        _playlists = results[1].whereType<Map<String, dynamic>>().toList();
+        _listsLoadedKey = key;
+      });
+    } finally {
+      if (_listsLoadingKey == key) _listsLoadFuture = null;
+    }
   }
 
   void _openCollection(Map<String, dynamic> c) {
@@ -1276,11 +1293,20 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
 
   Future<void> _playScope() async {
     final id = _scopeId;
-    if (!_scopeIsPlaylist || id == null) return;
+    if (id == null) return;
     final lib = context.read<LibraryProvider>();
-    await PlayerSettings.setQueueModePlaylist(id);
-    await lib.playPlaylistFromStart(id);
+    final isPlaylist = _scopeIsPlaylist;
+    final name = _scopeName ?? '';
+    // Jump to the player first - it shows its own loading state - so the tap
+    // gives instant feedback instead of a dead pause while the list loads.
     AppShell.goToAbsorbingGlobal();
+    if (isPlaylist) {
+      await PlayerSettings.setQueueModePlaylist(id);
+      await lib.playPlaylistFromStart(id);
+    } else {
+      await PlayerSettings.setQueueModeCollection(id, name);
+      await lib.playCollectionFromStart(id);
+    }
   }
 
   // ── Search ──
@@ -1503,8 +1529,10 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
     LibraryFilter.none => '',
   };
 
-  void _showSortFilterSheet(BuildContext context, ColorScheme cs, TextTheme tt, {int initialTab = 0}) {
-    _loadLists();
+  Future<void> _showSortFilterSheet(BuildContext context, ColorScheme cs, TextTheme tt, {int initialTab = 0}) async {
+    // Await the load so the Lists tab appears on the first open, not after a reopen.
+    await _loadLists();
+    if (!mounted) return;
     final LibraryTab tab;
     final LibrarySort currentSort;
     final bool currentSortAsc;
@@ -2113,24 +2141,22 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
                 ),
               ),
             ),
-            if (_scopeIsPlaylist) ...[
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: _playScope,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: cs.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.play_arrow_rounded, size: 14, color: cs.primary),
-                    const SizedBox(width: 4),
-                    Text(l.playlistPlayAction, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.primary)),
-                  ]),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _playScope,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: cs.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
                 ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.play_arrow_rounded, size: 14, color: cs.primary),
+                  const SizedBox(width: 4),
+                  Text(l.playlistPlayAction, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.primary)),
+                ]),
               ),
-            ],
+            ),
           ],
           if (_currentTab == 0 && _filter != LibraryFilter.none && !_isScoped) ...[
             GestureDetector(

@@ -99,6 +99,8 @@ class BackupService {
       'language': await PlayerSettings.getLanguage(),
       'showUpNextLabel': await PlayerSettings.getShowUpNextLabel(),
       'queuePlaylistId': await PlayerSettings.getQueuePlaylistId(),
+      'queueCollectionId': await PlayerSettings.getQueueCollectionId(),
+      'queueCollectionName': await PlayerSettings.getQueueCollectionName(),
       'coverSeedColor': await PlayerSettings.getCoverSeedColor(),
       'speedPresets': await PlayerSettings.getSpeedPresets(),
       'cardBackground': await PlayerSettings.getCardBackground(),
@@ -452,6 +454,8 @@ class BackupService {
     if (s['language'] != null) await PlayerSettings.setLanguage(s['language'] as String);
     if (s['showUpNextLabel'] != null) await PlayerSettings.setShowUpNextLabel(s['showUpNextLabel'] as bool);
     if (s['queuePlaylistId'] != null) await PlayerSettings.setQueuePlaylistId(s['queuePlaylistId'] as String?);
+    if (s['queueCollectionId'] != null) await ScopedPrefs.setString('queueCollectionId', s['queueCollectionId'] as String);
+    if (s['queueCollectionName'] != null) await ScopedPrefs.setString('queueCollectionName', s['queueCollectionName'] as String);
     if (s['coverSeedColor'] != null) await PlayerSettings.setCoverSeedColor(s['coverSeedColor'] as int);
     if (s['speedPresets'] is List) {
       await PlayerSettings.setSpeedPresets((s['speedPresets'] as List).map((e) => (e as num).toDouble()).toList());

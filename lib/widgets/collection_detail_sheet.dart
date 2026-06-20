@@ -12,6 +12,7 @@ import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import 'book_detail_sheet.dart';
 import 'stackable_sheet.dart';
+import '../screens/app_shell.dart';
 
 class CollectionDetailSheet extends StatefulWidget {
   final String collectionId;
@@ -207,6 +208,8 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
       const SizedBox(height: 12),
       Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.3),
         indent: 20, endIndent: 20),
+      if (!_reordering)
+        _buildPlayButton(cs, lib, books, name, l),
       // Content
       Expanded(
         child: _reordering
@@ -216,6 +219,41 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
                 : _buildItemList(cs, tt, lib, books, l, canEditCollection: canEditCollection),
       ),
     ]);
+  }
+
+  Widget _buildPlayButton(ColorScheme cs, LibraryProvider lib, List<dynamic> books, String name, AppLocalizations l) {
+    int firstIdx = -1;
+    for (var i = 0; i < books.length; i++) {
+      final b = books[i];
+      if (b is! Map<String, dynamic>) continue;
+      final id = b['id'] as String? ?? '';
+      if (id.isEmpty) continue;
+      if (!lib.isItemFinishedByKey(id)) { firstIdx = i; break; }
+    }
+    final allFinished = books.isNotEmpty && firstIdx < 0;
+    final enabled = books.isNotEmpty && firstIdx >= 0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      child: SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          onPressed: enabled
+              ? () async {
+                  HapticFeedback.selectionClick();
+                  final id = widget.collectionId;
+                  Navigator.pop(context);
+                  AppShell.goToAbsorbingGlobal();
+                  await PlayerSettings.setQueueModeCollection(id, name);
+                  await lib.playCollectionFromStart(id);
+                }
+              : null,
+          icon: Icon(allFinished
+              ? Icons.check_circle_outline_rounded
+              : Icons.play_arrow_rounded),
+          label: Text(allFinished ? l.playlistAllFinished : l.playlistPlayAction),
+        ),
+      ),
+    );
   }
 
   Widget _buildReorderList(ColorScheme cs, TextTheme tt, LibraryProvider lib, AppLocalizations l) {

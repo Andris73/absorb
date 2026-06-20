@@ -268,6 +268,38 @@ class PlayerSettings {
     _notify();
   }
 
+  // ── Collection queue mode (books only) ──
+  // Mirrors playlist queue mode but plays through a collection's books. Drives
+  // bookQueueMode = 'collection' + queueCollectionId; the name is stored too so
+  // the now-playing chip needn't fetch the collection.
+
+  static Future<String?> getQueueCollectionId() async {
+    final s = await ScopedPrefs.getString('queueCollectionId');
+    return (s == null || s.isEmpty) ? null : s;
+  }
+
+  static Future<String?> getQueueCollectionName() =>
+      ScopedPrefs.getString('queueCollectionName');
+
+  static Future<void> setQueueModeCollection(String collectionId, String name) async {
+    await ScopedPrefs.setString('bookQueueMode', 'collection');
+    await ScopedPrefs.setString('queueCollectionId', collectionId);
+    await ScopedPrefs.setString('queueCollectionName', name);
+    // Collection mode replaces any active playlist queue.
+    await ScopedPrefs.remove('queuePlaylistId');
+    if ((await ScopedPrefs.getString('podcastQueueMode')) == 'playlist') {
+      await ScopedPrefs.setString('podcastQueueMode', 'off');
+    }
+    _notify();
+  }
+
+  static Future<void> clearQueueModeCollection() async {
+    await ScopedPrefs.setString('bookQueueMode', 'off');
+    await ScopedPrefs.remove('queueCollectionId');
+    await ScopedPrefs.remove('queueCollectionName');
+    _notify();
+  }
+
   /// One-time migration from the old boolean auto-play settings to queueMode.
   static Future<void> migrateQueueMode() async {
     if (await ScopedPrefs.containsKey('queueMode')) return;

@@ -15,6 +15,7 @@ import '../widgets/offline_status_icon.dart';
 import '../widgets/overlay_toast.dart';
 import '../widgets/series_books_sheet.dart';
 import '../widgets/playlist_detail_sheet.dart';
+import '../widgets/collection_detail_sheet.dart';
 import '../widgets/episode_list_sheet.dart';
 import '../l10n/app_localizations.dart';
 import '../services/wording.dart';
@@ -66,6 +67,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   String _bookQueueMode = 'off';
   String _podcastQueueMode = 'off';
   String? _queuePlaylistId;
+  String? _queueCollectionName;
 
   @override
   void initState() {
@@ -103,6 +105,12 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     return n.length > 24 ? '${n.substring(0, 23)}…' : n;
   }
 
+  String _activeCollectionChipLabel() {
+    final n = _queueCollectionName;
+    if (n == null || n.isEmpty) return 'Collection';
+    return n.length > 24 ? '${n.substring(0, 23)}…' : n;
+  }
+
   Future<void> _loadQueueMode() async {
     final lib = context.read<LibraryProvider>();
     String mode;
@@ -110,6 +118,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     final pm = await PlayerSettings.getPodcastQueueMode();
     if (bm == 'playlist' || pm == 'playlist') {
       mode = 'playlist';
+    } else if (bm == 'collection') {
+      mode = 'collection';
     } else if (_mergeLibraries) {
       // When merged, use the more restrictive of the two modes
       // (matches Settings screen's _mergedQueueMode logic)
@@ -121,6 +131,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       mode = lib.isPodcastLibrary ? pm : bm;
     }
     final qpId = await PlayerSettings.getQueuePlaylistId();
+    final qcName = await PlayerSettings.getQueueCollectionName();
     final showUpNext = await PlayerSettings.getShowUpNextLabel();
     if (mounted) {
       setState(() {
@@ -128,6 +139,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
         _bookQueueMode = bm;
         _podcastQueueMode = pm;
         _queuePlaylistId = qpId;
+        _queueCollectionName = qcName;
         _showUpNextLabel = showUpNext;
       });
       _refreshUpNext();
@@ -147,7 +159,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     // the front changes what's up next without changing the first key.
     final queueOrder = lib.absorbingBookIds.join(',');
     final stamp = '$_queueMode|$_bookQueueMode|$_podcastQueueMode|$_mergeLibraries'
-        '|$_queuePlaylistId|$currentId|$queueOrder';
+        '|$_queuePlaylistId|$_queueCollectionName|$currentId|$queueOrder';
     if (stamp == _upNextComputedFor) return;
     _upNextComputedFor = stamp;
     final label = await lib.peekUpNext(currentItemId: currentId);
@@ -710,9 +722,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                         Text(
                           _queueMode == 'playlist'
                               ? _activePlaylistChipLabel(lib, l)
-                              : _queueMode == 'auto_next'
-                                  ? (_mergeLibraries ? l.queueModeAuto : lib.isPodcastLibrary ? l.queueModeShowLabel : l.queueModeSeriesLabel)
-                                  : l.queueModeManual,
+                              : _queueMode == 'collection'
+                                  ? _activeCollectionChipLabel()
+                                  : _queueMode == 'auto_next'
+                                      ? (_mergeLibraries ? l.queueModeAuto : lib.isPodcastLibrary ? l.queueModeShowLabel : l.queueModeSeriesLabel)
+                                      : l.queueModeManual,
                           style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: cs.primary),
                         ),
                       ],
@@ -1096,6 +1110,9 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
   List<Map<String, dynamic>>? _playlistItems;
   String? _playlistId;
   String? _playlistName;
+  List<Map<String, dynamic>>? _collectionBooks;
+  String? _collectionId;
+  String? _collectionName;
   // Podcast auto_next: the current show's episodes (unsorted - the list sorts
   // by _podcastAdvanceDir at build so flipping the toggle reorders live).
   List<Map<String, dynamic>>? _showEpisodes;
@@ -1114,6 +1131,8 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
       }
     } else if (_queueMode == 'playlist') {
       await _loadPlaylistContent();
+    } else if (_queueMode == 'collection') {
+      await _loadCollectionContent();
     }
   }
 
@@ -1192,6 +1211,21 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
     });
   }
 
+  Future<void> _loadCollectionContent() async {
+    final cid = await PlayerSettings.getQueueCollectionId();
+    if (cid == null) return;
+    final c = await widget.lib.fetchCollectionById(cid);
+    if (!mounted || c == null) return;
+    final books = ((c['books'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    setState(() {
+      _collectionBooks = books;
+      _collectionId = cid;
+      _collectionName = c['name'] as String?;
+    });
+  }
+
   @override
   void dispose() {
     PlayerSettings.settingsChanged.removeListener(_refreshMode);
@@ -1204,6 +1238,8 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
     String mode;
     if (bm == 'playlist' || pm == 'playlist') {
       mode = 'playlist';
+    } else if (bm == 'collection') {
+      mode = 'collection';
     } else if (widget.isMerged) {
       const order = ['off', 'manual', 'auto_next'];
       final bi = order.indexOf(bm);
@@ -1265,6 +1301,10 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
               ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 16),
                 label: FittedBox(fit: BoxFit.scaleDown, child: Text(widget.isMerged ? l.queueModeAuto : widget.isPodcast ? l.queueModeShowLabel : l.queueModeSeriesLabel, maxLines: 1))),
               ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 16), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist, maxLines: 1))),
+              // Collection mode is entered via a collection's Play button, not
+              // picked here - shown only while active so the selection is valid.
+              if (_queueMode == 'collection')
+                ButtonSegment(value: 'collection', icon: const Icon(Icons.collections_bookmark_rounded, size: 16), label: FittedBox(fit: BoxFit.scaleDown, child: const Text('Collection', maxLines: 1))),
             ],
             selected: {_queueMode},
             onSelectionChanged: (v) {
@@ -1364,6 +1404,18 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
               PlaylistDetailSheet.show(outer, _playlistId!);
             },
           ),
+        if (_queueMode == 'collection' && _collectionId != null)
+          _modeHeaderButton(
+            cs, tt,
+            label: 'Open collection',
+            subtitle: _collectionName,
+            icon: Icons.collections_bookmark_rounded,
+            onTap: () {
+              final outer = rootNavigatorKey.currentContext ?? context;
+              Navigator.pop(context);
+              CollectionDetailSheet.show(outer, _collectionId!);
+            },
+          ),
         Expanded(
           child: _buildQueueList(cs, tt, l, bottomInset),
         ),
@@ -1430,7 +1482,35 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
     if (_queueMode == 'playlist') {
       return _buildPlaylistList(cs, tt, l, bottomInset);
     }
+    if (_queueMode == 'collection') {
+      return _buildCollectionList(cs, tt, l, bottomInset);
+    }
     return _buildManualList(cs, tt, l, bottomInset);
+  }
+
+  Widget _buildCollectionList(ColorScheme cs, TextTheme tt, AppLocalizations l, double bottomInset) {
+    final books = _collectionBooks;
+    if (books == null) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    if (books.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(l.absorbingNothingAbsorbingYet,
+              style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: EdgeInsets.only(bottom: bottomInset + 16),
+      itemCount: books.length,
+      itemBuilder: (context, i) {
+        final book = books[i];
+        final id = book['id'] as String? ?? '';
+        return _readOnlyQueueItem(cs, tt, l, key: id, book: book, index: i);
+      },
+    );
   }
 
   Widget _buildShowEpisodesList(ColorScheme cs, TextTheme tt, AppLocalizations l, double bottomInset) {
