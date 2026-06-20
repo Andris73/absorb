@@ -105,9 +105,9 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     return n.length > 24 ? '${n.substring(0, 23)}…' : n;
   }
 
-  String _activeCollectionChipLabel() {
+  String _activeCollectionChipLabel(AppLocalizations l) {
     final n = _queueCollectionName;
-    if (n == null || n.isEmpty) return 'Collection';
+    if (n == null || n.isEmpty) return l.queueModeCollection;
     return n.length > 24 ? '${n.substring(0, 23)}…' : n;
   }
 
@@ -723,7 +723,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                           _queueMode == 'playlist'
                               ? _activePlaylistChipLabel(lib, l)
                               : _queueMode == 'collection'
-                                  ? _activeCollectionChipLabel()
+                                  ? _activeCollectionChipLabel(l)
                                   : _queueMode == 'auto_next'
                                       ? (_mergeLibraries ? l.queueModeAuto : lib.isPodcastLibrary ? l.queueModeShowLabel : l.queueModeSeriesLabel)
                                       : l.queueModeManual,
@@ -1304,7 +1304,7 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
               // Collection mode is entered via a collection's Play button, not
               // picked here - shown only while active so the selection is valid.
               if (_queueMode == 'collection')
-                ButtonSegment(value: 'collection', icon: const Icon(Icons.collections_bookmark_rounded, size: 16), label: FittedBox(fit: BoxFit.scaleDown, child: const Text('Collection', maxLines: 1))),
+                ButtonSegment(value: 'collection', icon: const Icon(Icons.collections_bookmark_rounded, size: 16), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeCollection, maxLines: 1))),
             ],
             selected: {_queueMode},
             onSelectionChanged: (v) {
@@ -1407,7 +1407,7 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
         if (_queueMode == 'collection' && _collectionId != null)
           _modeHeaderButton(
             cs, tt,
-            label: 'Open collection',
+            label: l.openCollection,
             subtitle: _collectionName,
             icon: Icons.collections_bookmark_rounded,
             onTap: () {
