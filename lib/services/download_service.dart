@@ -237,16 +237,24 @@ class _PendingBook {
       );
 }
 
-/// Strip the bulky `libraryItem` from persisted session data.
-/// For podcasts this contains ALL episodes and can be hundreds of KB.
+/// Trim the bulky parts of the persisted `libraryItem` while keeping the bits
+/// offline features need. Drops `media.episodes` (a podcast's full episode list
+/// is hundreds of KB) and `media.audioFiles` (the server file list, unused for
+/// local playback), but KEEPS `media.metadata` (so offline series auto-advance
+/// still knows the book's series + sequence), `duration`, and `chapters` (so the
+/// now-playing UI is correct).
 String? _stripLibraryItem(String? sessionJson) {
   if (sessionJson == null) return null;
   try {
     final session = jsonDecode(sessionJson) as Map<String, dynamic>;
-    if (session.containsKey('libraryItem')) {
-      session.remove('libraryItem');
-      return jsonEncode(session);
+    final libItem = session['libraryItem'] as Map<String, dynamic>?;
+    if (libItem == null) return sessionJson;
+    final media = libItem['media'] as Map<String, dynamic>?;
+    if (media != null) {
+      media.remove('episodes');
+      media.remove('audioFiles');
     }
+    return jsonEncode(session);
   } catch (_) {}
   return sessionJson;
 }
