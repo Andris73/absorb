@@ -1132,6 +1132,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get queueModePlaylist => 'Wiedergabeliste';
 
   @override
+  String get queueModeCollection => 'Collection';
+
+  @override
   String get queueModeInfoPlaylist => 'Playlist Queue';
 
   @override
@@ -1172,6 +1175,9 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get openPlaylist => 'Open playlist';
+
+  @override
+  String get openCollection => 'Open collection';
 
   @override
   String get playlistPlayAction => 'Play playlist';
@@ -2428,6 +2434,12 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get chapters => 'Kapitel';
+
+  @override
+  String get noChaptersBook => 'This book has no chapters';
+
+  @override
+  String get noChaptersPodcast => 'This podcast has no chapters';
 
   @override
   String get failedToLoad => 'Laden fehlgeschlagen';

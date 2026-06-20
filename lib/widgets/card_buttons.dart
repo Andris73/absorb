@@ -1506,7 +1506,7 @@ class CardActionDelegate {
         return CardWideButton(
           icon: Icons.list_rounded, label: l.chapters,
           accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
-          onTap: chapters.isNotEmpty ? () => showChapters(context, accent, tt) : null,
+          onTap: chapters.isNotEmpty ? () => showChapters(context, accent, tt) : _showNoChapters,
         );
       case 'speed':
         return CardWideButton(
@@ -1629,8 +1629,12 @@ class CardActionDelegate {
       case 'chapters':
         return MoreMenuItem(
           icon: Icons.list_rounded, label: l.chapters, accent: accent,
-          enabled: chapters.isNotEmpty,
-          onTap: () { Navigator.pop(ctx); showChapters(context, accent, tt); },
+          enabled: true,
+          onTap: () {
+            Navigator.pop(ctx);
+            if (chapters.isEmpty) { _showNoChapters(); return; }
+            showChapters(context, accent, tt);
+          },
         );
       case 'speed':
         return MoreMenuItem(
@@ -1885,6 +1889,15 @@ class CardActionDelegate {
       displaySpeed: speedAdjustedTime ? (isActive ? player.speed : savedSpeed) : 1.0,
       player: player,
       itemId: itemId,
+    );
+  }
+
+  void _showNoChapters() {
+    final l = AppLocalizations.of(context)!;
+    showOverlayToast(
+      context,
+      episodeId != null ? l.noChaptersPodcast : l.noChaptersBook,
+      icon: Icons.list_rounded,
     );
   }
 

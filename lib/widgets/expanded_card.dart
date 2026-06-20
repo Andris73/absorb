@@ -564,6 +564,9 @@ class _ExpandedCardState extends State<ExpandedCard> {
     final chapterIdx = _currentChapterIndex();
     final cast = ChromecastService();
     final totalChapters = _isCastingThis ? cast.castingChapters.length : (_isActive ? widget.player.chapters.length : _chapters.length);
+    // A chapterless book gets the same single-bar look as a chapterless
+    // podcast: no top book bar, just the scrubber carrying the title.
+    final showBookBar = _chapters.isNotEmpty;
     final double bookProgress;
     if (_isCastingThis && cast.castingDuration > 0) {
       final castPos = cast.castPosition.inMilliseconds / 1000.0;
@@ -653,7 +656,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
 
                     final bookProgressBar = Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: progress, staticDuration: _effectiveDuration, chapters: _chapters, showBookBar: (!_isPodcastEpisode || _chapters.isNotEmpty) && (!lib.isPodcastLibrary || _chapters.isNotEmpty), showChapterBar: false, itemId: _itemId),
+                        child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: progress, staticDuration: _effectiveDuration, chapters: _chapters, showBookBar: showBookBar, showChapterBar: false, itemId: _itemId),
                       );
 
                     final coverArea = Padding(
@@ -832,7 +835,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
 
                     final chapterScrubber = Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: (_isPodcastEpisode && _chapters.isEmpty) ? 0.0 : progress, staticDuration: (_isPodcastEpisode && _chapters.isEmpty) ? widget.player.totalDuration : _effectiveDuration, chapters: _chapters, showBookBar: false, showChapterBar: true, chapterName: (_isPodcastEpisode && _chapters.isEmpty) ? (widget.player.currentEpisodeTitle ?? widget.player.currentTitle ?? _title) : (_episodeId != null && !_isActive ? (_recentEpisode?['title'] as String? ?? _title) : _chapterName(chapterIdx)), chapterIndex: chapterIdx, totalChapters: totalChapters, itemId: _itemId),
+                        child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: (_isPodcastEpisode && _chapters.isEmpty) ? 0.0 : progress, staticDuration: (_isPodcastEpisode && _chapters.isEmpty) ? widget.player.totalDuration : _effectiveDuration, chapters: _chapters, showBookBar: false, showChapterBar: true, chapterName: (_isPodcastEpisode && _chapters.isEmpty) ? (widget.player.currentEpisodeTitle ?? widget.player.currentTitle ?? _title) : (_episodeId != null && !_isActive ? (_recentEpisode?['title'] as String? ?? _title) : (_chapters.isEmpty ? _title : _chapterName(chapterIdx))), chapterIndex: chapterIdx, totalChapters: totalChapters, itemId: _itemId),
                       );
 
                     final controlsAndButtons = MediaQuery(
@@ -908,8 +911,8 @@ class _ExpandedCardState extends State<ExpandedCard> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               statsRow,
-                              bookProgressBar,
-                              SizedBox(height: compact ? 4 : 16),
+                              if (showBookBar) bookProgressBar,
+                              if (showBookBar) SizedBox(height: compact ? 4 : 16),
                               chapterScrubber,
                               controlsAndButtons,
                             ],
@@ -921,8 +924,8 @@ class _ExpandedCardState extends State<ExpandedCard> {
                     return Column(
                       children: [
                         statsRow,
-                        bookProgressBar,
-                        SizedBox(height: compact ? 4 : 16),
+                        if (showBookBar) bookProgressBar,
+                        if (showBookBar) SizedBox(height: compact ? 4 : 16),
                         Expanded(child: coverArea),
                         SizedBox(height: compact ? 6 : 24),
                         chapterScrubber,

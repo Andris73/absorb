@@ -531,6 +531,7 @@
   "queueModeManual": "Manual",
   "queueModeAuto": "Auto",
   "queueModePlaylist": "Playlist",
+  "queueModeCollection": "Collection",
   "queueModeInfoPlaylist": "Playlist Queue",
   "queueModeInfoPlaylistDesc": "Plays items in order from a chosen playlist, skipping anything already finished. Stops at the end of the list.",
   "queuePlaylistPickerTitle": "Choose a playlist",
@@ -557,6 +558,7 @@
   "showUpNextLabel": "Show Up next on the absorbing page",
   "openSeries": "Open series",
   "openPlaylist": "Open playlist",
+  "openCollection": "Open collection",
   "playlistPlayAction": "Play playlist",
   "playlistAllFinished": "All finished",
   "queueModeBooks": "Books",
@@ -1203,6 +1205,8 @@
     }
   },
   "chapters": "Chapters",
+  "noChaptersBook": "This book has no chapters",
+  "noChaptersPodcast": "This podcast has no chapters",
   "failedToLoad": "Failed to load",
   "startedDate": "Started {date}",
   "@startedDate": {

@@ -2152,6 +2152,12 @@ abstract class AppLocalizations {
   /// **'Playlist'**
   String get queueModePlaylist;
 
+  /// No description provided for @queueModeCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Collection'**
+  String get queueModeCollection;
+
   /// No description provided for @queueModeInfoPlaylist.
   ///
   /// In en, this message translates to:
@@ -2223,6 +2229,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open playlist'**
   String get openPlaylist;
+
+  /// No description provided for @openCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Open collection'**
+  String get openCollection;
 
   /// No description provided for @playlistPlayAction.
   ///
@@ -4425,6 +4437,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Chapters'**
   String get chapters;
+
+  /// No description provided for @noChaptersBook.
+  ///
+  /// In en, this message translates to:
+  /// **'This book has no chapters'**
+  String get noChaptersBook;
+
+  /// No description provided for @noChaptersPodcast.
+  ///
+  /// In en, this message translates to:
+  /// **'This podcast has no chapters'**
+  String get noChaptersPodcast;
 
   /// No description provided for @failedToLoad.
   ///

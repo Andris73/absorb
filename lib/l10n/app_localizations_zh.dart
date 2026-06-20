@@ -1101,6 +1101,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get queueModePlaylist => 'Playlist';
 
   @override
+  String get queueModeCollection => 'Collection';
+
+  @override
   String get queueModeInfoPlaylist => 'Playlist Queue';
 
   @override
@@ -1141,6 +1144,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get openPlaylist => 'Open playlist';
+
+  @override
+  String get openCollection => 'Open collection';
 
   @override
   String get playlistPlayAction => 'Play playlist';
@@ -2346,6 +2352,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chapters => '章节';
+
+  @override
+  String get noChaptersBook => 'This book has no chapters';
+
+  @override
+  String get noChaptersPodcast => 'This podcast has no chapters';
 
   @override
   String get failedToLoad => '加载失败';

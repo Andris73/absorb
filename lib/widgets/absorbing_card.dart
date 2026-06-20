@@ -475,7 +475,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     // In gradient/off mode the cover image isn't painted, so derive its scheme separately.
     if (_cardBackground != 'blurred') _ensureCoverScheme();
 
-    final showBookBar = (!_isPodcastEpisode || _chapters.isNotEmpty) && (!lib.isPodcastLibrary || _chapters.isNotEmpty);
+    // A chapterless book gets the same single-bar look as a chapterless
+    // podcast: no top book bar, just the scrubber bar carrying the title.
+    final showBookBar = _chapters.isNotEmpty;
     return GestureDetector(
       onVerticalDragEnd: (details) {
         final vy = details.primaryVelocity ?? 0;
@@ -826,7 +828,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
 
           final scrubberBar = Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: (_isPodcastEpisode && _chapters.isEmpty) ? 0.0 : progress, staticDuration: (_isPodcastEpisode && _chapters.isEmpty) ? widget.player.totalDuration : _effectiveDuration, chapters: _chapters, showBookBar: false, showChapterBar: true, chapterName: (_isPodcastEpisode && _chapters.isEmpty) ? (widget.player.currentEpisodeTitle ?? widget.player.currentTitle ?? _title) : (_episodeId != null && !_isActive ? (_recentEpisode?['title'] as String? ?? _title) : _chapterName(chapterIdx)), chapterIndex: chapterIdx, totalChapters: totalChapters, itemId: _itemId, compact: compact),
+                  child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: (_isPodcastEpisode && _chapters.isEmpty) ? 0.0 : progress, staticDuration: (_isPodcastEpisode && _chapters.isEmpty) ? widget.player.totalDuration : _effectiveDuration, chapters: _chapters, showBookBar: false, showChapterBar: true, chapterName: (_isPodcastEpisode && _chapters.isEmpty) ? (widget.player.currentEpisodeTitle ?? widget.player.currentTitle ?? _title) : (_episodeId != null && !_isActive ? (_recentEpisode?['title'] as String? ?? _title) : (_chapters.isEmpty ? _title : _chapterName(chapterIdx))), chapterIndex: chapterIdx, totalChapters: totalChapters, itemId: _itemId, compact: compact),
                 );
 
           final controlsRow = Padding(
