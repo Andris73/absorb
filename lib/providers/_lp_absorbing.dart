@@ -740,6 +740,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     for (final entry in _absorbingItemCache.entries) {
       final key = entry.key;
       if (key == finishedBookId || key.length > 36) continue;
+      if (_manualAbsorbRemoves.contains(key)) continue;
       if ((this as LibraryProvider).isItemFinishedByKey(key)) continue;
       final (sid, seq) = _StateMixin._extractSeries(entry.value);
       if (sid != seriesId || seq == null || seq <= currentSeq) continue;
@@ -749,6 +750,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     for (final dlInfo in DownloadService().downloadedItems) {
       final id = dlInfo.itemId;
       if (id == finishedBookId || id.length > 36) continue;
+      if (_manualAbsorbRemoves.contains(id)) continue;
       if (candidates.values.any((e) => e.key == id)) continue;
       if (_progressMap[id]?['isFinished'] == true) continue;
       final data = _itemDataWithSeries(id);
@@ -768,6 +770,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
         if (book is! Map<String, dynamic>) continue;
         final id = book['id'] as String?;
         if (id == null || id == finishedBookId) continue;
+        if (_manualAbsorbRemoves.contains(id)) continue;
         if (_progressMap[id]?['isFinished'] == true) continue;
         final (sid, seq) = _StateMixin._extractSeries(book);
         if (sid != seriesId || seq == null || seq <= currentSeq) continue;
@@ -783,11 +786,6 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     final nextSeq = candidates.keys.toList()..sort();
     final next = candidates[nextSeq.first]!;
     final nextKey = next.key;
-
-    if (_manualAbsorbRemoves.contains(nextKey)) {
-      debugPrint('[Absorbing] Next book $nextKey was manually removed, skipping');
-      return;
-    }
 
     final mode = await PlayerSettings.getBookQueueMode();
     if (mode == 'auto_next') {
