@@ -892,7 +892,15 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             if (rc != null) showBookDetailSheet(rc, widget.itemId);
           });
         }
-        return Wrap(spacing: gap, runSpacing: gap, children: pills);
+        // The full item (with ebookFile) loads after the sheet is already open,
+        // which inserts the eBook pills mid-grid. Animate the size change so they
+        // ease in instead of snapping the layout.
+        return AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          alignment: Alignment.topCenter,
+          child: Wrap(spacing: gap, runSpacing: gap, children: pills),
+        );
       }),
       if (auth.isAdmin && serverPath.isNotEmpty) ...[
         const SizedBox(height: 10),
