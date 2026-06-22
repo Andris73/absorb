@@ -9,8 +9,10 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
+import '../services/audio_player_service.dart';
 import '../services/ebook_annotation_service.dart';
 import '../services/scoped_prefs.dart';
+import 'card_buttons.dart' show CardSpeedSheet;
 
 class EbookReaderView extends StatefulWidget {
   final String itemId;
@@ -81,6 +83,18 @@ class EbookReaderViewState extends State<EbookReaderView> {
   bool _entered = false;
   Animation<double>? _routeAnim;
 
+  // In-reader media controls (immersion reading) drive the shared player.
+  int _forwardSkip = 30;
+  int _backSkip = 10;
+  // This item's audiobook metadata, so the controls can show (and start
+  // playback) even before a session is running.
+  bool _hasAudio = false;
+  double _audioDuration = 0;
+  List<dynamic> _audioChapters = const [];
+  String _audioAuthor = '';
+  String? _audioCoverUrl;
+  bool _startingAudio = false;
+
   @override
   void initState() {
     super.initState();
@@ -88,6 +102,57 @@ class EbookReaderViewState extends State<EbookReaderView> {
     _loadInitialLocation();
     _loadSettings().then((_) => _downloadAndOpen());
     _setFullscreen(true);
+    PlayerSettings.settingsChanged.addListener(_loadSkipSettings);
+    _loadSkipSettings();
+    _loadAudioMeta();
+  }
+
+  Future<void> _loadAudioMeta() async {
+    final lib = context.read<LibraryProvider>();
+    _audioCoverUrl = lib.getCoverUrl(widget.itemId);
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) return;
+    try {
+      final item = await api.getLibraryItem(widget.itemId);
+      if (item == null || !mounted) return;
+      final media = item['media'] as Map<String, dynamic>? ?? {};
+      final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+      final dur = (media['duration'] as num?)?.toDouble() ?? 0;
+      setState(() {
+        _audioAuthor = metadata['authorName'] as String? ?? '';
+        _audioDuration = dur;
+        _audioChapters = media['chapters'] as List<dynamic>? ?? const [];
+        _hasAudio = dur > 0;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _startThisBook() async {
+    if (_startingAudio || !_hasAudio) return;
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) return;
+    setState(() => _startingAudio = true);
+    final lib = context.read<LibraryProvider>();
+    lib.addToAbsorbing(widget.itemId);
+    await AudioPlayerService().playItem(
+      api: api,
+      itemId: widget.itemId,
+      title: widget.title,
+      author: _audioAuthor,
+      coverUrl: _audioCoverUrl,
+      totalDuration: _audioDuration,
+      chapters: _audioChapters,
+    );
+    if (mounted) setState(() => _startingAudio = false);
+  }
+
+  void _loadSkipSettings() {
+    PlayerSettings.getForwardSkip().then((v) {
+      if (mounted && v != _forwardSkip) setState(() => _forwardSkip = v);
+    });
+    PlayerSettings.getBackSkip().then((v) {
+      if (mounted && v != _backSkip) setState(() => _backSkip = v);
+    });
   }
 
   @override
@@ -175,6 +240,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
   @override
   void dispose() {
     _routeAnim?.removeStatusListener(_onRouteAnim);
+    PlayerSettings.settingsChanged.removeListener(_loadSkipSettings);
     // Restore system UI when leaving
     _setFullscreen(false);
     super.dispose();
@@ -995,6 +1061,97 @@ class EbookReaderViewState extends State<EbookReaderView> {
     Navigator.pop(context);
   }
 
+  String _speedLabel(double s) {
+    var t = s.toStringAsFixed(2);
+    if (t.contains('.')) t = t.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+    return '${t}x';
+  }
+
+  /// Playback controls for immersion reading (listen while you read). Drives the
+  /// shared player; only shown while a book is loaded.
+  Widget _buildMediaBar(ColorScheme cs) {
+    final player = AudioPlayerService();
+    return ListenableBuilder(
+      listenable: player,
+      builder: (context, _) {
+        // This book is the live session?
+        final isActive = player.hasBook && player.currentItemId == widget.itemId;
+        // Show whenever this book has audio, or it's already the active session.
+        if (!isActive && !_hasAudio) return const SizedBox.shrink();
+        final fwdIcon = _forwardSkip == 5
+            ? Icons.forward_5_rounded
+            : _forwardSkip == 10 ? Icons.forward_10_rounded : Icons.forward_30_rounded;
+        final backIcon = _backSkip == 5
+            ? Icons.replay_5_rounded
+            : _backSkip == 10 ? Icons.replay_10_rounded : Icons.replay_30_rounded;
+        final dim = cs.onSurface.withValues(alpha: 0.3);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 64,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 36),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () => showModalBottomSheet(
+                      context: context,
+                      backgroundColor: cs.surface,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                      ),
+                      builder: (_) => CardSpeedSheet(
+                        player: player, accent: cs.primary, itemId: widget.itemId),
+                    ),
+                    child: Text(_speedLabel(player.speed),
+                        style: TextStyle(color: cs.onSurface, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Skips only act on the live session.
+                    IconButton(
+                      icon: Icon(backIcon, color: isActive ? cs.onSurface : dim),
+                      iconSize: 30,
+                      onPressed: isActive ? () => player.skipBackward(_backSkip) : null,
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        (isActive && player.isPlaying)
+                            ? Icons.pause_circle_filled_rounded
+                            : Icons.play_circle_filled_rounded,
+                        color: cs.primary,
+                      ),
+                      iconSize: 48,
+                      // Active: toggle. Otherwise start this book's audiobook.
+                      onPressed: _startingAudio
+                          ? null
+                          : (isActive ? player.togglePlayPause : _startThisBook),
+                    ),
+                    IconButton(
+                      icon: Icon(fwdIcon, color: isActive ? cs.onSurface : dim),
+                      iconSize: 30,
+                      onPressed: isActive ? () => player.skipForward(_forwardSkip) : null,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 64), // balance the speed button
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -1215,6 +1372,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          _buildMediaBar(cs),
                           ClipRRect(
                             borderRadius: BorderRadius.circular(2),
                             child: LinearProgressIndicator(
