@@ -16,40 +16,12 @@ class EbookReaderView extends StatefulWidget {
   final String itemId;
   final String title;
   final Map<String, dynamic> ebookFile;
-  /// When true, renders without a Scaffold wrapper / SafeArea / SystemChrome
-  /// changes — for use inside another widget like the absorbing card back.
-  final bool embedded;
-  /// Replaces the back button's behavior. Defaults to Navigator.pop in
-  /// full-screen mode; in embedded mode the host should provide one (e.g. to
-  /// flip the card back to the front face).
-  final VoidCallback? onClose;
-  /// Only shown in embedded mode. Tap surfaces an "expand to full screen"
-  /// affordance the host can wire up.
-  final VoidCallback? onExpand;
-  /// If provided, opens the reader at this exact CFI instead of the saved
-  /// progress location. Used to hand off position between embedded and
-  /// full-screen instances.
-  final String? initialCfi;
-  /// Fires whenever the reader's position changes. Used by hosts to mirror
-  /// position across paired reader instances.
-  final ValueChanged<String>? onPositionChanged;
-  /// When set, the WebView is laid out at exactly this logical size and
-  /// scaled to fit the available space. Paired embedded + full-screen readers
-  /// pass the same size so epub.js paginates identically in both - a handed
-  /// off CFI then lands on a page starting at the same word.
-  final Size? viewerSize;
 
   const EbookReaderView({
     super.key,
     required this.itemId,
     required this.title,
     required this.ebookFile,
-    this.embedded = false,
-    this.onClose,
-    this.onExpand,
-    this.initialCfi,
-    this.onPositionChanged,
-    this.viewerSize,
   });
 
   @override
@@ -57,22 +29,6 @@ class EbookReaderView extends StatefulWidget {
 }
 
 class EbookReaderViewState extends State<EbookReaderView> {
-  /// Latest known position of the reader. Null until the first relocate fires.
-  String? get currentCfi => _currentCfi;
-  /// Asks the controller for the *live* current location. More accurate than
-  /// [currentCfi] right after a page flip, since onRelocated may not have
-  /// caught up yet. Returns null if the controller isn't ready or errors.
-  Future<String?> getLiveCfi() async {
-    try {
-      final loc = await _epubController?.getCurrentLocation();
-      return loc?.startCfi ?? _currentCfi;
-    } catch (_) {
-      return _currentCfi;
-    }
-  }
-  /// Jump the reader to a specific CFI. Safe to call before the EPUB has loaded;
-  /// the controller no-ops in that case.
-  void seekTo(String cfi) => _epubController?.display(cfi: cfi);
   EpubController? _epubController;
   bool _loading = true;
   String? _error;
@@ -196,7 +152,6 @@ class EbookReaderViewState extends State<EbookReaderView> {
   }
 
   void _setFullscreen(bool fullscreen) {
-    if (widget.embedded) return; // host owns system chrome
     if (fullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     } else {
@@ -214,11 +169,6 @@ class EbookReaderViewState extends State<EbookReaderView> {
   }
 
   void _loadInitialLocation() {
-    // Explicit initialCfi (e.g. handoff from another reader instance) wins.
-    if (widget.initialCfi != null && widget.initialCfi!.isNotEmpty) {
-      _initialCfi = widget.initialCfi;
-      return;
-    }
     final lib = context.read<LibraryProvider>();
     final progressData = lib.getProgressData(widget.itemId);
     final loc = progressData?['ebookLocation'] as String?;
@@ -1027,12 +977,8 @@ class EbookReaderViewState extends State<EbookReaderView> {
     );
   }
 
-  /// Wraps a body in a Scaffold for full-screen mode, or returns it directly
-  /// (sized to fill the parent) for embedded mode.
+  /// Wraps a body in a Scaffold.
   Widget _wrap(Widget body, Color bg, {PreferredSizeWidget? appBar}) {
-    if (widget.embedded) {
-      return ColoredBox(color: bg, child: body);
-    }
     // Don't resize for the keyboard — epub.js reflows when the WebView
     // resizes, which would shift the visible page when the search keyboard
     // pops up. The bottom sheet positions itself above the keyboard via
@@ -1045,45 +991,13 @@ class EbookReaderViewState extends State<EbookReaderView> {
     );
   }
 
-  /// SafeArea is only needed in full-screen mode — embedded callers manage
-  /// their own insets.
-  Widget _maybeSafeArea({required Widget child, bool top = true, bool bottom = true}) {
-    if (widget.embedded) return child;
-    return SafeArea(top: top, bottom: bottom, child: child);
-  }
-
-  /// Lays out the viewer. With a locked viewerSize the WebView always renders
-  /// at that exact logical size: full screen shows it ~1:1, the embedded card
-  /// scales it down. BoxFit.scaleDown never scales up, so the full-screen
-  /// instance stays unscaled and sharp.
-  ///
-  /// Wrapped in SafeArea (full-screen only) so the page never slides under the
-  /// camera cutout. Aligned to the top so any letterbox gap from the card's
-  /// different aspect ratio lands BELOW the text - the first line stays at the
-  /// top of the card rather than getting pushed to the bottom.
+  /// Wrapped in SafeArea so the page never slides under the camera cutout.
   Widget _buildViewerArea(Widget viewer) {
-    final lock = widget.viewerSize;
-    if (lock != null) {
-      return _maybeSafeArea(
-        child: SizedBox.expand(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.topCenter,
-            clipBehavior: Clip.hardEdge,
-            child: SizedBox(width: lock.width, height: lock.height, child: viewer),
-          ),
-        ),
-      );
-    }
-    return _maybeSafeArea(child: SizedBox.expand(child: viewer));
+    return SafeArea(child: SizedBox.expand(child: viewer));
   }
 
   void _handleClose() {
-    if (widget.onClose != null) {
-      widget.onClose!();
-    } else {
-      Navigator.pop(context);
-    }
+    Navigator.pop(context);
   }
 
   @override
@@ -1173,7 +1087,6 @@ class EbookReaderViewState extends State<EbookReaderView> {
                   _updateBookmarkState();
                   setState(() => _progress = value.progress);
                   _syncProgress(value.startCfi, value.progress);
-                  widget.onPositionChanged?.call(value.startCfi);
                 }
               },
               onTouchDown: (x, y) {
@@ -1210,7 +1123,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                     colors: [bg.withValues(alpha: 1.0), bg.withValues(alpha: 0.6)],
                   ),
                 ),
-                child: _maybeSafeArea(
+                child: SafeArea(
                   bottom: false,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -1218,17 +1131,11 @@ class EbookReaderViewState extends State<EbookReaderView> {
                       children: [
                         IconButton(
                           icon: Icon(
-                            widget.embedded ? Icons.flip_to_front_rounded : Icons.arrow_back_rounded,
+                            Icons.arrow_back_rounded,
                             color: cs.onSurface,
                           ),
                           onPressed: _handleClose,
                         ),
-                        if (widget.embedded && widget.onExpand != null)
-                          IconButton(
-                            icon: Icon(Icons.fullscreen_rounded, color: cs.onSurface),
-                            tooltip: 'Expand',
-                            onPressed: widget.onExpand,
-                          ),
                         Expanded(
                           child: Text(
                             widget.title,
@@ -1292,7 +1199,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                       colors: [bg.withValues(alpha: 1.0), bg.withValues(alpha: 0.6)],
                     ),
                   ),
-                  child: _maybeSafeArea(
+                  child: SafeArea(
                     top: false,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -1339,7 +1246,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
             Positioned(
               left: 0,
               right: 0,
-              bottom: (widget.embedded ? 0 : MediaQuery.of(context).padding.bottom) + 16,
+              bottom: MediaQuery.of(context).padding.bottom + 16,
               child: Center(
                 child: Material(
                   elevation: 8,

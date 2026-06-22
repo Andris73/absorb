@@ -28,45 +28,7 @@ class AbsorbingCard extends StatefulWidget {
   State<AbsorbingCard> createState() => AbsorbingCardState();
 }
 
-class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
-  late final AnimationController _flipController = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 600),
-  );
-  bool get _showingBack => _flipController.value > 0.5;
-  // Lazy-mount the back face so non-readers don't pay the WebView startup cost.
-  // Once mounted it stays alive across flips (kept paginated in IndexedStack).
-  bool _backInitialized = false;
-  final GlobalKey<EbookReaderViewState> _embeddedReaderKey = GlobalKey<EbookReaderViewState>();
-  // CFI to seed the embedded reader on mount. Updated when the full-screen
-  // reader closes so the re-mounted embedded picks up wherever the user left off.
-  String? _readerInitialCfi;
-  // Shared layout size for the embedded + full-screen reader pair, locked on
-  // first use. Both render the WebView at this exact logical size (the card
-  // scales it down) so pagination matches word for word across the handoff.
-  // Locked once because viewPadding flickers while immersive mode toggles.
-  Size? _readerSizeLock;
-  Size _lockReaderSize(BuildContext context) {
-    if (_readerSizeLock != null) return _readerSizeLock!;
-    final mq = MediaQuery.of(context);
-    final vp = mq.viewPadding;
-    return _readerSizeLock = Size(
-      mq.size.width - vp.left - vp.right,
-      mq.size.height - vp.top - vp.bottom,
-    );
-  }
-  void _toggleFlip() {
-    if (_flipController.isAnimating) return;
-    if (!_backInitialized) {
-      setState(() => _backInitialized = true);
-    }
-    if (_showingBack) {
-      _flipController.reverse();
-    } else {
-      _flipController.forward();
-    }
-  }
-
+class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveClientMixin {
   ColorScheme? _coverScheme;
   Brightness? _coverBrightness; // brightness used to generate _coverScheme
   ImageProvider? _coverProvider; // cached for re-deriving on theme change
@@ -378,7 +340,6 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     _chapterTrackSub?.cancel();
     _blurredCover?.dispose();
     _edgeBarExpanded.dispose();
-    _flipController.dispose();
     super.dispose();
   }
 
@@ -524,38 +485,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
 
     final showBookBar = (!_isPodcastEpisode || _chapters.isNotEmpty) && (!lib.isPodcastLibrary || _chapters.isNotEmpty);
 
-    // Build both faces ONCE per parent rebuild (not per animation frame).
-    // The AnimatedBuilder below only updates the rotation matrix; the heavy
-    // child trees (front content + embedded reader) are stable references.
-    final frontFace = _buildFront(context, cs, accent, isDark, l, lib, progress, chapterIdx, totalChapters, bookProgress, showBookBar);
-    final backFace = _backInitialized
-        ? Transform(
-            alignment: Alignment.center,
-            // Counter-rotate so back content reads correctly when card is fully flipped.
-            transform: Matrix4.identity()..rotateY(3.1415926535),
-            child: _buildBack(context, cs, accent, isDark),
-          )
-        : const SizedBox.shrink();
-
-    return AnimatedBuilder(
-      animation: _flipController,
-      builder: (context, child) {
-        final t = _flipController.value;
-        final angle = t * 3.1415926535;
-        return Transform(
-          alignment: Alignment.center,
-          transform: Matrix4.identity()
-            ..setEntry(3, 2, 0.0015) // perspective
-            ..rotateY(angle),
-          child: IndexedStack(
-            alignment: Alignment.center,
-            sizing: StackFit.passthrough,
-            index: t > 0.5 ? 1 : 0,
-            children: [frontFace, backFace],
-          ),
-        );
-      },
-    );
+    return _buildFront(context, cs, accent, isDark, l, lib, progress, chapterIdx, totalChapters, bookProgress, showBookBar);
   }
 
   Widget _buildFront(
@@ -1060,75 +990,15 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     );
   }
 
-  Future<void> _openFullscreenReader() async {
+  void _openEbookReader() {
     final ebookFile = _ebookFile;
-    if (ebookFile == null) return;
-    final handoffCfi = await _embeddedReaderKey.currentState?.getLiveCfi();
-    debugPrint('[Handoff] small→big handoffCfi=$handoffCfi');
-    String? latestCfi;
-    // Unmount the embedded reader entirely while full-screen is open. This
-    // sidesteps the live-seek-on-hidden-WebView problem — when the route
-    // closes we re-mount fresh with the up-to-date CFI as initial position.
-    setState(() => _backInitialized = false);
-    await Navigator.of(context, rootNavigator: true).push(
+    if (ebookFile == null) return; // CardButtons already toasts when no ebook
+    Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => EbookReaderView(
           itemId: _itemId,
           title: _title,
           ebookFile: ebookFile,
-          initialCfi: handoffCfi,
-          onPositionChanged: (cfi) => latestCfi = cfi,
-          viewerSize: _readerSizeLock,
-        ),
-      ),
-    );
-    if (!mounted) return;
-    setState(() {
-      _readerInitialCfi = latestCfi ?? handoffCfi ?? _readerInitialCfi;
-      _backInitialized = true;
-    });
-  }
-
-  Widget _buildBack(BuildContext context, ColorScheme cs, Color accent, bool isDark) {
-    final tt = Theme.of(context).textTheme;
-    final ebookFile = _ebookFile;
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? Colors.black : Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: accent.withValues(alpha: 0.15), width: 1),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(23),
-        child: Stack(
-          children: [
-            if (ebookFile != null)
-              EbookReaderView(
-                key: _embeddedReaderKey,
-                itemId: _itemId,
-                title: _title,
-                ebookFile: ebookFile,
-                embedded: true,
-                initialCfi: _readerInitialCfi,
-                onClose: _toggleFlip,
-                onExpand: _openFullscreenReader,
-                viewerSize: _lockReaderSize(context),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.menu_book_rounded, size: 36, color: cs.onSurface.withValues(alpha: 0.4)),
-                      const SizedBox(height: 12),
-                      Text('No ebook attached', style: tt.titleSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.6))),
-                    ],
-                  ),
-                ),
-              ),
-          ],
         ),
       ),
     );
@@ -1265,7 +1135,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     },
     hasEbook: _ebookFile != null,
     isEbookPdf: _ebookExt == 'pdf',
-    onEbookTap: _toggleFlip,
+    onEbookTap: _openEbookReader,
   );
 
   int get _visibleButtonCount => _buttonVisibleCount;
