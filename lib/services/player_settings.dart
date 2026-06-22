@@ -143,6 +143,12 @@ class PlayerSettings {
   static Future<bool> getAutoDownloadOnStream() => _get('autoDownloadOnStream', false);
   static Future<void> setAutoDownloadOnStream(bool value) => _set('autoDownloadOnStream', value);
 
+  /// When on, starting a book that's part of a series automatically turns on
+  /// series auto-download for that series (the same per-series toggle shown in
+  /// the series sheet). Default off.
+  static Future<bool> getAutoSeriesDownloadDefault() => _get('autoSeriesDownloadDefault', false);
+  static Future<void> setAutoSeriesDownloadDefault(bool value) => _set('autoSeriesDownloadDefault', value);
+
   /// Bookmark sort: 'newest' (default) or 'position'
   static Future<String> getBookmarkSort() => _get('bookmarkSort', 'newest');
   static Future<void> setBookmarkSort(String value) => _set('bookmarkSort', value);
@@ -170,8 +176,13 @@ class PlayerSettings {
   /// player as listening time accrues; read-only here.
   static Future<double> getStatsTimeSaved() => _get('stats_time_saved', 0.0);
 
-  /// Listening chart style on the stats page: 'bar' | 'line' | 'heatmap'.
-  static Future<String> getStatsChartStyle() => _get('stats_chart_style', 'bar');
+  /// Listening chart style on the stats page: 'bar' | 'line'.
+  /// 'heatmap' used to be a chart style; it's now its own stats section, so a
+  /// saved 'heatmap' value is coerced back to 'bar'.
+  static Future<String> getStatsChartStyle() async {
+    final v = await _get('stats_chart_style', 'bar');
+    return v == 'heatmap' ? 'bar' : v;
+  }
   static Future<void> setStatsChartStyle(String value) => _set('stats_chart_style', value, notify: true);
 
   /// Days covered by the bar/line chart: 7 or 30. The heatmap is always a year.
@@ -254,6 +265,38 @@ class PlayerSettings {
     await ScopedPrefs.setString('bookQueueMode', 'off');
     await ScopedPrefs.setString('podcastQueueMode', 'off');
     await ScopedPrefs.remove('queuePlaylistId');
+    _notify();
+  }
+
+  // ── Collection queue mode (books only) ──
+  // Mirrors playlist queue mode but plays through a collection's books. Drives
+  // bookQueueMode = 'collection' + queueCollectionId; the name is stored too so
+  // the now-playing chip needn't fetch the collection.
+
+  static Future<String?> getQueueCollectionId() async {
+    final s = await ScopedPrefs.getString('queueCollectionId');
+    return (s == null || s.isEmpty) ? null : s;
+  }
+
+  static Future<String?> getQueueCollectionName() =>
+      ScopedPrefs.getString('queueCollectionName');
+
+  static Future<void> setQueueModeCollection(String collectionId, String name) async {
+    await ScopedPrefs.setString('bookQueueMode', 'collection');
+    await ScopedPrefs.setString('queueCollectionId', collectionId);
+    await ScopedPrefs.setString('queueCollectionName', name);
+    // Collection mode replaces any active playlist queue.
+    await ScopedPrefs.remove('queuePlaylistId');
+    if ((await ScopedPrefs.getString('podcastQueueMode')) == 'playlist') {
+      await ScopedPrefs.setString('podcastQueueMode', 'off');
+    }
+    _notify();
+  }
+
+  static Future<void> clearQueueModeCollection() async {
+    await ScopedPrefs.setString('bookQueueMode', 'off');
+    await ScopedPrefs.remove('queueCollectionId');
+    await ScopedPrefs.remove('queueCollectionName');
     _notify();
   }
 
@@ -466,6 +509,11 @@ class PlayerSettings {
   static Future<bool> getFullScreenPlayer() => _get('fullScreenPlayer', false);
   static Future<void> setFullScreenPlayer(bool value) => _set('fullScreenPlayer', value);
 
+  /// When on, the screen is locked to portrait (rotation disabled). Default off
+  /// keeps the current behaviour where all orientations are allowed.
+  static Future<bool> getLockPortrait() => _get('lockPortrait', false);
+  static Future<void> setLockPortrait(bool value) => _set('lockPortrait', value);
+
   static Future<bool> getSnappyTransitions() => _get('snappyTransitions', false);
   static Future<void> setSnappyTransitions(bool value) => _set('snappyTransitions', value);
 
@@ -518,7 +566,7 @@ class PlayerSettings {
 
   // ── Card button order ──
 
-  static const defaultButtonOrder = ['chapters', 'speed', 'sleep', 'bookmarks', 'details', 'ebook', 'equalizer', 'cast', 'history', 'remove', 'car', 'notes', 'download'];
+  static const defaultButtonOrder = ['chapters', 'speed', 'sleep', 'bookmarks', 'details', 'ebook', 'equalizer', 'cast', 'airplay', 'history', 'remove', 'car', 'notes', 'download'];
 
   static Future<List<String>> getCardButtonOrder() async {
     final stored = await ScopedPrefs.getStringList('card_button_order');
@@ -601,8 +649,29 @@ class PlayerSettings {
     await prefs.setString('language', value);
   }
 
-  static Future<String> getColorSource() => _get('colorSource', 'default');
+  /// App color source: 'dynamic' follows the playing book cover (default),
+  /// 'manual' pins the app to [getManualSeedColor]. (Legacy values fall through
+  /// to dynamic since only 'manual' is special-cased.)
+  static Future<String> getColorSource() => _get('colorSource', 'dynamic');
   static Future<void> setColorSource(String value) => _set('colorSource', value);
+
+  /// Whether the background gradient is removed (flat). In dark mode this also
+  /// switches surfaces to pure black (OLED); in light mode to flat white.
+  static Future<bool> getFlatBackground() => _get('flatBackground', false);
+  static Future<void> setFlatBackground(bool v) => _set('flatBackground', v);
+
+  /// Seed color (ARGB int) used when [getColorSource] is 'manual'.
+  static Future<int> getManualSeedColor() => _get('manualSeedColor', 0xFF7C6FBF);
+  static Future<void> setManualSeedColor(int v) => _set('manualSeedColor', v);
+
+  /// Strength of the primary-tinted background gradient (top alpha, 0 = flat).
+  static Future<double> getGradientIntensity() => _get('gradientIntensity', 0.06);
+  static Future<void> setGradientIntensity(double v) => _set('gradientIntensity', v);
+
+  /// When manual color is on, also apply it to per-book surfaces (detail sheets,
+  /// absorbing card background) instead of each book's cover color.
+  static Future<bool> getUseColorEverywhere() => _get('useColorEverywhere', false);
+  static Future<void> setUseColorEverywhere(bool v) => _set('useColorEverywhere', v);
 
   /// Default start screen tab index: 0=Home, 1=Library, 2=Absorbing, 3=Stats, 4=Settings
   static Future<int> getStartScreen() => _get('startScreen', 2);

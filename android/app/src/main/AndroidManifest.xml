@@ -13,9 +13,6 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" tools:replace="android:maxSdkVersion"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" tools:replace="android:maxSdkVersion"/>
 
-    <!-- Full file access for custom download locations (Android 11+) -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
-
     <!-- In-app APK updater (GitHub flavor only; stripped from Play Store build) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
@@ -25,7 +22,7 @@
 
     <application android:label="Absorb" android:name="${applicationName}" android:icon="@mipmap/ic_launcher" android:networkSecurityConfig="@xml/network_security_config" android:largeHeap="true">
 
-        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:taskAffinity="" android:theme="@style/LaunchTheme" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:theme="@style/LaunchTheme" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
             <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme"/>
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -94,6 +91,14 @@
             android:name="com.dexterous.flutterlocalnotifications.ForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- background_downloader runs downloads in WorkManager's foreground
+             service. Declare its dataSync type so startForeground doesn't crash
+             on API 34+ (the library's own declaration has no type). -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
 
         <!-- Keeps the Absorb process alive (out of Doze) during Chromecast
              playback so the Dart-side listening-time sync timer isn't

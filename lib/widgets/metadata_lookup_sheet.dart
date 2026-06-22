@@ -370,7 +370,7 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet>
       child: Column(children: [
         // Drag handle
         Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 12, bottom: 8),
-          decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
+          decoration: BoxDecoration(color: cs.onSurfaceVariant.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(2)))),
 
         // Header
         Padding(
@@ -378,7 +378,7 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet>
           child: Row(children: [
             Icon(Icons.manage_search_rounded, size: 22, color: cs.primary),
             const SizedBox(width: 8),
-            Text(l.localMetadata, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: Colors.white)),
+            Text(l.localMetadata, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
           ]),
         ),
 
@@ -386,7 +386,7 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet>
         TabBar(
           controller: _tabCtrl,
           labelColor: cs.primary,
-          unselectedLabelColor: Colors.white54,
+          unselectedLabelColor: cs.onSurfaceVariant,
           indicatorColor: cs.primary,
           tabs: [
             Tab(text: l.quickMatch),
@@ -425,17 +425,17 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet>
                 height: 40,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
+                  color: cs.onSurface.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: _provider,
                     isExpanded: true,
                     dropdownColor: cs.surfaceContainerHigh,
-                    style: tt.bodySmall?.copyWith(color: Colors.white70),
-                    icon: Icon(Icons.expand_more_rounded, size: 18, color: Colors.white38),
+                    style: tt.bodySmall?.copyWith(color: cs.onSurface),
+                    icon: Icon(Icons.expand_more_rounded, size: 18, color: cs.onSurfaceVariant),
                     items: _providers.map((p) => DropdownMenuItem(value: p.$1, child: Text(p.$2))).toList(),
                     onChanged: (v) { if (v != null) setState(() => _provider = v); },
                   ),
@@ -458,13 +458,13 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet>
         ]),
       ),
       const SizedBox(height: 12),
-      Divider(color: Colors.white.withValues(alpha: 0.08), height: 1),
+      Divider(color: cs.onSurface.withValues(alpha: 0.08), height: 1),
 
       Expanded(
         child: _isSearching
-            ? ListView(controller: widget.scrollController, children: const [
-                SizedBox(height: 80),
-                Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white24)),
+            ? ListView(controller: widget.scrollController, children: [
+                const SizedBox(height: 80),
+                Center(child: CircularProgressIndicator(strokeWidth: 2, color: cs.onSurfaceVariant.withValues(alpha: 0.5))),
               ])
             : _results.isEmpty
                 ? ListView(controller: widget.scrollController, children: [
@@ -472,7 +472,7 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet>
                     Center(child: Text(
                       _hasSearched ? l.noResultsFound : l.searchForMetadataAbove,
                       textAlign: TextAlign.center,
-                      style: tt.bodyMedium?.copyWith(color: Colors.white38),
+                      style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
                     )),
                   ])
                 : ListView.separated(
@@ -493,7 +493,7 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet>
       Padding(
         padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
         child: Row(children: [
-          Text(l.metadataLookupOverrideLocalDisplay, style: tt.labelSmall?.copyWith(color: Colors.white38)),
+          Text(l.metadataLookupOverrideLocalDisplay, style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
           const Spacer(),
           FilledButton.icon(
             onPressed: _saveCustom,
@@ -508,51 +508,51 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet>
         child: ListView(
           padding: EdgeInsets.fromLTRB(20, 0, 20, 32 + MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).viewPadding.bottom),
           children: [
-            _customField(l.titleLabel, _cTitleCtrl, tt),
-            _customField(l.authorLabel, _cAuthorCtrl, tt),
-            _customField(l.narratorLabel, _cNarratorCtrl, tt),
+            _customField(l.titleLabel, _cTitleCtrl, tt, cs),
+            _customField(l.authorLabel, _cAuthorCtrl, tt, cs),
+            _customField(l.narratorLabel, _cNarratorCtrl, tt, cs),
             Row(children: [
-              Expanded(child: _customField(l.seriesLabel, _cSeriesCtrl, tt)),
+              Expanded(child: _customField(l.seriesLabel, _cSeriesCtrl, tt, cs)),
               const SizedBox(width: 12),
-              SizedBox(width: 80, child: _customField('#', _cSeriesSeqCtrl, tt)),
+              SizedBox(width: 80, child: _customField('#', _cSeriesSeqCtrl, tt, cs)),
             ]),
-            _customField(l.descriptionLabel, _cDescCtrl, tt, maxLines: 4),
-            _customField(l.publisherLabel, _cPublisherCtrl, tt),
+            _customField(l.descriptionLabel, _cDescCtrl, tt, cs, maxLines: 4),
+            _customField(l.publisherLabel, _cPublisherCtrl, tt, cs),
             Row(children: [
-              Expanded(child: _customField(l.yearLabel, _cYearCtrl, tt)),
+              Expanded(child: _customField(l.yearLabel, _cYearCtrl, tt, cs)),
               const SizedBox(width: 12),
-              Expanded(child: _customField(l.asinLabel, _cAsinCtrl, tt)),
+              Expanded(child: _customField(l.asinLabel, _cAsinCtrl, tt, cs)),
             ]),
             Row(children: [
-              Expanded(child: _customField(l.isbnLabel, _cIsbnCtrl, tt)),
+              Expanded(child: _customField(l.isbnLabel, _cIsbnCtrl, tt, cs)),
               const SizedBox(width: 12),
-              Expanded(child: _customField(l.genresLabel, _cGenresCtrl, tt, hint: l.commaSeparated)),
+              Expanded(child: _customField(l.genresLabel, _cGenresCtrl, tt, cs, hint: l.commaSeparated)),
             ]),
-            _customField(l.coverUrlLabel, _cCoverUrlCtrl, tt, hint: l.coverUrlHint),
+            _customField(l.coverUrlLabel, _cCoverUrlCtrl, tt, cs, hint: l.coverUrlHint),
           ],
         ),
       ),
     ]);
   }
 
-  Widget _customField(String label, TextEditingController ctrl, TextTheme tt, {int maxLines = 1, String? hint}) {
+  Widget _customField(String label, TextEditingController ctrl, TextTheme tt, ColorScheme cs, {int maxLines = 1, String? hint}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
         controller: ctrl,
         maxLines: maxLines,
-        style: const TextStyle(color: Colors.white, fontSize: 14),
+        style: TextStyle(color: cs.onSurface, fontSize: 14),
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
-          labelStyle: TextStyle(color: Colors.white38, fontSize: 13),
-          hintStyle: TextStyle(color: Colors.white24, fontSize: 13),
+          labelStyle: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+          hintStyle: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.6), fontSize: 13),
           filled: true,
-          fillColor: Colors.white.withValues(alpha: 0.06),
+          fillColor: cs.onSurface.withValues(alpha: 0.06),
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5))),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: cs.onSurface.withValues(alpha: 0.08))),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: cs.onSurface.withValues(alpha: 0.08))),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: cs.primary.withValues(alpha: 0.5))),
         ),
       ),
     );
@@ -573,16 +573,16 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet>
         controller: controller,
         onSubmitted: onSubmitted,
         textInputAction: TextInputAction.search,
-        style: const TextStyle(color: Colors.white, fontSize: 14),
+        style: TextStyle(color: cs.onSurface, fontSize: 14),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(color: Colors.white38, fontSize: 13),
-          prefixIcon: Icon(icon, size: 18, color: Colors.white30),
+          labelStyle: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+          prefixIcon: Icon(icon, size: 18, color: cs.onSurfaceVariant),
           filled: true,
-          fillColor: Colors.white.withValues(alpha: 0.06),
+          fillColor: cs.onSurface.withValues(alpha: 0.06),
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: cs.onSurface.withValues(alpha: 0.08))),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: cs.onSurface.withValues(alpha: 0.08))),
           focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: cs.primary.withValues(alpha: 0.5))),
         ),
       ),
@@ -609,10 +609,10 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet>
 
     return Card(
       elevation: 0,
-      color: Colors.white.withValues(alpha: 0.05),
+      color: cs.onSurface.withValues(alpha: 0.05),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+        side: BorderSide(color: cs.onSurface.withValues(alpha: 0.06)),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -635,30 +635,30 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet>
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(title, maxLines: 2, overflow: TextOverflow.ellipsis,
-                  style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: Colors.white)),
+                  style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
               if (author.isNotEmpty) ...[
                 const SizedBox(height: 2),
-                Text(author, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: Colors.white60)),
+                Text(author, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
               ],
               if (narrator.isNotEmpty) ...[
                 const SizedBox(height: 1),
                 Text(l.narratedBy(narrator), maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: tt.labelSmall?.copyWith(color: Colors.white38)),
+                    style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
               ],
               const SizedBox(height: 4),
               Wrap(spacing: 6, runSpacing: 4, children: [
-                if (year.isNotEmpty) _miniChip(Icons.calendar_today_rounded, year),
-                if (publisher.isNotEmpty) _miniChip(Icons.business_rounded, publisher),
-                if (series.isNotEmpty) _miniChip(Icons.auto_stories_rounded, series),
+                if (year.isNotEmpty) _miniChip(Icons.calendar_today_rounded, year, cs),
+                if (publisher.isNotEmpty) _miniChip(Icons.business_rounded, publisher, cs),
+                if (series.isNotEmpty) _miniChip(Icons.auto_stories_rounded, series, cs),
               ]),
               if (desc.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(desc, maxLines: 2, overflow: TextOverflow.ellipsis,
-                    style: tt.labelSmall?.copyWith(color: Colors.white30, height: 1.3)),
+                    style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.7), height: 1.3)),
               ],
             ])),
             const SizedBox(width: 4),
-            Icon(Icons.chevron_right_rounded, size: 20, color: Colors.white24),
+            Icon(Icons.chevron_right_rounded, size: 20, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
           ]),
         ),
       ),
@@ -672,18 +672,18 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet>
     );
   }
 
-  Widget _miniChip(IconData icon, String text) {
+  Widget _miniChip(IconData icon, String text, ColorScheme cs) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
+        color: cs.onSurface.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 10, color: Colors.white30),
+        Icon(icon, size: 10, color: cs.onSurfaceVariant),
         const SizedBox(width: 3),
         Flexible(child: Text(text, overflow: TextOverflow.ellipsis, maxLines: 1,
-            style: const TextStyle(color: Colors.white38, fontSize: 10))),
+            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 10))),
       ]),
     );
   }

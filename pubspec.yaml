@@ -1,7 +1,7 @@
 name: absorb
 description: An Audiobookshelf Client
 publish_to: 'none'
-version: 1.9.1+174
+version: 1.9.1+188
 
 environment:
   sdk: '>=3.1.0 <4.0.0'
@@ -111,6 +111,10 @@ flutter:
   assets:
     - assets/icon/
     - assets/audio/
+  fonts:
+    - family: NotoSansJP
+      fonts:
+        - asset: assets/fonts/NotoSansJP-Regular.otf
 
 flutter_launcher_icons:
   android: true

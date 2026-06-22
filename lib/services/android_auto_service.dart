@@ -497,6 +497,46 @@ class AndroidAutoService {
     _downloaded = entries;
   }
 
+  /// Build the Continue shelf from in-progress downloaded books when the server
+  /// is unreachable, so the user can resume in Android Auto / CarPlay without
+  /// digging through the Downloads tab (Discord request). Ordered to match the
+  /// in-app Continue: items the user is actively absorbing first (persisted
+  /// `absorbing_seen_ids`), then most recently played. Relies on `_downloaded`
+  /// already being populated (it always is by the time this runs).
+  Future<void> _buildOfflineContinueFromDownloads() async {
+    if (_downloaded.isEmpty) {
+      _continueListening = [];
+      return;
+    }
+    final psync = ProgressSyncService();
+    final absorbingOrder = await ScopedPrefs.getStringList('absorbing_seen_ids');
+    final absorbingIndex = <String, int>{};
+    for (var i = 0; i < absorbingOrder.length; i++) {
+      absorbingIndex.putIfAbsent(absorbingOrder[i], () => i);
+    }
+
+    // (absorbing order, last-played ms, entry); a download's id is already the
+    // same key the absorbing list uses (bookId, or showId-episodeId).
+    final ranked = <(int, int, AutoBookEntry)>[];
+    for (final entry in _downloaded) {
+      final local = await psync.getLocal(entry.id);
+      if (local == null) continue;
+      final pos = (local['currentTime'] as num?)?.toDouble() ?? 0;
+      final finished = local['isFinished'] as bool? ?? false;
+      if (finished || pos <= 0) continue; // only books in progress
+      final ts = (local['timestamp'] as num?)?.toInt() ?? 0;
+      final order = absorbingIndex[entry.id] ?? (1 << 30);
+      ranked.add((order, ts, entry));
+    }
+    ranked.sort((a, b) {
+      if (a.$1 != b.$1) return a.$1.compareTo(b.$1);
+      return b.$2.compareTo(a.$2);
+    });
+    _continueListening = ranked.map((e) => e.$3).toList();
+    debugPrint(
+        '[AutoBrowse] Offline Continue from downloads: ${_continueListening.length} in-progress');
+  }
+
   Future<void> _refreshFromServer() async {
     final api = await getApi();
     if (api == null) return;
@@ -508,7 +548,7 @@ class AndroidAutoService {
     // the user opens the app or connects to the head unit while their
     // server is unreachable.
     if (manualOffline || AudioPlayerService().knownOffline) {
-      _continueListening = [];
+      await _buildOfflineContinueFromDownloads();
       _recentlyAdded = [];
       _libraries = [];
       return;
@@ -605,7 +645,27 @@ class AndroidAutoService {
         }
       }
 
+      // Order Continue to match the in-app Absorbing page: the user's actively
+      // absorbing items come first, in that page's order (most recent first).
+      // The server's mediaProgress.lastUpdate gets bumped on download/sync, so
+      // sorting by it alone looks like "download order" (GH #287); the persisted
+      // absorbing list is the real listening order. Items not in that list
+      // (e.g. continue-series next books) fall after, by lastUpdate.
+      final absorbingOrder =
+          await ScopedPrefs.getStringList('absorbing_seen_ids');
+      final absorbingIndex = <String, int>{};
+      for (var i = 0; i < absorbingOrder.length; i++) {
+        absorbingIndex.putIfAbsent(absorbingOrder[i], () => i);
+      }
+      String continueKey(Map<String, dynamic> e) {
+        final id = e['id'] as String? ?? '';
+        final ep = e['recentEpisode'] as Map<String, dynamic>?;
+        return ep != null ? '$id-${ep['id'] ?? ''}' : id;
+      }
       continueEntities.sort((a, b) {
+        final ai = absorbingIndex[continueKey(a)] ?? (1 << 30);
+        final bi = absorbingIndex[continueKey(b)] ?? (1 << 30);
+        if (ai != bi) return ai.compareTo(bi);
         final aTime = ((a['mediaProgress'] as Map<String, dynamic>?)?['lastUpdate'] as num?)?.toDouble() ?? 0;
         final bTime = ((b['mediaProgress'] as Map<String, dynamic>?)?['lastUpdate'] as num?)?.toDouble() ?? 0;
         return bTime.compareTo(aTime);
@@ -618,8 +678,9 @@ class AndroidAutoService {
       recentRanked.sort((a, b) => b.$1.compareTo(a.$1));
       _recentlyAdded = recentRanked.map((e) => e.$2).toList();
     } catch (e) {
-      // Server unreachable — clear stale tabs so only Downloads shows offline
-      _continueListening = [];
+      // Server unreachable - fall back to in-progress downloads for Continue so
+      // the user can still resume offline, and clear the rest.
+      await _buildOfflineContinueFromDownloads();
       _recentlyAdded = [];
       _libraries = [];
       debugPrint('[AutoBrowse] Server fetch error: $e');

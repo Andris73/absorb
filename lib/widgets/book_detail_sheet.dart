@@ -28,7 +28,7 @@ import '../services/download_service.dart';
 import '../services/progress_sync_service.dart';
 import '../services/metadata_override_service.dart';
 import '../services/scoped_prefs.dart';
-import '../main.dart' show rootNavigatorKey;
+import '../main.dart' show rootNavigatorKey, colorSourceNotifier, useColorEverywhereNotifier, manualSeedNotifier, manualColorScheme;
 import '../screens/app_shell.dart';
 import '../screens/book_edit_screen.dart';
 import 'author_books_sheet.dart';
@@ -103,8 +103,17 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   bool _authorsExpanded = false;
   bool _narratorsExpanded = false;
   bool _squareCovers = false;
-  ColorScheme? _coverScheme;
+  ColorScheme? _rawCoverScheme;
   String? _coverSchemeUrl; // URL the current scheme was derived from
+
+  /// The cover-derived scheme, unless the user has chosen a manual app color
+  /// and opted to use it everywhere - then book pages wear that color too.
+  ColorScheme? get _coverScheme {
+    if (colorSourceNotifier.value == 'manual' && useColorEverywhereNotifier.value) {
+      return manualColorScheme(manualSeedNotifier.value, Theme.of(context).brightness);
+    }
+    return _rawCoverScheme;
+  }
 
   @override void initState() {
     super.initState();
@@ -286,14 +295,14 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       debugPrint('[BookDetail] PaletteGenerator ok in ${DateTime.now().difference(t0).inMilliseconds}ms');
       final seedColor = accentFromCoverPalette(palette);
       if (seedColor == null || !mounted) return;
-      setState(() => _coverScheme = ColorScheme.fromSeed(
+      setState(() => _rawCoverScheme = ColorScheme.fromSeed(
         seedColor: seedColor, brightness: brightness));
     }).catchError((e) {
       debugPrint('[BookDetail] PaletteGenerator error after ${DateTime.now().difference(t0).inMilliseconds}ms: $e');
       if (!mounted) return;
       setState(() {
         _coverSchemeUrl = null;
-        _coverScheme = ColorScheme.fromSeed(
+        _rawCoverScheme = ColorScheme.fromSeed(
           seedColor: Theme.of(context).colorScheme.primary,
           brightness: brightness,
         );

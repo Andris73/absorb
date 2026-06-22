@@ -253,7 +253,9 @@ class EqualizerService extends ChangeNotifier {
     if (sessionId <= 0) return;
     try {
       await _channel.invokeMethod('attachSession', {'sessionId': sessionId});
-      debugPrint('[EQ] Attached to audio session $sessionId');
+      debugPrint('[EQ] Attached to audio session $sessionId — enabled=$_enabled '
+          'perItem=$_perItem item=$_currentItemId preset=$_activePreset '
+          'bands=$_bandLevels bass=$_bassBoost loud=$_loudnessGain mono=$_mono');
       if (_enabled) {
         _applyCurrentSettings();
       } else {

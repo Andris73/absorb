@@ -678,11 +678,13 @@ class AudioPlayer {
     Timer? currentTimer;
     StreamSubscription<Duration?>? durationSubscription;
     StreamSubscription<PlaybackEvent>? playbackEventSubscription;
+    StreamSubscription<bool>? playingSubscription;
     void yieldPosition(Timer timer) {
       if (controller.isClosed || _durationSubject.isClosed) {
         timer.cancel();
         durationSubscription?.cancel();
         playbackEventSubscription?.cancel();
+        playingSubscription?.cancel();
         if (!controller.isClosed) {
           // This will in turn close _positionSubject.
           controller.close();
@@ -694,9 +696,20 @@ class AudioPlayer {
       }
     }
 
-    durationSubscription = durationStream.listen((duration) {
+    // Only run the periodic timer while actually playing. While paused or
+    // stopped it would otherwise keep waking the event loop (and, under a held
+    // wakelock, the CPU) ~once a second forever. Seeks while paused still
+    // update the position via the playbackEventStream listener below.
+    void restartTimer() {
       currentTimer?.cancel();
-      currentTimer = Timer.periodic(step(), yieldPosition);
+      currentTimer = playing ? Timer.periodic(step(), yieldPosition) : null;
+    }
+
+    durationSubscription = durationStream.listen((duration) {
+      restartTimer();
+    }, onError: (Object e, StackTrace stackTrace) {});
+    playingSubscription = playingStream.listen((_) {
+      restartTimer();
     }, onError: (Object e, StackTrace stackTrace) {});
     playbackEventSubscription = playbackEventStream.listen((event) {
       controller.add(position);

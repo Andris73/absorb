@@ -850,9 +850,17 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
                       final hasNote = bm.note != null && bm.note!.isNotEmpty;
                       return InkWell(
                         onTap: () async {
-                          final result = await showDialog<BookmarkDetailResult>(
+                          final result = await showModalBottomSheet<BookmarkDetailResult>(
                             context: ctx,
-                            builder: (_) => BookmarkDetailDialog(
+                            isScrollControlled: true,
+                            showDragHandle: true,
+                            backgroundColor:
+                                Theme.of(ctx).bottomSheetTheme.backgroundColor,
+                            shape: const RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.vertical(top: Radius.circular(24)),
+                            ),
+                            builder: (_) => BookmarkDetailSheet(
                               itemId: widget.itemId,
                               bookmark: bm,
                               api: context.read<AuthProvider>().apiService,
@@ -1504,7 +1512,7 @@ class CardActionDelegate {
         return CardWideButton(
           icon: Icons.list_rounded, label: l.chapters,
           accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
-          onTap: chapters.isNotEmpty ? () => showChapters(context, accent, tt) : null,
+          onTap: chapters.isNotEmpty ? () => showChapters(context, accent, tt) : _showNoChapters,
         );
       case 'speed':
         return CardWideButton(
@@ -1576,6 +1584,12 @@ class CardActionDelegate {
             );
           },
         );
+      case 'airplay':
+        return CardWideButton(
+          icon: Icons.airplay_rounded, label: 'AirPlay',
+          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
+          onTap: () => handleAirPlayTap(),
+        );
       case 'history':
         return CardWideButton(
           icon: Icons.history_rounded, label: (compact || short) ? l.historyShort : l.playbackHistory,
@@ -1634,8 +1648,12 @@ class CardActionDelegate {
       case 'chapters':
         return MoreMenuItem(
           icon: Icons.list_rounded, label: l.chapters, accent: accent,
-          enabled: chapters.isNotEmpty,
-          onTap: () { Navigator.pop(ctx); showChapters(context, accent, tt); },
+          enabled: true,
+          onTap: () {
+            Navigator.pop(ctx);
+            if (chapters.isEmpty) { _showNoChapters(); return; }
+            showChapters(context, accent, tt);
+          },
         );
       case 'speed':
         return MoreMenuItem(
@@ -1701,6 +1719,11 @@ class CardActionDelegate {
               onTap: () { Navigator.pop(ctx); handleCastTap(context, accent); },
             );
           },
+        );
+      case 'airplay':
+        return MoreMenuItem(
+          icon: Icons.airplay_rounded, label: 'AirPlay', accent: accent,
+          onTap: () { Navigator.pop(ctx); handleAirPlayTap(); },
         );
       case 'history':
         return MoreMenuItem(
@@ -1835,6 +1858,14 @@ class CardActionDelegate {
     ));
   }
 
+  /// iOS only: open the system AirPlay route picker. Routed through the native
+  /// AVRoutePickerView (see AppDelegate's com.absorb.audio_output channel).
+  static const MethodChannel _audioOutputChannel =
+      MethodChannel('com.absorb.audio_output');
+  void handleAirPlayTap() {
+    _audioOutputChannel.invokeMethod('showRoutePicker').catchError((_) => null);
+  }
+
   void handleCastTap(BuildContext ctx, Color accent) {
     final cast = ChromecastService();
     final auth = ctx.read<AuthProvider>();
@@ -1890,6 +1921,15 @@ class CardActionDelegate {
       displaySpeed: speedAdjustedTime ? (isActive ? player.speed : savedSpeed) : 1.0,
       player: player,
       itemId: itemId,
+    );
+  }
+
+  void _showNoChapters() {
+    final l = AppLocalizations.of(context)!;
+    showOverlayToast(
+      context,
+      episodeId != null ? l.noChaptersPodcast : l.noChaptersBook,
+      icon: Icons.list_rounded,
     );
   }
 

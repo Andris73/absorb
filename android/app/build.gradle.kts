@@ -115,6 +115,9 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
+    // SAF document moves for custom download folders (MainActivity.moveBookToSaf).
+    implementation("androidx.documentfile:documentfile:1.0.1")
+
     // Google Play Services — Chromecast + Wearable Data Layer (pushes ABS
     // session credentials to the paired Wear OS app so the watch can sign in
     // without typing on the watch keyboard). Scoped to github + playstore so

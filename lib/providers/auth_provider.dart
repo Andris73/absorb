@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
@@ -41,6 +42,11 @@ class AuthProvider extends ChangeNotifier {
     // waiting on a network timeout. Lets downloaded books start playing
     // instantly when we already know we're offline.
     AudioPlayerService().setKnownOffline(!value);
+    // If we launched while the server was briefly unreachable (e.g. right
+    // after an app update, before networking settles), _userJson never loaded
+    // and isAdmin stayed false — hiding the admin settings until a force-close.
+    // Now that the server is back, pull the user info we missed.
+    if (value) unawaited(_ensureUserInfo());
   }
   Map<String, String> _customHeaders = {};
 
@@ -94,6 +100,16 @@ class AuthProvider extends ChangeNotifier {
   bool get canDelete {
     final perms = _userJson?['permissions'] as Map<String, dynamic>?;
     return perms?['delete'] == true;
+  }
+
+  /// Re-cache server settings after an admin saves them via PATCH /api/settings
+  /// (which echoes the updated serverSettings). Keeps cached values and the
+  /// shown server version fresh without forcing a re-login.
+  void applyServerSettings(Map<String, dynamic> settings) {
+    _serverSettings = settings;
+    final v = settings['version'] as String?;
+    if (v != null && v.isNotEmpty) _serverVersion = v;
+    notifyListeners();
   }
 
   /// E-reader devices the current user is allowed to send ebooks to.
@@ -357,6 +373,67 @@ class AuthProvider extends ChangeNotifier {
     if (isAuthenticated) _pushSessionToWear();
     _isLoading = false;
     notifyListeners();
+  }
+
+  bool _ensuringUserInfo = false;
+
+  /// Public entry point for the reconnect paths (e.g. LibraryProvider going
+  /// back online for a remote server, which doesn't flow through the
+  /// `_serverReachable` setter). No-op once the user info is already loaded.
+  Future<void> ensureUserInfoLoaded() => _ensureUserInfo();
+
+  /// Fetch the current user's full info (type, permissions, ereader devices)
+  /// when we never managed to load it — e.g. the app launched while the server
+  /// was momentarily unreachable, so `tryRestoreSession` skipped the /me fetch
+  /// and `isAdmin` is stuck false. Called when the server becomes reachable
+  /// again so the admin settings appear without a force-close. No-op once we
+  /// already have the user.
+  Future<void> _ensureUserInfo() async {
+    if (_userJson != null || _ensuringUserInfo) return;
+    if (!isAuthenticated || _accessToken == null || activeServerUrl == null) return;
+    _ensuringUserInfo = true;
+    try {
+      final api = ApiService(
+        baseUrl: activeServerUrl!,
+        token: _accessToken!,
+        refreshToken: _refreshToken,
+        isLegacyToken: _isLegacyToken,
+        customHeaders: _customHeaders,
+        onTokensRefreshed: _onTokensRefreshed,
+        onAuthExpired: _onAuthExpired,
+      );
+      final auth = await api.authorize();
+      if (auth != null) {
+        final user = auth['user'] as Map<String, dynamic>?;
+        if (user != null) {
+          _userJson = user;
+          _userId = user['id'] as String?;
+        }
+        final devicesRaw = auth['ereaderDevices'] as List<dynamic>?;
+        if (devicesRaw != null) {
+          _ereaderDevices = devicesRaw.cast<Map<String, dynamic>>();
+          await _persistEreaderDevices();
+        }
+        final sSettings = auth['serverSettings'] as Map<String, dynamic>?;
+        if (sSettings != null) _serverSettings = sSettings;
+        final defaultLib = auth['userDefaultLibraryId'] as String?;
+        if (defaultLib != null) _defaultLibraryId = defaultLib;
+      } else {
+        final me = await api.getMe();
+        if (me != null) {
+          _userJson = me;
+          _userId = me['id'] as String?;
+        }
+      }
+      if (_userJson != null) {
+        debugPrint('[Auth] Loaded user info on reconnect (type=${_userJson?['type']})');
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[Auth] _ensureUserInfo failed: $e');
+    } finally {
+      _ensuringUserInfo = false;
+    }
   }
 
   /// Login with username/password.

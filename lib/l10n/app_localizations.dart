@@ -1822,6 +1822,60 @@ abstract class AppLocalizations {
   /// **'Now Playing'**
   String get colorSourceNowPlaying;
 
+  /// No description provided for @colorSourceDynamic.
+  ///
+  /// In en, this message translates to:
+  /// **'Dynamic'**
+  String get colorSourceDynamic;
+
+  /// No description provided for @colorSourceManual.
+  ///
+  /// In en, this message translates to:
+  /// **'Manual'**
+  String get colorSourceManual;
+
+  /// No description provided for @colorSourceManualDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a fixed app color you choose below'**
+  String get colorSourceManualDescription;
+
+  /// No description provided for @colorSourceCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get colorSourceCustom;
+
+  /// No description provided for @useColorEverywhereLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Use this color everywhere'**
+  String get useColorEverywhereLabel;
+
+  /// No description provided for @useColorEverywhereSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Also color book detail pages and the player card with your set color instead of each book\'s cover'**
+  String get useColorEverywhereSubtitle;
+
+  /// No description provided for @flatBackgroundLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Flat background'**
+  String get flatBackgroundLabel;
+
+  /// No description provided for @flatBackgroundSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the background gradient. Pure black in dark mode for OLED screens.'**
+  String get flatBackgroundSubtitle;
+
+  /// No description provided for @backgroundIntensityLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Background intensity'**
+  String get backgroundIntensityLabel;
+
   /// No description provided for @startScreenLabel.
   ///
   /// In en, this message translates to:
@@ -2098,6 +2152,12 @@ abstract class AppLocalizations {
   /// **'Playlist'**
   String get queueModePlaylist;
 
+  /// No description provided for @queueModeCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Collection'**
+  String get queueModeCollection;
+
   /// No description provided for @queueModeInfoPlaylist.
   ///
   /// In en, this message translates to:
@@ -2169,6 +2229,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open playlist'**
   String get openPlaylist;
+
+  /// No description provided for @openCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Open collection'**
+  String get openCollection;
 
   /// No description provided for @playlistPlayAction.
   ///
@@ -3472,6 +3538,30 @@ abstract class AppLocalizations {
   /// **'Reset to default storage'**
   String get resetToDefaultStorage;
 
+  /// No description provided for @legacyDownloadsNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 download is in an old custom folder that can no longer be opened. Re-download it or dismiss this notice.} other{{count} downloads are in an old custom folder that can no longer be opened. Re-download them or dismiss this notice.}}'**
+  String legacyDownloadsNotice(int count);
+
+  /// No description provided for @redownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Re-download'**
+  String get redownload;
+
+  /// No description provided for @redownloadStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Re-downloading'**
+  String get redownloadStarted;
+
+  /// No description provided for @dismiss.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get dismiss;
+
   /// No description provided for @tipsAndHiddenFeatures.
   ///
   /// In en, this message translates to:
@@ -4347,6 +4437,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Chapters'**
   String get chapters;
+
+  /// No description provided for @noChaptersBook.
+  ///
+  /// In en, this message translates to:
+  /// **'This book has no chapters'**
+  String get noChaptersBook;
+
+  /// No description provided for @noChaptersPodcast.
+  ///
+  /// In en, this message translates to:
+  /// **'This podcast has no chapters'**
+  String get noChaptersPodcast;
 
   /// No description provided for @failedToLoad.
   ///
@@ -7877,6 +7979,54 @@ abstract class AppLocalizations {
   /// **'Listened'**
   String get statsScreenListened;
 
+  /// No description provided for @sessionEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit session'**
+  String get sessionEditTitle;
+
+  /// No description provided for @sessionDayLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Day'**
+  String get sessionDayLabel;
+
+  /// No description provided for @sessionDeleteConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete session?'**
+  String get sessionDeleteConfirmTitle;
+
+  /// No description provided for @sessionDeleteConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This removes the session and lowers your listening totals by its time. It cannot be undone.'**
+  String get sessionDeleteConfirmBody;
+
+  /// No description provided for @sessionSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Session updated'**
+  String get sessionSaved;
+
+  /// No description provided for @sessionDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Session deleted'**
+  String get sessionDeleted;
+
+  /// No description provided for @sessionSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save changes'**
+  String get sessionSaveFailed;
+
+  /// No description provided for @sessionDeleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not delete this session'**
+  String get sessionDeleteFailed;
+
   /// No description provided for @statsScreenStartedAtPosition.
   ///
   /// In en, this message translates to:
@@ -10577,6 +10727,660 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t play this spot.'**
   String get bookmarkPreviewFailed;
+
+  /// No description provided for @clipExport.
+  ///
+  /// In en, this message translates to:
+  /// **'Export clip'**
+  String get clipExport;
+
+  /// No description provided for @clipJumpToStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Jump to start'**
+  String get clipJumpToStart;
+
+  /// No description provided for @clipJumpToEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'Jump to end'**
+  String get clipJumpToEnd;
+
+  /// No description provided for @clipSetStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Set start'**
+  String get clipSetStart;
+
+  /// No description provided for @clipSetEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'Set end'**
+  String get clipSetEnd;
+
+  /// No description provided for @clipInLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'In'**
+  String get clipInLabel;
+
+  /// No description provided for @clipOutLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Out'**
+  String get clipOutLabel;
+
+  /// No description provided for @clipSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save clip'**
+  String get clipSave;
+
+  /// No description provided for @clipExportSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved {filename}'**
+  String clipExportSaved(String filename);
+
+  /// No description provided for @clipExportClamped.
+  ///
+  /// In en, this message translates to:
+  /// **'Clip saved, shortened to the end of this track'**
+  String get clipExportClamped;
+
+  /// No description provided for @clipExportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t export the clip.'**
+  String get clipExportFailed;
+
+  /// No description provided for @clipDownloadToExport.
+  ///
+  /// In en, this message translates to:
+  /// **'Download this book first to export a clip on iPhone.'**
+  String get clipDownloadToExport;
+
+  /// No description provided for @fsPickerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Select folder'**
+  String get fsPickerTitle;
+
+  /// No description provided for @fsServerRoot.
+  ///
+  /// In en, this message translates to:
+  /// **'Server root'**
+  String get fsServerRoot;
+
+  /// No description provided for @fsEmptyFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'No subfolders here'**
+  String get fsEmptyFolder;
+
+  /// No description provided for @fsUseThisFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Use this folder'**
+  String get fsUseThisFolder;
+
+  /// No description provided for @adminLibrariesManage.
+  ///
+  /// In en, this message translates to:
+  /// **'Libraries'**
+  String get adminLibrariesManage;
+
+  /// No description provided for @adminLibrariesManageSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Create, edit and reorder'**
+  String get adminLibrariesManageSubtitle;
+
+  /// No description provided for @adminServerSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Server settings'**
+  String get adminServerSettings;
+
+  /// No description provided for @adminServerSettingsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanner, storage and sorting'**
+  String get adminServerSettingsSubtitle;
+
+  /// No description provided for @adminStats.
+  ///
+  /// In en, this message translates to:
+  /// **'Statistics'**
+  String get adminStats;
+
+  /// No description provided for @adminStatsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Library and listening totals'**
+  String get adminStatsSubtitle;
+
+  /// No description provided for @adminAllSessions.
+  ///
+  /// In en, this message translates to:
+  /// **'All sessions'**
+  String get adminAllSessions;
+
+  /// No description provided for @adminAllSessionsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'View and manage all listening sessions'**
+  String get adminAllSessionsSubtitle;
+
+  /// No description provided for @adminSessionsAllUsers.
+  ///
+  /// In en, this message translates to:
+  /// **'All users'**
+  String get adminSessionsAllUsers;
+
+  /// No description provided for @adminSessionsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No sessions'**
+  String get adminSessionsEmpty;
+
+  /// No description provided for @statsLibraryTotals.
+  ///
+  /// In en, this message translates to:
+  /// **'Library totals'**
+  String get statsLibraryTotals;
+
+  /// No description provided for @statsTotalItems.
+  ///
+  /// In en, this message translates to:
+  /// **'Items'**
+  String get statsTotalItems;
+
+  /// No description provided for @statsAudioFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio files'**
+  String get statsAudioFiles;
+
+  /// No description provided for @statsTotalSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Total size'**
+  String get statsTotalSize;
+
+  /// No description provided for @statsBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'Books'**
+  String get statsBooks;
+
+  /// No description provided for @statsPodcasts.
+  ///
+  /// In en, this message translates to:
+  /// **'Podcasts'**
+  String get statsPodcasts;
+
+  /// No description provided for @statsBooksSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Books size'**
+  String get statsBooksSize;
+
+  /// No description provided for @statsYearReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Year in review'**
+  String get statsYearReview;
+
+  /// No description provided for @statsNoYearData.
+  ///
+  /// In en, this message translates to:
+  /// **'No data for this year'**
+  String get statsNoYearData;
+
+  /// No description provided for @statsListeningTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Listening time'**
+  String get statsListeningTime;
+
+  /// No description provided for @statsSessions.
+  ///
+  /// In en, this message translates to:
+  /// **'Sessions'**
+  String get statsSessions;
+
+  /// No description provided for @statsBooksAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'Books added'**
+  String get statsBooksAdded;
+
+  /// No description provided for @statsAuthorsAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'Authors added'**
+  String get statsAuthorsAdded;
+
+  /// No description provided for @statsTopAuthors.
+  ///
+  /// In en, this message translates to:
+  /// **'Top authors'**
+  String get statsTopAuthors;
+
+  /// No description provided for @statsTopNarrators.
+  ///
+  /// In en, this message translates to:
+  /// **'Top narrators'**
+  String get statsTopNarrators;
+
+  /// No description provided for @statsTopGenres.
+  ///
+  /// In en, this message translates to:
+  /// **'Top genres'**
+  String get statsTopGenres;
+
+  /// No description provided for @srvScannerSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanner'**
+  String get srvScannerSection;
+
+  /// No description provided for @srvFindCovers.
+  ///
+  /// In en, this message translates to:
+  /// **'Find covers'**
+  String get srvFindCovers;
+
+  /// No description provided for @srvCoverProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Cover provider'**
+  String get srvCoverProvider;
+
+  /// No description provided for @srvParseSubtitles.
+  ///
+  /// In en, this message translates to:
+  /// **'Parse subtitles from filename'**
+  String get srvParseSubtitles;
+
+  /// No description provided for @srvPreferMatched.
+  ///
+  /// In en, this message translates to:
+  /// **'Prefer matched metadata'**
+  String get srvPreferMatched;
+
+  /// No description provided for @srvDisableWatcher.
+  ///
+  /// In en, this message translates to:
+  /// **'Disable folder watcher'**
+  String get srvDisableWatcher;
+
+  /// No description provided for @srvStorageSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage'**
+  String get srvStorageSection;
+
+  /// No description provided for @srvStoreCover.
+  ///
+  /// In en, this message translates to:
+  /// **'Store cover with item'**
+  String get srvStoreCover;
+
+  /// No description provided for @srvStoreMetadata.
+  ///
+  /// In en, this message translates to:
+  /// **'Store metadata with item'**
+  String get srvStoreMetadata;
+
+  /// No description provided for @srvMetadataFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Metadata file format'**
+  String get srvMetadataFormat;
+
+  /// No description provided for @srvFormatSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Display and format'**
+  String get srvFormatSection;
+
+  /// No description provided for @srvDateFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Date format'**
+  String get srvDateFormat;
+
+  /// No description provided for @srvTimeFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Time format'**
+  String get srvTimeFormat;
+
+  /// No description provided for @srvLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Server language'**
+  String get srvLanguage;
+
+  /// No description provided for @srvChromecast.
+  ///
+  /// In en, this message translates to:
+  /// **'Chromecast support'**
+  String get srvChromecast;
+
+  /// No description provided for @srvAllowIframe.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow iframe embedding'**
+  String get srvAllowIframe;
+
+  /// No description provided for @srvSortingSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Sorting'**
+  String get srvSortingSection;
+
+  /// No description provided for @srvIgnorePrefixes.
+  ///
+  /// In en, this message translates to:
+  /// **'Ignore prefixes when sorting'**
+  String get srvIgnorePrefixes;
+
+  /// No description provided for @srvSortingPrefixes.
+  ///
+  /// In en, this message translates to:
+  /// **'Sorting prefixes'**
+  String get srvSortingPrefixes;
+
+  /// No description provided for @srvAddPrefix.
+  ///
+  /// In en, this message translates to:
+  /// **'Add prefix'**
+  String get srvAddPrefix;
+
+  /// No description provided for @srvSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save settings'**
+  String get srvSave;
+
+  /// No description provided for @srvSavePrefixes.
+  ///
+  /// In en, this message translates to:
+  /// **'Save prefixes'**
+  String get srvSavePrefixes;
+
+  /// No description provided for @srvSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings saved'**
+  String get srvSaved;
+
+  /// No description provided for @srvSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save settings'**
+  String get srvSaveFailed;
+
+  /// No description provided for @srvPrefixesSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Sorting prefixes updated'**
+  String get srvPrefixesSaved;
+
+  /// No description provided for @libNoneYet.
+  ///
+  /// In en, this message translates to:
+  /// **'No libraries yet'**
+  String get libNoneYet;
+
+  /// No description provided for @libReorderFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the new order'**
+  String get libReorderFailed;
+
+  /// No description provided for @libDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete library?'**
+  String get libDeleteTitle;
+
+  /// No description provided for @libDeleteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This permanently removes the library and all of its items from the server.'**
+  String get libDeleteBody;
+
+  /// No description provided for @libDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Library deleted'**
+  String get libDeleted;
+
+  /// No description provided for @libDeleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t delete library'**
+  String get libDeleteFailed;
+
+  /// No description provided for @libFolderCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 folder} other{{count} folders}}'**
+  String libFolderCount(int count);
+
+  /// No description provided for @libNewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'New library'**
+  String get libNewTitle;
+
+  /// No description provided for @libEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit library'**
+  String get libEditTitle;
+
+  /// No description provided for @libName.
+  ///
+  /// In en, this message translates to:
+  /// **'Library name'**
+  String get libName;
+
+  /// No description provided for @libMediaType.
+  ///
+  /// In en, this message translates to:
+  /// **'Media type'**
+  String get libMediaType;
+
+  /// No description provided for @libMediaBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Books'**
+  String get libMediaBook;
+
+  /// No description provided for @libMediaPodcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Podcasts'**
+  String get libMediaPodcast;
+
+  /// No description provided for @libProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Metadata provider'**
+  String get libProvider;
+
+  /// No description provided for @libIcon.
+  ///
+  /// In en, this message translates to:
+  /// **'Icon'**
+  String get libIcon;
+
+  /// No description provided for @libFolders.
+  ///
+  /// In en, this message translates to:
+  /// **'Folders'**
+  String get libFolders;
+
+  /// No description provided for @libAddFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Add folder'**
+  String get libAddFolder;
+
+  /// No description provided for @libNoFolders.
+  ///
+  /// In en, this message translates to:
+  /// **'Add at least one folder'**
+  String get libNoFolders;
+
+  /// No description provided for @libAdvanced.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced settings'**
+  String get libAdvanced;
+
+  /// No description provided for @libCoverShape.
+  ///
+  /// In en, this message translates to:
+  /// **'Cover shape'**
+  String get libCoverShape;
+
+  /// No description provided for @libCoverSquare.
+  ///
+  /// In en, this message translates to:
+  /// **'Square'**
+  String get libCoverSquare;
+
+  /// No description provided for @libCoverStandard.
+  ///
+  /// In en, this message translates to:
+  /// **'Standard'**
+  String get libCoverStandard;
+
+  /// No description provided for @libDisableWatcher.
+  ///
+  /// In en, this message translates to:
+  /// **'Disable folder watcher'**
+  String get libDisableWatcher;
+
+  /// No description provided for @libSkipAsin.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip matching books that have an ASIN'**
+  String get libSkipAsin;
+
+  /// No description provided for @libSkipIsbn.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip matching books that have an ISBN'**
+  String get libSkipIsbn;
+
+  /// No description provided for @libHideSingleSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide single-book series'**
+  String get libHideSingleSeries;
+
+  /// No description provided for @libAudiobooksOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Audiobooks only'**
+  String get libAudiobooksOnly;
+
+  /// No description provided for @libEpubScripted.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow scripted ePub content'**
+  String get libEpubScripted;
+
+  /// No description provided for @libLaterBooksOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Only show later books in Continue Series'**
+  String get libLaterBooksOnly;
+
+  /// No description provided for @libPodcastRegion.
+  ///
+  /// In en, this message translates to:
+  /// **'Podcast search region'**
+  String get libPodcastRegion;
+
+  /// No description provided for @libMarkPercent.
+  ///
+  /// In en, this message translates to:
+  /// **'Finished at % complete'**
+  String get libMarkPercent;
+
+  /// No description provided for @libMarkTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Finished with seconds left'**
+  String get libMarkTime;
+
+  /// No description provided for @libAutoScan.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-scan schedule (cron)'**
+  String get libAutoScan;
+
+  /// No description provided for @libCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Create library'**
+  String get libCreate;
+
+  /// No description provided for @libUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Save changes'**
+  String get libUpdate;
+
+  /// No description provided for @libNameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a library name'**
+  String get libNameRequired;
+
+  /// No description provided for @libCreated.
+  ///
+  /// In en, this message translates to:
+  /// **'Library created'**
+  String get libCreated;
+
+  /// No description provided for @libCreateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t create library'**
+  String get libCreateFailed;
+
+  /// No description provided for @libUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Library updated'**
+  String get libUpdated;
+
+  /// No description provided for @libUpdateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update library'**
+  String get libUpdateFailed;
+
+  /// No description provided for @libRemoveFoldersTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove folders?'**
+  String get libRemoveFoldersTitle;
+
+  /// No description provided for @libRemoveFoldersBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Removing a folder deletes its items from the library. This can\'t be undone.'**
+  String get libRemoveFoldersBody;
 }
 
 class _AppLocalizationsDelegate

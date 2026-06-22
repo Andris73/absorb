@@ -264,9 +264,15 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
   Future<void> _jumpToBookmark(String itemId, Bookmark bookmark, String bookTitle) async {
     final l = AppLocalizations.of(context)!;
     final api = context.read<AuthProvider>().apiService;
-    final result = await showDialog<BookmarkDetailResult>(
+    final result = await showModalBottomSheet<BookmarkDetailResult>(
       context: context,
-      builder: (ctx) => BookmarkDetailDialog(
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => BookmarkDetailSheet(
         itemId: itemId,
         bookmark: bookmark,
         api: api,

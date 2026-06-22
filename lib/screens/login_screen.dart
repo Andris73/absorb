@@ -15,7 +15,7 @@ import '../services/user_account_service.dart';
 import '../widgets/absorb_wave_icon.dart';
 import '../widgets/overlay_toast.dart';
 import '../services/audio_player_service.dart';
-import '../main.dart' show applyTrustAllCerts, oledNotifier;
+import '../main.dart' show applyTrustAllCerts, flatNotifier;
 import '../l10n/app_localizations.dart';
 import '../services/wording.dart';
 
@@ -44,6 +44,10 @@ class _LoginScreenState extends State<LoginScreen>
   bool _serverValid = false;
   bool _serverChecking = false;
   String? _serverError;
+  // Technical reason the last check failed (TLS, timeout, HTTP status, etc.),
+  // shown beneath the field so unreachable-in-app-but-fine-in-browser servers
+  // are diagnosable instead of just "could not reach server".
+  String? _serverErrorDetail;
   Timer? _debounce;
 
   // Login error
@@ -127,6 +131,7 @@ class _LoginScreenState extends State<LoginScreen>
         _serverValid = false;
         _serverChecking = false;
         _serverError = null;
+        _serverErrorDetail = null;
         _lastValidatedServer = '';
       });
       _debounce?.cancel();
@@ -173,7 +178,8 @@ class _LoginScreenState extends State<LoginScreen>
 
     try {
       final headers = _collectHeaders();
-      final ok = await ApiService.pingServer(fullUrl, customHeaders: headers);
+      final result = await ApiService.pingServerDetailed(fullUrl, customHeaders: headers);
+      final ok = result.ok;
       if (!mounted) return;
       if (_serverController.text.trim() != text) return;
 
@@ -181,6 +187,7 @@ class _LoginScreenState extends State<LoginScreen>
         _serverChecking = false;
         _serverValid = ok;
         _serverError = ok ? null : AppLocalizations.of(context)!.loginCouldNotReachServer;
+        _serverErrorDetail = ok ? null : result.detail;
         if (ok) {
           _lastValidatedServer = fullUrl;
         } else {
@@ -205,6 +212,7 @@ class _LoginScreenState extends State<LoginScreen>
         _serverChecking = false;
         _serverValid = false;
         _serverError = AppLocalizations.of(context)!.loginCouldNotReachServer;
+        _serverErrorDetail = e.toString();
         _oidcConfig = null;
       });
     }
@@ -339,7 +347,7 @@ class _LoginScreenState extends State<LoginScreen>
     return Scaffold(
       resizeToAvoidBottomInset: true,
       body: Container(
-        decoration: oledNotifier.value ? null : BoxDecoration(
+        decoration: flatNotifier.value ? null : BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -532,6 +540,20 @@ class _LoginScreenState extends State<LoginScreen>
                                             : null,
                                     errorText: _serverError,
                                   ),
+
+                                  if (_serverErrorDetail != null) ...[
+                                    const SizedBox(height: 6),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                                      child: Text(
+                                        _serverErrorDetail!,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
 
                                   // Advanced: Custom Headers — must be before server validation
                                   const SizedBox(height: 8),

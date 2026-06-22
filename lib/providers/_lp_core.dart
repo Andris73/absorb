@@ -138,6 +138,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         debugPrint('[Library] Manual offline off — flushing pending syncs');
         ProgressSyncService().flushPendingSync(api: _api!);
         ProgressSyncService().flushOfflineListeningTime(api: _api!);
+        LocalSessionService().flushPending(api: _api!);
       }
       if (_selectedLibraryId == null) {
         (this as LibraryProvider).loadLibraries();
@@ -229,10 +230,16 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       _stopServerPingTimer();
       _startHealthCheckTimer();
       PaintingBinding.instance.imageCache.clear();
+      // If we launched offline (e.g. right after an app update), the user info
+      // (type/permissions) never loaded and admin-only UI stayed hidden. Now
+      // that we're back online, pull it so the admin settings appear without a
+      // force-close. No-op if it's already loaded.
+      unawaited(_auth?.ensureUserInfoLoaded() ?? Future.value());
       if (_api != null) {
         debugPrint('[Library] Back online — flushing pending syncs');
         ProgressSyncService().flushPendingSync(api: _api!);
         ProgressSyncService().flushOfflineListeningTime(api: _api!);
+        LocalSessionService().flushPending(api: _api!);
       }
       if (_selectedLibraryId == null) {
         (this as LibraryProvider).loadLibraries();
@@ -717,6 +724,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
   void _startConnectivityMonitoring() {
     _connectivitySub?.cancel();
+    _connectivityDebounce?.cancel();
     Connectivity().checkConnectivity().then((result) {
       _deviceHasConnectivity = !result.contains(ConnectivityResult.none);
       if (!_deviceHasConnectivity) {
@@ -740,6 +748,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final hasConnectivity = !result.contains(ConnectivityResult.none);
       _deviceHasConnectivity = hasConnectivity;
       if (!hasConnectivity) {
+        _connectivityDebounce?.cancel();
         _stopServerPingTimer();
         _stopLocalProbeTimer();
         setNetworkOffline(true);
@@ -750,25 +759,31 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       }
       if (_manualOffline) return;
 
-      // Got connectivity back - re-probe and potentially come online.
-      // We pick the active server based on actual reachability, not on
-      // whether the connectivity list happens to contain wifi this tick.
-      final reachable =
-          await _pingActiveServerWithFallback(const Duration(seconds: 5)) != null;
-      if (reachable) {
-        setNetworkOffline(false);
-        if (_rollingDownloadSeries.isNotEmpty) _catchUpRollingDownloads();
-        _catchUpQueueAutoDownloads();
-        (this as LibraryProvider).catchUpSubscribedPodcasts();
-      } else {
-        debugPrint('[Library] Connectivity changed but server unreachable — starting ping timer');
-        if (_networkOffline) {
-          _startServerPingTimer();
+      // Coalesce bursts of "connected" events (wifi<->mobile handoff, interface
+      // scans) so we don't re-ping the server and re-run catch-up downloads on
+      // every blip - that was burning packets and battery on flaky networks.
+      _connectivityDebounce?.cancel();
+      _connectivityDebounce = Timer(const Duration(seconds: 2), () async {
+        // Got connectivity back - re-probe and potentially come online.
+        // We pick the active server based on actual reachability, not on
+        // whether the connectivity list happens to contain wifi this tick.
+        final reachable =
+            await _pingActiveServerWithFallback(const Duration(seconds: 5)) != null;
+        if (reachable) {
+          setNetworkOffline(false);
+          if (_rollingDownloadSeries.isNotEmpty) _catchUpRollingDownloads();
+          _catchUpQueueAutoDownloads();
+          (this as LibraryProvider).catchUpSubscribedPodcasts();
         } else {
-          _goOffline();
+          debugPrint('[Library] Connectivity changed but server unreachable — starting ping timer');
+          if (_networkOffline) {
+            _startServerPingTimer();
+          } else {
+            _goOffline();
+          }
         }
-      }
-      _startLocalProbeTimer();
+        _startLocalProbeTimer();
+      });
     });
   }
 
@@ -948,6 +963,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         setNetworkOffline(true);
       } else {
         notifyServerReachable(reachableUrl);
+        // Safety net: if user info never loaded (e.g. /me failed at launch
+        // while the server was technically reachable), admin-only UI stays
+        // hidden. Idempotent once loaded.
+        unawaited(_auth?.ensureUserInfoLoaded() ?? Future.value());
       }
     });
   }
@@ -2002,9 +2021,12 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   }
 
   void _checkRollingDownloads(String playingKey) async {
-    if (_api == null || isOffline || _rollingDownloadSeries.isEmpty) {
-      return;
-    }
+    if (_api == null || isOffline) return;
+    // With the "auto series download" default on, a book in a series enables
+    // rolling download for that series on first play (books only).
+    final autoSeriesDefault =
+        await PlayerSettings.getAutoSeriesDownloadDefault();
+    if (_rollingDownloadSeries.isEmpty && !autoSeriesDefault) return;
     final count = await PlayerSettings.getRollingDownloadCount();
 
     if (playingKey.length > 36) {
@@ -2021,7 +2043,13 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           (seriesId, _) = _StateMixin._extractSeries(fullItem);
         }
       }
-      if (seriesId != null && _rollingDownloadSeries.contains(seriesId)) {
+      if (seriesId == null) return;
+      if (autoSeriesDefault && !_rollingDownloadSeries.contains(seriesId)) {
+        _rollingDownloadSeries.add(seriesId);
+        await _saveRollingDownloadSeries();
+        notifyListeners();
+      }
+      if (_rollingDownloadSeries.contains(seriesId)) {
         _rollingDownloadBook(playingKey, count);
       }
     }

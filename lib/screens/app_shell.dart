@@ -131,6 +131,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
   final _cast = ChromecastService();
   bool _playerHadBook = false;
   bool _wasPlaying = false;
+  bool _lifecycleBackgrounded = false;
   String? _lastItemId;
   bool _expandedIsOpen = false;
   bool _wasCasting = false;
@@ -489,29 +490,55 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      // Belt-and-suspenders: never let the nav bar come back hidden after a
-      // resume. The screens snap their own driver back to shown on next scroll
-      // anyway, but mirror it here in case the user resumes onto a stale tab.
-      _navBarAnimController.value = 1.0;
-      context.read<LibraryProvider>().onAppForegrounded();
-      SleepTimerService().onAppForegrounded();
-      AudioPlayerService.onAppForegrounded();
-      HomeWidgetService().onAppForegrounded();
-      ReviewService.onAppForegrounded();
-      _refreshDataForTab(_currentIndex);
-      // Check auto sleep in case we resumed into the window
-      SleepTimerService().checkAutoSleep();
-      _checkForUpdate();
-    } else if (state == AppLifecycleState.paused) {
-      context.read<LibraryProvider>().onAppBackgrounded();
-      SleepTimerService().onAppBackgrounded();
-      AudioPlayerService.onAppBackgrounded();
-      HomeWidgetService().onAppBackgrounded();
-    } else if (state == AppLifecycleState.detached) {
-      final cast = ChromecastService();
-      if (cast.isConnected) cast.disconnect();
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _handleAppForegrounded();
+        break;
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        // `hidden` fires on desktop (macOS/Windows) when the window is
+        // minimized or hidden, where `paused` often never arrives - without
+        // handling it, every background timer and the socket keep running at
+        // full foreground cadence forever and drain the battery. On mobile
+        // `hidden` precedes `paused`; the _lifecycleBackgrounded guard makes
+        // the second call a no-op (and stops `hidden` on the way back up from
+        // flapping the socket).
+        _handleAppBackgrounded();
+        break;
+      case AppLifecycleState.detached:
+        final cast = ChromecastService();
+        if (cast.isConnected) cast.disconnect();
+        break;
+      case AppLifecycleState.inactive:
+        break;
     }
+  }
+
+  void _handleAppForegrounded() {
+    if (!_lifecycleBackgrounded) return;
+    _lifecycleBackgrounded = false;
+    // Belt-and-suspenders: never let the nav bar come back hidden after a
+    // resume. The screens snap their own driver back to shown on next scroll
+    // anyway, but mirror it here in case the user resumes onto a stale tab.
+    _navBarAnimController.value = 1.0;
+    context.read<LibraryProvider>().onAppForegrounded();
+    SleepTimerService().onAppForegrounded();
+    AudioPlayerService.onAppForegrounded();
+    HomeWidgetService().onAppForegrounded();
+    ReviewService.onAppForegrounded();
+    _refreshDataForTab(_currentIndex);
+    // Check auto sleep in case we resumed into the window
+    SleepTimerService().checkAutoSleep();
+    _checkForUpdate();
+  }
+
+  void _handleAppBackgrounded() {
+    if (_lifecycleBackgrounded) return;
+    _lifecycleBackgrounded = true;
+    context.read<LibraryProvider>().onAppBackgrounded();
+    SleepTimerService().onAppBackgrounded();
+    AudioPlayerService.onAppBackgrounded();
+    HomeWidgetService().onAppBackgrounded();
   }
 
   @override

@@ -16,7 +16,7 @@ import '../widgets/shimmer.dart';
 import '../widgets/book_detail_sheet.dart';
 import '../widgets/card_buttons.dart';
 import '../widgets/episode_list_sheet.dart';
-import '../main.dart' show oledNotifier;
+import '../main.dart' show flatNotifier, gradientIntensityNotifier;
 import '../widgets/home_customize_sheet.dart';
 import '../widgets/playlist_detail_sheet.dart';
 import '../widgets/collection_detail_sheet.dart';
@@ -305,13 +305,13 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     return Scaffold(
       backgroundColor: scaffoldBg,
       body: Container(
-        decoration: oledNotifier.value ? null : BoxDecoration(
+        decoration: flatNotifier.value ? null : BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             stops: const [0.0, 0.22, 0.72, 1.0],
             colors: [
-              cs.primary.withValues(alpha: 0.06),
+              cs.primary.withValues(alpha: gradientIntensityNotifier.value),
               cs.surface,
               lowerFade,
               scaffoldBg,

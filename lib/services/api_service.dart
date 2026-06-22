@@ -5,6 +5,15 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+/// Outcome of a local-session upsert. [serverTooOld] flags a 404/501 (the
+/// server predates /api/session/local) so the caller can fall back to the
+/// legacy /play flush instead of stranding the session in the replay queue.
+class LocalSessionResult {
+  final bool ok;
+  final bool serverTooOld;
+  const LocalSessionResult({required this.ok, required this.serverTooOld});
+}
+
 class ApiService {
   static String appVersion = '1.3.0'; // fallback; overwritten by initVersion()
 
@@ -268,6 +277,57 @@ class ApiService {
     } catch (_) {
       return false;
     }
+  }
+
+  /// Ping the server and report why it failed, for the login screen. The
+  /// plain [pingServer] collapses every failure into a single false, which
+  /// leaves users (and us) blind when a server reachable in a browser won't
+  /// connect in the app - usually a proxy/CDN treating the app's request
+  /// differently than a browser. Kept separate so the connectivity hot paths
+  /// keep their lean bool + short timeouts. [detail] is null on success.
+  static Future<({bool ok, String? detail})> pingServerDetailed(
+    String serverUrl, {
+    Map<String, String> customHeaders = const {},
+  }) async {
+    final url = serverUrl.endsWith('/') ? '${serverUrl}ping' : '$serverUrl/ping';
+    try {
+      final response = await http
+          .get(Uri.parse(url), headers: customHeaders.isNotEmpty ? customHeaders : null)
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) return (ok: true, detail: null);
+      return (ok: false, detail: 'Server returned HTTP ${response.statusCode} instead of 200.');
+    } catch (e) {
+      return (ok: false, detail: _describePingError(e));
+    }
+  }
+
+  /// Turn a raw ping exception into a plain-language reason. Classifies by
+  /// message text rather than type because the http package flattens socket
+  /// and TLS errors into ClientException, hiding the original class.
+  static String _describePingError(Object e) {
+    if (e is TimeoutException) {
+      return 'Timed out after 15s. The server is slow to respond, or something on the way is dropping the connection.';
+    }
+    final msg = e.toString();
+    final lower = msg.toLowerCase();
+    if (lower.contains('failed host lookup') || lower.contains('nodename nor servname')) {
+      return 'Could not resolve the domain (DNS). Check the address is spelled right. ($msg)';
+    }
+    if (lower.contains('handshake') || lower.contains('certificate') || lower.contains('tls')) {
+      return 'Secure connection (TLS) failed. If your server uses a self-signed certificate, turn on Trust all certificates above. Otherwise the server may be blocking non-browser apps. ($msg)';
+    }
+    if (lower.contains('connection refused')) {
+      return 'Connection refused - nothing is listening on that address or port. ($msg)';
+    }
+    if (lower.contains('connection closed before full header') ||
+        lower.contains('http/2') ||
+        lower.contains('protocol error')) {
+      return 'The server closed the connection early. This can happen when a proxy only speaks HTTP/2. ($msg)';
+    }
+    if (lower.contains('connection reset') || lower.contains('connection terminated')) {
+      return 'The connection was reset, which usually means a proxy or firewall is blocking the app even though browsers get through. ($msg)';
+    }
+    return msg;
   }
 
   /// Get the server version via the /status endpoint (no auth needed).
@@ -737,6 +797,17 @@ class ApiService {
   /// Expose clean base URL for audio player to build URLs
   String get cleanBaseUrl => _cleanBaseUrl;
 
+  /// The device descriptor ABS attaches to playback sessions. Shared by the
+  /// /play session calls and the client-owned local-session calls.
+  Map<String, dynamic> get _deviceInfo => {
+        'clientName': 'Absorb',
+        'clientVersion': appVersion,
+        'deviceId': deviceId,
+        'deviceName': '${deviceManufacturer.isNotEmpty ? "$deviceManufacturer " : ""}$deviceModel'.trim(),
+        'manufacturer': deviceManufacturer,
+        'model': deviceModel,
+      };
+
   /// Start a playback session for a library item.
   /// POST /api/items/:id/play
   /// Returns the full session object including audioTracks with contentUrl.
@@ -746,14 +817,7 @@ class ApiService {
       final url = '$_cleanBaseUrl/api/items/$itemId/play$epPath';
       debugPrint('[ABS] Starting playback session: POST $url (forceDirectPlay: $forceDirectPlay, forceTranscode: $forceTranscode)');
       final body = <String, dynamic>{
-        'deviceInfo': {
-          'clientName': 'Absorb',
-          'clientVersion': appVersion,
-          'deviceId': deviceId,
-          'deviceName': '${deviceManufacturer.isNotEmpty ? "$deviceManufacturer " : ""}$deviceModel'.trim(),
-          'manufacturer': deviceManufacturer,
-          'model': deviceModel,
-        },
+        'deviceInfo': _deviceInfo,
         'forceDirectPlay': !forceTranscode,
         'forceTranscode': forceTranscode,
         // Match what the native ABS Android app sends so the server treats us
@@ -861,6 +925,87 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/session/$sessionId/close'),
         timeout: const Duration(seconds: 10));
     } catch (_) {}
+  }
+
+  /// Upsert a client-owned local playback session (downloaded/offline plays).
+  /// POST /api/session/local — preserves our playMethod (LOCAL) and the
+  /// client-supplied date/timestamps, unlike /play which forces Direct Play.
+  /// [session] is a fully-built session map; deviceInfo/mediaPlayer/playMethod
+  /// are stamped here so they can't be omitted.
+  Future<LocalSessionResult> syncLocalSession(Map<String, dynamic> session) async {
+    try {
+      final body = {
+        ...session,
+        'deviceInfo': _deviceInfo,
+        'mediaPlayer': 'exo-player',
+        'playMethod': 3, // LOCAL
+      };
+      final resp = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/session/local'),
+        body: jsonEncode(body),
+        timeout: const Duration(seconds: 10));
+      return LocalSessionResult(
+        ok: resp.statusCode == 200,
+        serverTooOld: resp.statusCode == 404 || resp.statusCode == 501,
+      );
+    } catch (_) {
+      return const LocalSessionResult(ok: false, serverTooOld: false);
+    }
+  }
+
+  /// Batch-upsert local sessions, used to replay the offline queue on reconnect.
+  /// POST /api/session/local-all
+  Future<LocalSessionResult> syncLocalSessionsAll(
+      List<Map<String, dynamic>> sessions) async {
+    if (sessions.isEmpty) return const LocalSessionResult(ok: true, serverTooOld: false);
+    try {
+      final body = {
+        'sessions': sessions
+            .map((s) => {...s, 'mediaPlayer': 'exo-player', 'playMethod': 3})
+            .toList(),
+        'deviceInfo': _deviceInfo,
+      };
+      final resp = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/session/local-all'),
+        body: jsonEncode(body),
+        timeout: const Duration(seconds: 20));
+      return LocalSessionResult(
+        ok: resp.statusCode == 200,
+        serverTooOld: resp.statusCode == 404 || resp.statusCode == 501,
+      );
+    } catch (_) {
+      return const LocalSessionResult(ok: false, serverTooOld: false);
+    }
+  }
+
+  /// Edit an existing listening session by re-POSTing it through the local
+  /// upsert. The server honors timeListening, currentTime, and updatedAt (it
+  /// re-derives the session's day from updatedAt); other fields on an existing
+  /// session are left untouched, so the original playMethod/device stay intact.
+  /// Returns true on success.
+  Future<bool> updateListeningSession(Map<String, dynamic> session) async {
+    try {
+      final resp = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/session/local'),
+        body: jsonEncode(session),
+        timeout: const Duration(seconds: 10));
+      return resp.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Delete a listening session. Needs the user's delete permission on the
+  /// server (403 otherwise). Returns true on success.
+  Future<bool> deleteListeningSession(String sessionId) async {
+    try {
+      final resp = await _authDelete(
+        Uri.parse('$_cleanBaseUrl/api/sessions/$sessionId'),
+        timeout: const Duration(seconds: 10));
+      return resp.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Get server progress for a single item.
@@ -1049,14 +1194,7 @@ class ApiService {
       final response = await _authPost(
         Uri.parse(url),
         body: jsonEncode({
-          'deviceInfo': {
-            'clientName': 'Absorb',
-            'clientVersion': appVersion,
-            'deviceId': deviceId,
-            'deviceName': '${deviceManufacturer.isNotEmpty ? "$deviceManufacturer " : ""}$deviceModel'.trim(),
-            'manufacturer': deviceManufacturer,
-            'model': deviceModel,
-          },
+          'deviceInfo': _deviceInfo,
           'forceDirectPlay': !forceTranscode,
           'forceTranscode': forceTranscode,
           'mediaPlayer': 'exo-player',
@@ -1818,6 +1956,36 @@ class ApiService {
     return [];
   }
 
+  /// Admin: paginated listing of every user's sessions. Returns the full
+  /// envelope (total, numPages, page, sessions) with each session carrying its
+  /// user. Optionally filter to a single [userId]. Admin-only server-side.
+  Future<Map<String, dynamic>?> getAllSessionsPaged({
+    int page = 0,
+    int itemsPerPage = 25,
+    String? userId,
+    String sort = 'updatedAt',
+    bool desc = true,
+  }) async {
+    try {
+      final params = <String, String>{
+        'itemsPerPage': '$itemsPerPage',
+        'page': '$page',
+        'sort': sort,
+        'desc': desc ? '1' : '0',
+        if (userId != null && userId.isNotEmpty) 'user': userId,
+      };
+      final uri = Uri.parse('$_cleanBaseUrl/api/sessions')
+          .replace(queryParameters: params);
+      final r = await _authGet(uri, timeout: const Duration(seconds: 15));
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('getAllSessionsPaged error: $e');
+    }
+    return null;
+  }
+
   /// Get all backups (admin only)
   Future<List<dynamic>> getBackups() async {
     try {
@@ -1880,6 +2048,143 @@ class ApiService {
       return r.statusCode == 200;
     } catch (e) { debugPrint('purgeCache error: $e'); }
     return false;
+  }
+
+  /// GET /api/filesystem?path= — browse server directories (admin only).
+  /// Omit [path] for the root listing (drive letters on Windows servers).
+  /// Returns { posix: bool, directories: [{path, dirname, level}] }.
+  Future<Map<String, dynamic>?> getFilesystemPaths({String? path}) async {
+    try {
+      final uri = Uri.parse('$_cleanBaseUrl/api/filesystem')
+          .replace(queryParameters: path != null ? {'path': path} : null);
+      final r = await _authGet(uri, timeout: const Duration(seconds: 20));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) { debugPrint('[API] getFilesystemPaths error: $e'); }
+    return null;
+  }
+
+  /// POST /api/libraries — create a library (admin only).
+  /// [body] needs name + folders (each {fullPath}); optional mediaType, icon,
+  /// provider, settings. Returns the new library object on success.
+  Future<Map<String, dynamic>?> createLibrary(Map<String, dynamic> body) async {
+    try {
+      final r = await _authPost(Uri.parse('$_cleanBaseUrl/api/libraries'),
+          body: jsonEncode(body), timeout: const Duration(seconds: 30));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+      debugPrint('[API] createLibrary failed: ${r.statusCode}');
+    } catch (e) { debugPrint('[API] createLibrary error: $e'); }
+    return null;
+  }
+
+  /// PATCH /api/libraries/:id — partial update (admin only).
+  /// In [body]'s folders array, keep existing folders as {id, fullPath}, add
+  /// new ones as {fullPath}; omitting a folder DELETES it (cascades on server).
+  Future<bool> updateLibrary(String id, Map<String, dynamic> body) async {
+    try {
+      final r = await _authPatch(Uri.parse('$_cleanBaseUrl/api/libraries/$id'),
+          body: jsonEncode(body), timeout: const Duration(seconds: 30));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('[API] updateLibrary error: $e'); }
+    return false;
+  }
+
+  /// DELETE /api/libraries/:id — removes the library and all its items (admin only).
+  Future<bool> deleteLibrary(String id) async {
+    try {
+      final r = await _authDelete(Uri.parse('$_cleanBaseUrl/api/libraries/$id'),
+          timeout: const Duration(seconds: 30));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('[API] deleteLibrary error: $e'); }
+    return false;
+  }
+
+  /// POST /api/libraries/order — body is a raw array [{id, newOrder}] (admin only).
+  Future<bool> reorderLibraries(List<Map<String, dynamic>> order) async {
+    try {
+      final r = await _authPost(Uri.parse('$_cleanBaseUrl/api/libraries/order'),
+          body: jsonEncode(order));
+      return r.statusCode == 200;
+    } catch (e) { debugPrint('[API] reorderLibraries error: $e'); }
+    return false;
+  }
+
+  /// GET /api/search/providers — metadata provider ids for the library editor.
+  /// Response shape is { books: [{text,value}], podcasts: [...], booksCovers: [...] }.
+  /// Returns book + podcast provider values (deduped); falls back to built-ins.
+  Future<List<String>> getMetadataProviders() async {
+    try {
+      final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/search/providers'));
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        final out = <String>[];
+        for (final key in ['books', 'podcasts']) {
+          for (final p in (data[key] as List?) ?? []) {
+            final v = p is Map ? p['value']?.toString() : p?.toString();
+            if (v != null && v.isNotEmpty && !out.contains(v)) out.add(v);
+          }
+        }
+        if (out.isNotEmpty) return out;
+      }
+    } catch (e) { debugPrint('[API] getMetadataProviders error: $e'); }
+    return const ['google', 'audible', 'openlibrary', 'itunes', 'audnexus', 'fantlab'];
+  }
+
+  /// PATCH /api/settings — update server settings (admin only).
+  /// There is no GET; read current values from AuthProvider.serverSettings.
+  /// Returns the fresh serverSettings map so the caller can re-cache it.
+  Future<Map<String, dynamic>?> updateServerSettings(Map<String, dynamic> patch) async {
+    try {
+      final r = await _authPatch(Uri.parse('$_cleanBaseUrl/api/settings'),
+          body: jsonEncode(patch));
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body)['serverSettings'] as Map<String, dynamic>?;
+      }
+      debugPrint('[API] updateServerSettings failed: ${r.statusCode}');
+    } catch (e) { debugPrint('[API] updateServerSettings error: $e'); }
+    return null;
+  }
+
+  /// PATCH /api/sorting-prefixes — body { sortingPrefixes: [..] } (admin only).
+  /// Returns the fresh serverSettings map (the response also has rowsUpdated).
+  Future<Map<String, dynamic>?> updateSortingPrefixes(List<String> prefixes) async {
+    try {
+      final r = await _authPatch(Uri.parse('$_cleanBaseUrl/api/sorting-prefixes'),
+          body: jsonEncode({'sortingPrefixes': prefixes}),
+          timeout: const Duration(seconds: 30));
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body)['serverSettings'] as Map<String, dynamic>?;
+      }
+    } catch (e) { debugPrint('[API] updateSortingPrefixes error: $e'); }
+    return null;
+  }
+
+  /// GET /api/stats/server — { books, podcasts, total } (admin only).
+  Future<Map<String, dynamic>?> getServerStats() async {
+    try {
+      final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/stats/server'));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) { debugPrint('[API] getServerStats error: $e'); }
+    return null;
+  }
+
+  /// GET /api/stats/year/:year — admin year-in-review stats (admin only).
+  Future<Map<String, dynamic>?> getServerYearStats(int year) async {
+    try {
+      final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/stats/year/$year'),
+          timeout: const Duration(seconds: 30));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) { debugPrint('[API] getServerYearStats error: $e'); }
+    return null;
+  }
+
+  /// GET /api/me/stats/year/:year — the signed-in user's year-in-review stats.
+  Future<Map<String, dynamic>?> getMyYearStats(int year) async {
+    try {
+      final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/me/stats/year/$year'),
+          timeout: const Duration(seconds: 30));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) { debugPrint('[API] getMyYearStats error: $e'); }
+    return null;
   }
 
   /// Create a new user (admin only)

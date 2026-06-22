@@ -13,7 +13,7 @@ import '../services/download_service.dart';
 import '../services/audio_player_service.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/library_search_results.dart';
-import '../main.dart' show oledNotifier;
+import '../main.dart' show flatNotifier, gradientIntensityNotifier;
 import '../widgets/library_sort_filter_sheet.dart';
 import '../widgets/library_books_tab.dart';
 import '../widgets/library_series_tab.dart';
@@ -28,6 +28,7 @@ import '../widgets/rmab_config_sheet.dart' show kRmabBaseUrlKey, kRmabApiTokenKe
 import '../widgets/rmab_search_results_sheet.dart';
 import '../widgets/scroll_reveal.dart';
 import '../services/scoped_prefs.dart';
+import '../services/user_account_service.dart';
 import '../l10n/app_localizations.dart';
 
 /// Responsive grid column count based on available width.
@@ -140,6 +141,24 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
   List<String> _availableTags = [];
   bool _hideEbookOnly = false;
   final List<Map<String, dynamic>> _items = [];
+
+  // ── Collections / Playlists (Library tab) ──
+  List<Map<String, dynamic>> _collections = [];
+  List<Map<String, dynamic>> _playlists = [];
+  // Keyed on "<accountScope>|<libraryId>" so it reloads on a library OR account
+  // switch - playlists are per-user, so switching accounts must drop the old
+  // user's lists.
+  String? _listsLoadedKey;
+  Future<void>? _listsLoadFuture;
+  String? _listsLoadingKey;
+  // When a collection/playlist is open the Library grid shows its items in
+  // place, like a filter. null = normal library.
+  String? _scopeId;
+  String? _scopeName;
+  bool _scopeIsPlaylist = false;
+  List<Map<String, dynamic>> _scopeItems = [];
+  bool get _isScoped => _scopeId != null;
+
   bool _isLoadingPage = false;
   bool _hasMore = true;
   int _page = 0;
@@ -260,6 +279,10 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
   void _onLibraryProviderChanged() {
     if (!mounted) return;
     final lib = context.read<LibraryProvider>();
+    // Reload collections/playlists when the library OR account changes; keyed
+    // on account scope + libraryId inside _loadLists, so this is a no-op when
+    // nothing relevant changed.
+    _loadLists();
     if (lib.selectedLibraryId != _lastLibraryId && lib.selectedLibraryId != null) {
       _lastLibraryId = lib.selectedLibraryId;
       _loadGeneration++;
@@ -333,6 +356,7 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
       if (lib.selectedLibraryId != null) {
         _loadPage();
         _loadFilterData();
+        _loadLists();
       } else {
         lib.addListener(_onLibraryChanged);
       }
@@ -544,6 +568,7 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
   // LIBRARY TAB - Load a page of items
   // ══════════════════════════════════════════════════════════════
   Future<void> _loadPage() async {
+    if (_isScoped) return;
     if (_isLoadingPage || !_hasMore) return;
     setState(() => _isLoadingPage = true);
     final gen = ++_loadGeneration;
@@ -1179,6 +1204,111 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
     _changeFilter(LibraryFilter.genre, genre: genre);
   }
 
+  // ── Collections / Playlists ──
+
+  /// Loads the current library+account's collections/playlists. Returns the
+  /// in-flight load so callers (the sort sheet) can await it - that's what
+  /// makes the Lists tab show on first open instead of after a reopen.
+  Future<void> _loadLists() {
+    final lib = context.read<LibraryProvider>();
+    final api = context.read<AuthProvider>().apiService;
+    final libId = lib.selectedLibraryId;
+    if (api == null || libId == null) return Future.value();
+    final key = '${UserAccountService().activeScopeKey}|$libId';
+    if (_listsLoadingKey == key && _listsLoadFuture != null) return _listsLoadFuture!;
+    if (_listsLoadedKey == key) return Future.value();
+    _listsLoadingKey = key;
+    final f = _fetchLists(key, api, libId);
+    _listsLoadFuture = f;
+    return f;
+  }
+
+  Future<void> _fetchLists(String key, ApiService api, String libId) async {
+    // New key (library/account changed) or first load: drop the previous
+    // lists + any open scope before fetching the new ones.
+    setState(() {
+      _collections = [];
+      _playlists = [];
+      if (_isScoped) {
+        _scopeId = null;
+        _scopeName = null;
+        _scopeItems = [];
+      }
+    });
+    try {
+      final results = await Future.wait([
+        api.getLibraryCollections(libId),
+        api.getLibraryPlaylists(libId),
+      ]);
+      if (!mounted || _listsLoadingKey != key) return;
+      setState(() {
+        _collections = results[0].whereType<Map<String, dynamic>>().toList();
+        _playlists = results[1].whereType<Map<String, dynamic>>().toList();
+        _listsLoadedKey = key;
+      });
+    } finally {
+      if (_listsLoadingKey == key) _listsLoadFuture = null;
+    }
+  }
+
+  void _openCollection(Map<String, dynamic> c) {
+    final books = (c['books'] as List<dynamic>?)
+            ?.whereType<Map<String, dynamic>>()
+            .toList() ??
+        [];
+    setState(() {
+      _scopeId = c['id'] as String?;
+      _scopeName = c['name'] as String? ?? '';
+      _scopeIsPlaylist = false;
+      _scopeItems = books;
+    });
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+  }
+
+  void _openPlaylist(Map<String, dynamic> p) {
+    final books = <Map<String, dynamic>>[];
+    for (final it in (p['items'] as List<dynamic>?) ?? []) {
+      if (it is Map<String, dynamic>) {
+        final li = it['libraryItem'];
+        if (li is Map<String, dynamic>) books.add(li);
+      }
+    }
+    setState(() {
+      _scopeId = p['id'] as String?;
+      _scopeName = p['name'] as String? ?? '';
+      _scopeIsPlaylist = true;
+      _scopeItems = books;
+    });
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+  }
+
+  void _clearScope() {
+    setState(() {
+      _scopeId = null;
+      _scopeName = null;
+      _scopeItems = [];
+    });
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+  }
+
+  Future<void> _playScope() async {
+    final id = _scopeId;
+    if (id == null) return;
+    final lib = context.read<LibraryProvider>();
+    final isPlaylist = _scopeIsPlaylist;
+    final name = _scopeName ?? '';
+    // Jump to the player first - it shows its own loading state - so the tap
+    // gives instant feedback instead of a dead pause while the list loads.
+    AppShell.goToAbsorbingGlobal();
+    if (isPlaylist) {
+      await PlayerSettings.setQueueModePlaylist(id);
+      await lib.playPlaylistFromStart(id);
+    } else {
+      await PlayerSettings.setQueueModeCollection(id, name);
+      await lib.playCollectionFromStart(id);
+    }
+  }
+
   // ── Search ──
   void _onSearchChanged(String query) {
     _debounce?.cancel();
@@ -1399,7 +1529,10 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
     LibraryFilter.none => '',
   };
 
-  void _showSortFilterSheet(BuildContext context, ColorScheme cs, TextTheme tt, {int initialTab = 0}) {
+  Future<void> _showSortFilterSheet(BuildContext context, ColorScheme cs, TextTheme tt, {int initialTab = 0}) async {
+    // Await the load so the Lists tab appears on the first open, not after a reopen.
+    await _loadLists();
+    if (!mounted) return;
     final LibraryTab tab;
     final LibrarySort currentSort;
     final bool currentSortAsc;
@@ -1490,6 +1623,10 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
           _loadPage();
         },
         isPodcastLibrary: context.read<LibraryProvider>().isPodcastLibrary,
+        collections: tab == LibraryTab.library ? _collections : const [],
+        playlists: tab == LibraryTab.library ? _playlists : const [],
+        onOpenCollection: (c) { Navigator.pop(ctx); _openCollection(c); },
+        onOpenPlaylist: (p) { Navigator.pop(ctx); _openPlaylist(p); },
         onUpcomingReleases: tab == LibraryTab.series ? () {
           Navigator.pop(ctx);
           _openUpcomingReleases();
@@ -1522,7 +1659,7 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
       backgroundColor: scaffoldBg,
       body: Stack(
         children: [
-          if (!oledNotifier.value)
+          if (!flatNotifier.value)
             OverflowBox(
               maxHeight: MediaQuery.of(context).size.height,
               alignment: Alignment.topCenter,
@@ -1536,7 +1673,7 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
                       end: Alignment.bottomCenter,
                       stops: const [0.0, 0.22, 0.72, 1.0],
                       colors: [
-                        cs.primary.withValues(alpha: 0.06),
+                        cs.primary.withValues(alpha: gradientIntensityNotifier.value),
                         cs.surface,
                         lowerFade,
                         scaffoldBg,
@@ -1661,8 +1798,8 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
         lib.selectedLibrary?['name'] as String? ?? l.libraryFallback;
     final topInset = MediaQuery.of(context).padding.top;
     final screenH = MediaQuery.of(context).size.height;
-    final headerBackground = oledNotifier.value
-        ? const ColoredBox(color: Colors.black)
+    final headerBackground = flatNotifier.value
+        ? ColoredBox(color: scaffoldBg)
         : ClipRect(
             child: OverflowBox(
               maxHeight: screenH,
@@ -1681,7 +1818,7 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
                         end: Alignment.bottomCenter,
                         stops: const [0.0, 0.22, 0.72, 1.0],
                         colors: [
-                          cs.primary.withValues(alpha: 0.06),
+                          cs.primary.withValues(alpha: gradientIntensityNotifier.value),
                           cs.surface,
                           lowerFade,
                           scaffoldBg,
@@ -1704,7 +1841,8 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
                         toolbarHeight: _isInSearchMode
                             ? 156
                             : ((_filter != LibraryFilter.none ||
-                                    _seriesFilter != SeriesFilter.none)
+                                    _seriesFilter != SeriesFilter.none ||
+                                    _isScoped)
                                 ? 196
                                 : 184),
                         backgroundColor: scaffoldBg,
@@ -1967,7 +2105,9 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
         countText = l.libraryNarratorsCount(_narrators.length);
         break;
       default:
-        countText = l.libraryBooksCount(_items.length, _totalItems);
+        countText = _isScoped
+            ? l.libraryBooksCount(_scopeItems.length, _scopeItems.length)
+            : l.libraryBooksCount(_items.length, _totalItems);
         break;
     }
 
@@ -1975,7 +2115,50 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Row(
         children: [
-          if (_currentTab == 0 && _filter != LibraryFilter.none) ...[
+          if (_currentTab == 0 && _isScoped) ...[
+            GestureDetector(
+              onTap: _clearScope,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: cs.secondary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(_scopeIsPlaylist ? Icons.playlist_play_rounded : Icons.collections_bookmark_rounded,
+                        size: 14, color: cs.secondary),
+                    const SizedBox(width: 4),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 150),
+                      child: Text(_scopeName ?? '', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.secondary),
+                          overflow: TextOverflow.ellipsis, maxLines: 1),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.close_rounded, size: 14, color: cs.secondary),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _playScope,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: cs.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.play_arrow_rounded, size: 14, color: cs.primary),
+                  const SizedBox(width: 4),
+                  Text(l.playlistPlayAction, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.primary)),
+                ]),
+              ),
+            ),
+          ],
+          if (_currentTab == 0 && _filter != LibraryFilter.none && !_isScoped) ...[
             GestureDetector(
               onTap: () => _changeFilter(LibraryFilter.none),
               child: Container(
@@ -2088,9 +2271,9 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
   // ═══════════════════════════════════════════════════════════════
   Widget _buildGrid(Widget headerSliver) {
     return LibraryBooksTab(
-      items: _items,
-      isLoadingPage: _isLoadingPage,
-      hasMore: _hasMore,
+      items: _isScoped ? _scopeItems : _items,
+      isLoadingPage: _isScoped ? false : _isLoadingPage,
+      hasMore: _isScoped ? false : _hasMore,
       filter: _filter,
       genreFilter: _genreFilter,
       tagFilter: _tagFilter,

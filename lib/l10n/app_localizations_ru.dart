@@ -945,6 +945,36 @@ class AppLocalizationsRu extends AppLocalizations {
   String get colorSourceNowPlaying => 'Now Playing';
 
   @override
+  String get colorSourceDynamic => 'Dynamic';
+
+  @override
+  String get colorSourceManual => 'Manual';
+
+  @override
+  String get colorSourceManualDescription =>
+      'Use a fixed app color you choose below';
+
+  @override
+  String get colorSourceCustom => 'Custom';
+
+  @override
+  String get useColorEverywhereLabel => 'Use this color everywhere';
+
+  @override
+  String get useColorEverywhereSubtitle =>
+      'Also color book detail pages and the player card with your set color instead of each book\'s cover';
+
+  @override
+  String get flatBackgroundLabel => 'Flat background';
+
+  @override
+  String get flatBackgroundSubtitle =>
+      'Remove the background gradient. Pure black in dark mode for OLED screens.';
+
+  @override
+  String get backgroundIntensityLabel => 'Background intensity';
+
+  @override
   String get startScreenLabel => 'Начальный экран';
 
   @override
@@ -1097,6 +1127,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get queueModePlaylist => 'Playlist';
 
   @override
+  String get queueModeCollection => 'Collection';
+
+  @override
   String get queueModeInfoPlaylist => 'Playlist Queue';
 
   @override
@@ -1137,6 +1170,9 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get openPlaylist => 'Open playlist';
+
+  @override
+  String get openCollection => 'Open collection';
 
   @override
   String get playlistPlayAction => 'Play playlist';
@@ -1889,6 +1925,28 @@ class AppLocalizationsRu extends AppLocalizations {
   String get resetToDefaultStorage => 'Reset to default storage';
 
   @override
+  String legacyDownloadsNotice(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          '$count downloads are in an old custom folder that can no longer be opened. Re-download them or dismiss this notice.',
+      one:
+          '1 download is in an old custom folder that can no longer be opened. Re-download it or dismiss this notice.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get redownload => 'Re-download';
+
+  @override
+  String get redownloadStarted => 'Re-downloading';
+
+  @override
+  String get dismiss => 'Dismiss';
+
+  @override
   String get tipsAndHiddenFeatures => 'Советы и скрытые возможности';
 
   @override
@@ -2357,6 +2415,12 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get chapters => 'Chapters';
+
+  @override
+  String get noChaptersBook => 'This book has no chapters';
+
+  @override
+  String get noChaptersPodcast => 'This podcast has no chapters';
 
   @override
   String get failedToLoad => 'Failed to load';
@@ -4422,6 +4486,31 @@ class AppLocalizationsRu extends AppLocalizations {
   String get statsScreenListened => 'Listened';
 
   @override
+  String get sessionEditTitle => 'Edit session';
+
+  @override
+  String get sessionDayLabel => 'Day';
+
+  @override
+  String get sessionDeleteConfirmTitle => 'Delete session?';
+
+  @override
+  String get sessionDeleteConfirmBody =>
+      'This removes the session and lowers your listening totals by its time. It cannot be undone.';
+
+  @override
+  String get sessionSaved => 'Session updated';
+
+  @override
+  String get sessionDeleted => 'Session deleted';
+
+  @override
+  String get sessionSaveFailed => 'Could not save changes';
+
+  @override
+  String get sessionDeleteFailed => 'Could not delete this session';
+
+  @override
   String get statsScreenStartedAtPosition => 'Started at position';
 
   @override
@@ -6056,4 +6145,346 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get bookmarkPreviewFailed => 'Couldn\'t play this spot.';
+
+  @override
+  String get clipExport => 'Export clip';
+
+  @override
+  String get clipJumpToStart => 'Jump to start';
+
+  @override
+  String get clipJumpToEnd => 'Jump to end';
+
+  @override
+  String get clipSetStart => 'Set start';
+
+  @override
+  String get clipSetEnd => 'Set end';
+
+  @override
+  String get clipInLabel => 'In';
+
+  @override
+  String get clipOutLabel => 'Out';
+
+  @override
+  String get clipSave => 'Save clip';
+
+  @override
+  String clipExportSaved(String filename) {
+    return 'Saved $filename';
+  }
+
+  @override
+  String get clipExportClamped =>
+      'Clip saved, shortened to the end of this track';
+
+  @override
+  String get clipExportFailed => 'Couldn\'t export the clip.';
+
+  @override
+  String get clipDownloadToExport =>
+      'Download this book first to export a clip on iPhone.';
+
+  @override
+  String get fsPickerTitle => 'Select folder';
+
+  @override
+  String get fsServerRoot => 'Server root';
+
+  @override
+  String get fsEmptyFolder => 'No subfolders here';
+
+  @override
+  String get fsUseThisFolder => 'Use this folder';
+
+  @override
+  String get adminLibrariesManage => 'Libraries';
+
+  @override
+  String get adminLibrariesManageSubtitle => 'Create, edit and reorder';
+
+  @override
+  String get adminServerSettings => 'Server settings';
+
+  @override
+  String get adminServerSettingsSubtitle => 'Scanner, storage and sorting';
+
+  @override
+  String get adminStats => 'Statistics';
+
+  @override
+  String get adminStatsSubtitle => 'Library and listening totals';
+
+  @override
+  String get adminAllSessions => 'All sessions';
+
+  @override
+  String get adminAllSessionsSubtitle =>
+      'View and manage all listening sessions';
+
+  @override
+  String get adminSessionsAllUsers => 'All users';
+
+  @override
+  String get adminSessionsEmpty => 'No sessions';
+
+  @override
+  String get statsLibraryTotals => 'Library totals';
+
+  @override
+  String get statsTotalItems => 'Items';
+
+  @override
+  String get statsAudioFiles => 'Audio files';
+
+  @override
+  String get statsTotalSize => 'Total size';
+
+  @override
+  String get statsBooks => 'Books';
+
+  @override
+  String get statsPodcasts => 'Podcasts';
+
+  @override
+  String get statsBooksSize => 'Books size';
+
+  @override
+  String get statsYearReview => 'Year in review';
+
+  @override
+  String get statsNoYearData => 'No data for this year';
+
+  @override
+  String get statsListeningTime => 'Listening time';
+
+  @override
+  String get statsSessions => 'Sessions';
+
+  @override
+  String get statsBooksAdded => 'Books added';
+
+  @override
+  String get statsAuthorsAdded => 'Authors added';
+
+  @override
+  String get statsTopAuthors => 'Top authors';
+
+  @override
+  String get statsTopNarrators => 'Top narrators';
+
+  @override
+  String get statsTopGenres => 'Top genres';
+
+  @override
+  String get srvScannerSection => 'Scanner';
+
+  @override
+  String get srvFindCovers => 'Find covers';
+
+  @override
+  String get srvCoverProvider => 'Cover provider';
+
+  @override
+  String get srvParseSubtitles => 'Parse subtitles from filename';
+
+  @override
+  String get srvPreferMatched => 'Prefer matched metadata';
+
+  @override
+  String get srvDisableWatcher => 'Disable folder watcher';
+
+  @override
+  String get srvStorageSection => 'Storage';
+
+  @override
+  String get srvStoreCover => 'Store cover with item';
+
+  @override
+  String get srvStoreMetadata => 'Store metadata with item';
+
+  @override
+  String get srvMetadataFormat => 'Metadata file format';
+
+  @override
+  String get srvFormatSection => 'Display and format';
+
+  @override
+  String get srvDateFormat => 'Date format';
+
+  @override
+  String get srvTimeFormat => 'Time format';
+
+  @override
+  String get srvLanguage => 'Server language';
+
+  @override
+  String get srvChromecast => 'Chromecast support';
+
+  @override
+  String get srvAllowIframe => 'Allow iframe embedding';
+
+  @override
+  String get srvSortingSection => 'Sorting';
+
+  @override
+  String get srvIgnorePrefixes => 'Ignore prefixes when sorting';
+
+  @override
+  String get srvSortingPrefixes => 'Sorting prefixes';
+
+  @override
+  String get srvAddPrefix => 'Add prefix';
+
+  @override
+  String get srvSave => 'Save settings';
+
+  @override
+  String get srvSavePrefixes => 'Save prefixes';
+
+  @override
+  String get srvSaved => 'Settings saved';
+
+  @override
+  String get srvSaveFailed => 'Couldn\'t save settings';
+
+  @override
+  String get srvPrefixesSaved => 'Sorting prefixes updated';
+
+  @override
+  String get libNoneYet => 'No libraries yet';
+
+  @override
+  String get libReorderFailed => 'Couldn\'t save the new order';
+
+  @override
+  String get libDeleteTitle => 'Delete library?';
+
+  @override
+  String get libDeleteBody =>
+      'This permanently removes the library and all of its items from the server.';
+
+  @override
+  String get libDeleted => 'Library deleted';
+
+  @override
+  String get libDeleteFailed => 'Couldn\'t delete library';
+
+  @override
+  String libFolderCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count folders',
+      one: '1 folder',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get libNewTitle => 'New library';
+
+  @override
+  String get libEditTitle => 'Edit library';
+
+  @override
+  String get libName => 'Library name';
+
+  @override
+  String get libMediaType => 'Media type';
+
+  @override
+  String get libMediaBook => 'Books';
+
+  @override
+  String get libMediaPodcast => 'Podcasts';
+
+  @override
+  String get libProvider => 'Metadata provider';
+
+  @override
+  String get libIcon => 'Icon';
+
+  @override
+  String get libFolders => 'Folders';
+
+  @override
+  String get libAddFolder => 'Add folder';
+
+  @override
+  String get libNoFolders => 'Add at least one folder';
+
+  @override
+  String get libAdvanced => 'Advanced settings';
+
+  @override
+  String get libCoverShape => 'Cover shape';
+
+  @override
+  String get libCoverSquare => 'Square';
+
+  @override
+  String get libCoverStandard => 'Standard';
+
+  @override
+  String get libDisableWatcher => 'Disable folder watcher';
+
+  @override
+  String get libSkipAsin => 'Skip matching books that have an ASIN';
+
+  @override
+  String get libSkipIsbn => 'Skip matching books that have an ISBN';
+
+  @override
+  String get libHideSingleSeries => 'Hide single-book series';
+
+  @override
+  String get libAudiobooksOnly => 'Audiobooks only';
+
+  @override
+  String get libEpubScripted => 'Allow scripted ePub content';
+
+  @override
+  String get libLaterBooksOnly => 'Only show later books in Continue Series';
+
+  @override
+  String get libPodcastRegion => 'Podcast search region';
+
+  @override
+  String get libMarkPercent => 'Finished at % complete';
+
+  @override
+  String get libMarkTime => 'Finished with seconds left';
+
+  @override
+  String get libAutoScan => 'Auto-scan schedule (cron)';
+
+  @override
+  String get libCreate => 'Create library';
+
+  @override
+  String get libUpdate => 'Save changes';
+
+  @override
+  String get libNameRequired => 'Enter a library name';
+
+  @override
+  String get libCreated => 'Library created';
+
+  @override
+  String get libCreateFailed => 'Couldn\'t create library';
+
+  @override
+  String get libUpdated => 'Library updated';
+
+  @override
+  String get libUpdateFailed => 'Couldn\'t update library';
+
+  @override
+  String get libRemoveFoldersTitle => 'Remove folders?';
+
+  @override
+  String get libRemoveFoldersBody =>
+      'Removing a folder deletes its items from the library. This can\'t be undone.';
 }

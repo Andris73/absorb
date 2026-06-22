@@ -9,6 +9,7 @@ import '../services/audio_player_service.dart';
 import 'auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/progress_sync_service.dart';
+import '../services/local_session_service.dart';
 import '../services/download_service.dart';
 import '../services/android_auto_service.dart';
 import '../services/carplay_service.dart';
@@ -131,6 +132,7 @@ class LibraryProvider extends ChangeNotifier
         _lastRssHydrationLibraryId = null;
         _networkOffline = false;
         _connectivitySub?.cancel();
+        _connectivityDebounce?.cancel();
         _stopServerPingTimer();
         _stopHealthCheckTimer();
         _isLoading = true;
@@ -171,6 +173,7 @@ class LibraryProvider extends ChangeNotifier
         if (_api != null && !isOffline) {
           ProgressSyncService().flushPendingSync(api: _api!);
           ProgressSyncService().flushOfflineListeningTime(api: _api!);
+          LocalSessionService().flushPending(api: _api!);
           DownloadService().enrichMetadata(_api!);
           // Start proactive reachability verification so the cloud icon
           // reflects actual server state, not just the initial login result.
@@ -215,6 +218,7 @@ class LibraryProvider extends ChangeNotifier
       _selectedLibraryId = null;
       _errorMessage = null;
       _connectivitySub?.cancel();
+      _connectivityDebounce?.cancel();
       _progressRefreshDebounce?.cancel();
       _stopServerPingTimer();
       _stopHealthCheckTimer();

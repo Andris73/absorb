@@ -12,7 +12,8 @@ import '../widgets/finished_books_this_year_sheet.dart';
 import '../widgets/stats_charts.dart';
 import '../widgets/absorb_wave_icon.dart';
 import '../widgets/card_buttons.dart';
-import '../main.dart' show oledNotifier;
+import '../widgets/overlay_toast.dart';
+import '../main.dart' show flatNotifier, gradientIntensityNotifier;
 import 'app_shell.dart';
 import '../l10n/app_localizations.dart';
 
@@ -39,14 +40,26 @@ class _StatsScreenState extends State<StatsScreen>
   List<String> _statsOrder = [];
   Set<String> _statsHidden = {};
   String? _selectedDayKey;
+  // Which section owns the current day selection ('chart' or 'heatmap') so the
+  // detail card only shows under the one that was tapped.
+  String? _selectedSection;
   double _selectedDaySeconds = 0;
   double _timeSavedSeconds = 0;
+  int _yirYear = DateTime.now().year;
+  Map<String, dynamic>? _yirData;
+  bool _yirLoading = false;
+  int? _yirLoadedYear;
   late AnimationController _animController;
 
   // Recent sessions stays out of the reorderable sections: it loads more as
   // you scroll, so anything placed under it would never be reachable.
   static const _defaultSectionOrder = [
-    'hero', 'goals', 'periods', 'activity', 'chart', 'dayofweek', 'top',
+    'hero', 'goals', 'periods', 'activity', 'chart', 'heatmap', 'dayofweek', 'top', 'yearreview',
+  ];
+
+  static const _monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
   ];
   late Animation<double> _animValue;
 
@@ -121,6 +134,7 @@ class _StatsScreenState extends State<StatsScreen>
     setState(() {
       if (chartStyle != _chartStyle || chartRange != _chartRange) {
         _selectedDayKey = null;
+        _selectedSection = null;
       }
       _goalType = type;
       _goalMinutes = minutes;
@@ -133,37 +147,103 @@ class _StatsScreenState extends State<StatsScreen>
     });
   }
 
-  void _selectDay(String key, double seconds) {
+  Future<void> _loadYearReview(int year) async {
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) return;
     setState(() {
-      if (_selectedDayKey == key) {
+      _yirYear = year;
+      _yirLoading = true;
+    });
+    final data = await api.getMyYearStats(year);
+    if (!mounted) return;
+    setState(() {
+      _yirData = data;
+      _yirLoadedYear = year;
+      _yirLoading = false;
+    });
+  }
+
+  void _selectDay(String section, String key, double seconds) {
+    setState(() {
+      if (_selectedSection == section && _selectedDayKey == key) {
+        _selectedSection = null;
         _selectedDayKey = null;
       } else {
+        _selectedSection = section;
         _selectedDayKey = key;
         _selectedDaySeconds = seconds;
       }
     });
   }
 
-  /// "Mon, Jun 5 · 1h 23m" line under the chart for the tapped day.
-  Widget _selectedDayRow(ColorScheme cs, TextTheme tt) {
-    final key = _selectedDayKey;
-    if (key == null) return const SizedBox.shrink();
-    final parts = key.split('-');
+  /// Detail card for the tapped day, scoped to [section] so it only appears
+  /// under the chart or the heatmap — whichever was tapped. Animates in/out.
+  Widget _dayDetailSlot(ColorScheme cs, TextTheme tt, String section) {
+    final show = _selectedSection == section && _selectedDayKey != null;
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: show
+          ? Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: _dayDetailCard(cs, tt),
+            )
+          : const SizedBox(width: double.infinity),
+    );
+  }
+
+  Widget _dayDetailCard(ColorScheme cs, TextTheme tt) {
+    final parts = _selectedDayKey!.split('-');
     final date = DateTime(
         int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     final l = AppLocalizations.of(context)!;
-    final label = '${_dayLabel(date, l)}, ${months[date.month - 1]} ${date.day}';
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(Icons.calendar_today_rounded,
-            size: 13, color: cs.primary.withValues(alpha: 0.7)),
-        const SizedBox(width: 6),
-        Text('$label  ·  ${_formatDuration(_selectedDaySeconds)}',
-            style: tt.bodySmall?.copyWith(
-                color: cs.onSurface.withValues(alpha: 0.7),
-                fontWeight: FontWeight.w600)),
+    final dateLabel = '${_dayLabel(date, l)}, ${months[date.month - 1]} ${date.day}';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: cs.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cs.primary.withValues(alpha: 0.18)),
+      ),
+      child: Row(children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: cs.primary.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(Icons.calendar_today_rounded, size: 16, color: cs.primary),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(dateLabel,
+                  style: tt.bodyMedium?.copyWith(
+                      color: cs.onSurface, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              Text(_formatDuration(_selectedDaySeconds),
+                  style: tt.bodySmall?.copyWith(
+                      color: cs.primary, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+        InkWell(
+          onTap: () => setState(() {
+            _selectedSection = null;
+            _selectedDayKey = null;
+          }),
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Icon(Icons.close_rounded,
+                size: 16, color: cs.onSurface.withValues(alpha: 0.4)),
+          ),
+        ),
       ]),
     );
   }
@@ -266,13 +346,13 @@ class _StatsScreenState extends State<StatsScreen>
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Container(
-        decoration: oledNotifier.value ? null : BoxDecoration(
+        decoration: flatNotifier.value ? null : BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             stops: const [0.0, 0.22, 0.72, 1.0],
             colors: [
-              cs.primary.withValues(alpha: 0.06),
+              cs.primary.withValues(alpha: gradientIntensityNotifier.value),
               cs.surface,
               Color.lerp(cs.surface, Theme.of(context).scaffoldBackgroundColor, 0.55) ?? Theme.of(context).scaffoldBackgroundColor,
               Theme.of(context).scaffoldBackgroundColor,
@@ -335,6 +415,14 @@ class _StatsScreenState extends State<StatsScreen>
     final activeDays = _activeDayCount(dailyMap);
     final avgDaily = _averageDailySeconds(dailyMap);
     final topItems = _topItems();
+
+    if (!_statsHidden.contains('yearreview') &&
+        _yirLoadedYear != _yirYear &&
+        !_yirLoading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadYearReview(_yirYear);
+      });
+    }
 
     final sections = <String, List<Widget>>{
       'hero': [
@@ -431,15 +519,18 @@ class _StatsScreenState extends State<StatsScreen>
         const SizedBox(height: 28),
       ],
       'chart': [
-        _sectionTitle(
-            tt,
-            cs,
-            _chartStyle == 'heatmap'
-                ? l.statsThisYearTitle
-                : (_chartRange == 30 ? l.statsLast30Days : l.statsLast7Days)),
+        _sectionTitle(tt, cs,
+            _chartRange == 30 ? l.statsLast30Days : l.statsLast7Days),
         const SizedBox(height: 10),
-        _chartCard(cs, tt, l, dailyMap, chartData),
-        _selectedDayRow(cs, tt),
+        _chartCard(cs, tt, chartData),
+        _dayDetailSlot(cs, tt, 'chart'),
+        const SizedBox(height: 28),
+      ],
+      'heatmap': [
+        _sectionTitle(tt, cs, l.statsThisYearTitle),
+        const SizedBox(height: 10),
+        _heatmapCard(cs, l, _cardDeco(cs), dailyMap),
+        _dayDetailSlot(cs, tt, 'heatmap'),
         const SizedBox(height: 28),
       ],
       'dayofweek': [
@@ -456,6 +547,7 @@ class _StatsScreenState extends State<StatsScreen>
           const SizedBox(height: 28),
         ],
       ],
+      'yearreview': _yearReviewSection(cs, tt),
     };
 
     final order = [
@@ -496,20 +588,18 @@ class _StatsScreenState extends State<StatsScreen>
     );
   }
 
-  Widget _chartCard(ColorScheme cs, TextTheme tt, AppLocalizations l,
-      Map<String, dynamic> dailyMap, List<_DayData> chartData) {
-    if (_chartStyle == 'bar') {
-      return _barChart(chartData, cs, tt, dense: _chartRange > 10);
-    }
-    final deco = BoxDecoration(
-      color: cs.onSurface.withValues(alpha: 0.03),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: cs.onSurface.withValues(alpha: 0.05)),
-    );
+  /// Shared card background used by the line chart and the heatmap.
+  BoxDecoration _cardDeco(ColorScheme cs) => BoxDecoration(
+        color: cs.onSurface.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cs.onSurface.withValues(alpha: 0.05)),
+      );
+
+  Widget _chartCard(ColorScheme cs, TextTheme tt, List<_DayData> chartData) {
     if (_chartStyle == 'line') {
       return Container(
         padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
-        decoration: deco,
+        decoration: _cardDeco(cs),
         child: StatsLineChart(
           data: chartData
               .map((d) => ChartDay(label: d.label, dateKey: d.fullLabel, seconds: d.seconds))
@@ -520,12 +610,14 @@ class _StatsScreenState extends State<StatsScreen>
           labelColor: cs.onSurface,
           todayColor: cs.primary,
           formatValue: _shortDuration,
-          selectedIndex: chartData.indexWhere((d) => d.fullLabel == _selectedDayKey),
-          onDaySelected: (i) => _selectDay(chartData[i].fullLabel, chartData[i].seconds),
+          selectedIndex: _selectedSection == 'chart'
+              ? chartData.indexWhere((d) => d.fullLabel == _selectedDayKey)
+              : -1,
+          onDaySelected: (i) => _selectDay('chart', chartData[i].fullLabel, chartData[i].seconds),
         ),
       );
     }
-    return _heatmapCard(cs, l, deco, dailyMap);
+    return _barChart(chartData, cs, tt, dense: _chartRange > 10);
   }
 
   /// Average listening per weekday (across days that had any listening),
@@ -648,8 +740,8 @@ class _StatsScreenState extends State<StatsScreen>
           l.statsScreenDaySat,
           l.statsScreenDaySun,
         ],
-        selectedKey: _selectedDayKey,
-        onDaySelected: _selectDay,
+        selectedKey: _selectedSection == 'heatmap' ? _selectedDayKey : null,
+        onDaySelected: (key, seconds) => _selectDay('heatmap', key, seconds),
       ),
     );
   }
@@ -664,6 +756,182 @@ class _StatsScreenState extends State<StatsScreen>
           letterSpacing: 0.5,
         ));
   }
+
+  List<Widget> _yearReviewSection(ColorScheme cs, TextTheme tt) {
+    final thisYear = DateTime.now().year;
+    final years = [for (var y = thisYear; y >= thisYear - 6; y--) y];
+    final header = Row(children: [
+      Expanded(child: _sectionTitle(tt, cs, 'Year in Review')),
+      Container(
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<int>(
+            value: _yirYear,
+            isDense: true,
+            borderRadius: BorderRadius.circular(12),
+            style: tt.bodyMedium?.copyWith(color: cs.onSurface),
+            items: [
+              for (final y in years) DropdownMenuItem(value: y, child: Text('$y')),
+            ],
+            onChanged: (y) {
+              if (y != null && y != _yirYear) _loadYearReview(y);
+            },
+          ),
+        ),
+      ),
+    ]);
+
+    final body = <Widget>[];
+    final d = _yirData;
+    // The server reports listening time in seconds (summed timeListening).
+    final totalSeconds = (d?['totalListeningTime'] as num?)?.toDouble() ?? 0;
+    final sessions = (d?['totalListeningSessions'] as num?)?.toInt() ?? 0;
+    final finished = (d?['numBooksFinished'] as num?)?.toInt() ?? 0;
+    final listened = (d?['numBooksListened'] as num?)?.toInt() ?? 0;
+
+    if (_yirLoading) {
+      body.add(const Padding(
+        padding: EdgeInsets.symmetric(vertical: 28),
+        child: Center(child: CircularProgressIndicator()),
+      ));
+    } else if (d == null || (totalSeconds <= 0 && sessions == 0 && finished == 0)) {
+      body.add(Container(
+        width: double.infinity,
+        decoration: _cardDeco(cs),
+        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+        child: Text('Nothing listened in $_yirYear yet',
+            textAlign: TextAlign.center,
+            style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+      ));
+    } else {
+      final api = context.read<AuthProvider>().apiService;
+      final coverIds =
+          ((d['booksWithCovers'] as List?) ?? const []).whereType<String>().toList();
+      if (api != null && coverIds.isNotEmpty) {
+        body.add(SizedBox(
+          height: 64,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: coverIds.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) => ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: CachedNetworkImage(
+                imageUrl: api.getCoverUrl(coverIds[i], width: 120),
+                width: 64,
+                height: 64,
+                fit: BoxFit.cover,
+                errorWidget: (_, __, ___) =>
+                    Container(width: 64, height: 64, color: cs.surfaceContainerHigh),
+              ),
+            ),
+          ),
+        ));
+        body.add(const SizedBox(height: 14));
+      }
+
+      body.add(Row(children: [
+        Expanded(child: _accentStatCard(tt, cs, Icons.headphones_rounded,
+            cs.primary, _formatDuration(totalSeconds), 'Listened')),
+        const SizedBox(width: 8),
+        Expanded(child: _accentStatCard(tt, cs, Icons.menu_book_rounded,
+            Colors.green, '$finished', 'Books finished')),
+      ]));
+      body.add(const SizedBox(height: 8));
+      body.add(Row(children: [
+        Expanded(child: _accentStatCard(tt, cs, Icons.play_circle_outline_rounded,
+            cs.tertiary, '$sessions', 'Sessions')),
+        const SizedBox(width: 8),
+        Expanded(child: _accentStatCard(tt, cs, Icons.library_books_rounded,
+            Colors.teal, '$listened', 'Books listened')),
+      ]));
+      body.add(const SizedBox(height: 14));
+
+      final highlights = <Widget>[];
+      final mm = d['mostListenedMonth'];
+      if (mm is Map) {
+        final name = _monthName((mm['month'] as num?)?.toInt());
+        if (name.isNotEmpty) {
+          highlights.add(_yirRow(cs, tt, Icons.calendar_month_rounded, 'Top month', name));
+        }
+      }
+      final mn = d['mostListenedNarrator'];
+      if (mn is Map && (mn['name']?.toString().isNotEmpty ?? false)) {
+        highlights.add(_yirRow(cs, tt, Icons.record_voice_over_rounded,
+            'Top narrator', mn['name'].toString()));
+      }
+      final lb = d['longestAudiobookFinished'];
+      if (lb is Map && (lb['title']?.toString().isNotEmpty ?? false)) {
+        highlights.add(_yirRow(cs, tt, Icons.straighten_rounded,
+            'Longest finished', lb['title'].toString()));
+      }
+      if (highlights.isNotEmpty) {
+        body.add(Container(
+          decoration: _cardDeco(cs),
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(children: highlights),
+        ));
+        body.add(const SizedBox(height: 14));
+      }
+
+      body.add(_yirTopList(cs, tt, 'Top authors', d['topAuthors'], 'name'));
+      body.add(_yirTopList(cs, tt, 'Top genres', d['topGenres'], 'genre'));
+    }
+
+    return [header, const SizedBox(height: 10), ...body, const SizedBox(height: 28)];
+  }
+
+  Widget _yirRow(ColorScheme cs, TextTheme tt, IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      child: Row(children: [
+        Icon(icon, size: 18, color: cs.primary.withValues(alpha: 0.7)),
+        const SizedBox(width: 12),
+        Text(label, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(value,
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tt.bodyMedium?.copyWith(color: cs.onSurface, fontWeight: FontWeight.w600)),
+        ),
+      ]),
+    );
+  }
+
+  Widget _yirTopList(ColorScheme cs, TextTheme tt, String title, dynamic raw, String labelKey) {
+    final list = (raw as List?)?.whereType<Map>().toList() ?? [];
+    if (list.isEmpty) return const SizedBox.shrink();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _sectionTitle(tt, cs, title),
+      const SizedBox(height: 8),
+      Container(
+        decoration: _cardDeco(cs),
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          children: list.map((e) {
+            final name = e[labelKey]?.toString() ?? '';
+            final secs = (e['time'] as num?)?.toDouble() ?? 0;
+            return ListTile(
+              dense: true,
+              title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+              trailing: Text(_formatDuration(secs),
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+            );
+          }).toList(),
+        ),
+      ),
+      const SizedBox(height: 14),
+    ]);
+  }
+
+  String _monthName(int? m) => (m != null && m >= 0 && m < 12) ? _monthNames[m] : '';
 
   // --- GOAL CARD ---
 
@@ -805,7 +1073,7 @@ class _StatsScreenState extends State<StatsScreen>
       padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        gradient: oledNotifier.value ? null : LinearGradient(
+        gradient: flatNotifier.value ? null : LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
@@ -813,7 +1081,7 @@ class _StatsScreenState extends State<StatsScreen>
             cs.primary.withValues(alpha: 0.02),
           ],
         ),
-        border: Border.all(color: cs.primary.withValues(alpha: oledNotifier.value ? 0.08 : 0.15)),
+        border: Border.all(color: cs.primary.withValues(alpha: flatNotifier.value ? 0.08 : 0.15)),
       ),
       child: Column(children: [
         Text(l.statsTotalListeningTime,
@@ -973,11 +1241,12 @@ class _StatsScreenState extends State<StatsScreen>
             children: data.map((d) {
               final ratio = (d.seconds / barMax * anim).clamp(0.0, 1.0);
               final isToday = d.fullLabel == _dateKey(DateTime.now());
-              final isSelected = d.fullLabel == _selectedDayKey;
+              final isSelected =
+                  _selectedSection == 'chart' && d.fullLabel == _selectedDayKey;
               return Expanded(
                   child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => _selectDay(d.fullLabel, d.seconds),
+                onTap: () => _selectDay('chart', d.fullLabel, d.seconds),
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: dense ? 1 : 3),
                   child: Column(
@@ -1215,13 +1484,17 @@ class _StatsScreenState extends State<StatsScreen>
     }).toList();
   }
 
-  void _showSessionDetails(Map<String, dynamic> s) {
-    showModalBottomSheet(
+  Future<void> _showSessionDetails(Map<String, dynamic> s) async {
+    final changed = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _SessionDetailsSheet(session: s),
+      builder: (_) => SessionDetailsSheet(session: s),
     );
+    if (changed == true && mounted) {
+      setState(() => _isLoading = true);
+      await _loadStats();
+    }
   }
 
   IconData _clientIcon(String clientName) {
@@ -1422,18 +1695,178 @@ class _TopItem {
       required this.sessionCount});
 }
 
-class _SessionDetailsSheet extends StatefulWidget {
+class SessionDetailsSheet extends StatefulWidget {
   final Map<String, dynamic> session;
-  const _SessionDetailsSheet({required this.session});
+  /// Whether the listened-time / day editor is offered. Hidden when an admin is
+  /// viewing another user's session (the only edit path would write to the
+  /// admin's own progress).
+  final bool allowEdit;
+  const SessionDetailsSheet({super.key, required this.session, this.allowEdit = true});
 
   @override
-  State<_SessionDetailsSheet> createState() => _SessionDetailsSheetState();
+  State<SessionDetailsSheet> createState() => SessionDetailsSheetState();
 }
 
-class _SessionDetailsSheetState extends State<_SessionDetailsSheet> {
+class SessionDetailsSheetState extends State<SessionDetailsSheet> {
   bool _jumping = false;
+  bool _saving = false;
 
   static double _n(dynamic v) => v is num ? v.toDouble() : 0;
+
+  static String _two(int v) => v.toString().padLeft(2, '0');
+
+  /// Edit how much listening this session counts for and which day it lands on.
+  /// The server only honors timeListening and the day (re-derived from
+  /// updatedAt) on an existing session, so those are all we expose.
+  Future<void> _editSession() async {
+    final l = AppLocalizations.of(context)!;
+    final s = widget.session;
+    final origListening = _n(s['timeListening']).round();
+    final origUpdatedMs = s['updatedAt'] is num
+        ? (s['updatedAt'] as num).toInt()
+        : DateTime.now().millisecondsSinceEpoch;
+    final origUpdated = DateTime.fromMillisecondsSinceEpoch(origUpdatedMs);
+
+    final hoursCtrl =
+        TextEditingController(text: '${origListening ~/ 3600}');
+    final minutesCtrl =
+        TextEditingController(text: '${(origListening % 3600) ~/ 60}');
+    var day = DateTime(origUpdated.year, origUpdated.month, origUpdated.day);
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(builder: (dialogCtx, setDialog) {
+          return AlertDialog(
+            title: Text(l.sessionEditTitle),
+            content: Column(mainAxisSize: MainAxisSize.min, children: [
+              Row(children: [
+                Expanded(
+                    child: TextField(
+                  controller: hoursCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                      labelText: l.statsHoursUnit,
+                      border: const OutlineInputBorder()),
+                )),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: TextField(
+                  controller: minutesCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                      labelText: l.statsMinutesUnit,
+                      border: const OutlineInputBorder()),
+                )),
+              ]),
+              const SizedBox(height: 12),
+              Row(children: [
+                Text(l.sessionDayLabel,
+                    style: Theme.of(dialogCtx).textTheme.bodyMedium),
+                const Spacer(),
+                TextButton.icon(
+                  icon: const Icon(Icons.calendar_today_rounded, size: 16),
+                  label: Text('${day.year}-${_two(day.month)}-${_two(day.day)}'),
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: dialogCtx,
+                      initialDate: day,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime.now(),
+                    );
+                    if (picked != null) {
+                      setDialog(() => day =
+                          DateTime(picked.year, picked.month, picked.day));
+                    }
+                  },
+                ),
+              ]),
+            ]),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogCtx, false),
+                  child: Text(l.cancel)),
+              FilledButton(
+                  onPressed: () => Navigator.pop(dialogCtx, true),
+                  child: Text(l.save)),
+            ],
+          );
+        });
+      },
+    );
+    if (saved != true || !mounted) return;
+
+    final h = int.tryParse(hoursCtrl.text.trim()) ?? 0;
+    final m = int.tryParse(minutesCtrl.text.trim()) ?? 0;
+    final newListening = (h < 0 ? 0 : h) * 3600 + (m < 0 ? 0 : m) * 60;
+    // Keep the original time-of-day so only the date moves.
+    final newUpdated = DateTime(day.year, day.month, day.day, origUpdated.hour,
+            origUpdated.minute, origUpdated.second)
+        .millisecondsSinceEpoch;
+
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) {
+      showOverlayToast(context, AppLocalizations.of(context)!.bookmarksNotConnected,
+          icon: Icons.error_outline_rounded);
+      return;
+    }
+    setState(() => _saving = true);
+    final edited = Map<String, dynamic>.from(s)
+      ..['timeListening'] = newListening
+      ..['updatedAt'] = newUpdated;
+    final ok = await api.updateListeningSession(edited);
+    if (!mounted) return;
+    if (ok) {
+      showOverlayToast(context, l.sessionSaved, icon: Icons.check_rounded);
+      Navigator.pop(context, true);
+    } else {
+      setState(() => _saving = false);
+      showOverlayToast(context, l.sessionSaveFailed,
+          icon: Icons.error_outline_rounded);
+    }
+  }
+
+  Future<void> _deleteSession() async {
+    final l = AppLocalizations.of(context)!;
+    final id = widget.session['id'] as String?;
+    if (id == null) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(l.sessionDeleteConfirmTitle),
+        content: Text(l.sessionDeleteConfirmBody),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(c, false), child: Text(l.cancel)),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(c).colorScheme.error),
+            onPressed: () => Navigator.pop(c, true),
+            child: Text(l.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) {
+      showOverlayToast(context, AppLocalizations.of(context)!.bookmarksNotConnected,
+          icon: Icons.error_outline_rounded);
+      return;
+    }
+    setState(() => _saving = true);
+    final ok = await api.deleteListeningSession(id);
+    if (!mounted) return;
+    if (ok) {
+      showOverlayToast(context, l.sessionDeleted, icon: Icons.delete_outline_rounded);
+      Navigator.pop(context, true);
+    } else {
+      setState(() => _saving = false);
+      showOverlayToast(context, l.sessionDeleteFailed,
+          icon: Icons.error_outline_rounded);
+    }
+  }
 
   String _fmtPos(double seconds) {
     final s = seconds.round();
@@ -1787,6 +2220,36 @@ class _SessionDetailsSheetState extends State<_SessionDetailsSheet> {
                         ),
                       ),
                     ),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    if (widget.allowEdit) ...[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _saving ? null : _editSession,
+                          icon: const Icon(Icons.edit_rounded, size: 18),
+                          label: Text(l.edit),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _saving ? null : _deleteSession,
+                        icon: Icon(Icons.delete_outline_rounded,
+                            size: 18, color: cs.error),
+                        label:
+                            Text(l.delete, style: TextStyle(color: cs.error)),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          side:
+                              BorderSide(color: cs.error.withValues(alpha: 0.4)),
+                        ),
+                      ),
+                    ),
+                  ]),
                 ],
               ),
             ),

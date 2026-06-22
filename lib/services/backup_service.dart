@@ -54,6 +54,10 @@ class BackupService {
       'mergeAbsorbingLibraries': await PlayerSettings.getMergeAbsorbingLibraries(),
       'maxConcurrentDownloads': await PlayerSettings.getMaxConcurrentDownloads(),
       'colorSource': await PlayerSettings.getColorSource(),
+      'flatBackground': await PlayerSettings.getFlatBackground(),
+      'manualSeedColor': await PlayerSettings.getManualSeedColor(),
+      'gradientIntensity': await PlayerSettings.getGradientIntensity(),
+      'useColorEverywhere': await PlayerSettings.getUseColorEverywhere(),
       'snappyTransitions': await PlayerSettings.getSnappyTransitions(),
       'bookmarkSort': await PlayerSettings.getBookmarkSort(),
       'autoDownloadOnStream': await PlayerSettings.getAutoDownloadOnStream(),
@@ -95,8 +99,23 @@ class BackupService {
       'language': await PlayerSettings.getLanguage(),
       'showUpNextLabel': await PlayerSettings.getShowUpNextLabel(),
       'queuePlaylistId': await PlayerSettings.getQueuePlaylistId(),
+      'queueCollectionId': await PlayerSettings.getQueueCollectionId(),
+      'queueCollectionName': await PlayerSettings.getQueueCollectionName(),
       'coverSeedColor': await PlayerSettings.getCoverSeedColor(),
       'speedPresets': await PlayerSettings.getSpeedPresets(),
+      'cardBackground': await PlayerSettings.getCardBackground(),
+      'lockSeekBar': await PlayerSettings.getLockSeekBar(),
+      'mediaControlsSpeedBookmark': await PlayerSettings.getMediaControlsSpeedBookmark(),
+      'progressTextScale': await PlayerSettings.getProgressTextScale(),
+      'lockPortrait': await PlayerSettings.getLockPortrait(),
+      'autoSeriesDownloadDefault': await PlayerSettings.getAutoSeriesDownloadDefault(),
+      'statsGoalType': await PlayerSettings.getStatsGoalType(),
+      'statsGoalMinutes': await PlayerSettings.getStatsGoalMinutes(),
+      'statsBookGoal': await PlayerSettings.getStatsBookGoal(),
+      'statsChartStyle': await PlayerSettings.getStatsChartStyle(),
+      'statsChartRange': await PlayerSettings.getStatsChartRange(),
+      'statsSectionOrder': await PlayerSettings.getStatsSectionOrder(),
+      'statsHiddenSections': await PlayerSettings.getStatsHiddenSections(),
     };
 
     // AutoRewind (scoped)
@@ -148,17 +167,6 @@ class BackupService {
 
     // Offline mode (global)
     final offlineMode = prefs.getBool('manual_offline_mode') ?? false;
-
-    // Bookmarks for current account (scoped)
-    final bookmarks = <String, List<String>>{};
-    final bmPrefix = scope.isNotEmpty ? '$scope:bookmarks_' : 'bookmarks_';
-    for (final key in prefs.getKeys()) {
-      if (key.startsWith(bmPrefix)) {
-        final itemId = key.substring(bmPrefix.length);
-        final list = prefs.getStringList(key);
-        if (list != null && list.isNotEmpty) bookmarks[itemId] = list;
-      }
-    }
 
     // Notes for current account (scoped)
     final notes = <String, String>{};
@@ -277,7 +285,6 @@ class BackupService {
       'equalizer': equalizer,
       'bookSpeeds': bookSpeeds,
       'offlineMode': offlineMode,
-      'bookmarks': bookmarks,
       'notes': notes,
       'savedEbooks': savedEbooks,
       'rollingDownloadSeries': rollingDownloadSeries,
@@ -403,6 +410,10 @@ class BackupService {
     if (s['mergeAbsorbingLibraries'] != null) PlayerSettings.setMergeAbsorbingLibraries(s['mergeAbsorbingLibraries'] as bool);
     if (s['maxConcurrentDownloads'] != null) PlayerSettings.setMaxConcurrentDownloads(s['maxConcurrentDownloads'] as int);
     if (s['colorSource'] != null) PlayerSettings.setColorSource(s['colorSource'] as String);
+    if (s['flatBackground'] != null) PlayerSettings.setFlatBackground(s['flatBackground'] as bool);
+    if (s['manualSeedColor'] != null) PlayerSettings.setManualSeedColor(s['manualSeedColor'] as int);
+    if (s['gradientIntensity'] != null) PlayerSettings.setGradientIntensity((s['gradientIntensity'] as num).toDouble());
+    if (s['useColorEverywhere'] != null) PlayerSettings.setUseColorEverywhere(s['useColorEverywhere'] as bool);
     if (s['snappyTransitions'] != null) PlayerSettings.setSnappyTransitions(s['snappyTransitions'] as bool);
     if (s['bookmarkSort'] != null) PlayerSettings.setBookmarkSort(s['bookmarkSort'] as String);
     if (s['autoDownloadOnStream'] != null) PlayerSettings.setAutoDownloadOnStream(s['autoDownloadOnStream'] as bool);
@@ -443,10 +454,25 @@ class BackupService {
     if (s['language'] != null) await PlayerSettings.setLanguage(s['language'] as String);
     if (s['showUpNextLabel'] != null) await PlayerSettings.setShowUpNextLabel(s['showUpNextLabel'] as bool);
     if (s['queuePlaylistId'] != null) await PlayerSettings.setQueuePlaylistId(s['queuePlaylistId'] as String?);
+    if (s['queueCollectionId'] != null) await ScopedPrefs.setString('queueCollectionId', s['queueCollectionId'] as String);
+    if (s['queueCollectionName'] != null) await ScopedPrefs.setString('queueCollectionName', s['queueCollectionName'] as String);
     if (s['coverSeedColor'] != null) await PlayerSettings.setCoverSeedColor(s['coverSeedColor'] as int);
     if (s['speedPresets'] is List) {
       await PlayerSettings.setSpeedPresets((s['speedPresets'] as List).map((e) => (e as num).toDouble()).toList());
     }
+    if (s['cardBackground'] != null) await PlayerSettings.setCardBackground(s['cardBackground'] as String);
+    if (s['lockSeekBar'] != null) await PlayerSettings.setLockSeekBar(s['lockSeekBar'] as bool);
+    if (s['mediaControlsSpeedBookmark'] != null) await PlayerSettings.setMediaControlsSpeedBookmark(s['mediaControlsSpeedBookmark'] as bool);
+    if (s['progressTextScale'] != null) await PlayerSettings.setProgressTextScale((s['progressTextScale'] as num).toDouble());
+    if (s['lockPortrait'] != null) await PlayerSettings.setLockPortrait(s['lockPortrait'] as bool);
+    if (s['autoSeriesDownloadDefault'] != null) await PlayerSettings.setAutoSeriesDownloadDefault(s['autoSeriesDownloadDefault'] as bool);
+    if (s['statsGoalType'] != null) await PlayerSettings.setStatsGoalType(s['statsGoalType'] as String);
+    if (s['statsGoalMinutes'] != null) await PlayerSettings.setStatsGoalMinutes(s['statsGoalMinutes'] as int);
+    if (s['statsBookGoal'] != null) await PlayerSettings.setStatsBookGoal(s['statsBookGoal'] as int);
+    if (s['statsChartStyle'] != null) await PlayerSettings.setStatsChartStyle(s['statsChartStyle'] as String);
+    if (s['statsChartRange'] != null) await PlayerSettings.setStatsChartRange(s['statsChartRange'] as int);
+    if (s['statsSectionOrder'] is List) await PlayerSettings.setStatsSectionOrder((s['statsSectionOrder'] as List).cast<String>());
+    if (s['statsHiddenSections'] is List) await PlayerSettings.setStatsHiddenSections((s['statsHiddenSections'] as List).cast<String>());
 
     // AutoRewind (scoped via save())
     final r = data['autoRewind'] as Map<String, dynamic>?;
@@ -501,15 +527,6 @@ class BackupService {
     // Offline mode (global)
     if (data['offlineMode'] != null) {
       await prefs.setBool('manual_offline_mode', data['offlineMode'] as bool);
-    }
-
-    // Bookmarks (scoped)
-    final bookmarks = data['bookmarks'] as Map<String, dynamic>?;
-    if (bookmarks != null) {
-      for (final entry in bookmarks.entries) {
-        final list = (entry.value as List<dynamic>).cast<String>();
-        await ScopedPrefs.setStringList('bookmarks_${entry.key}', list);
-      }
     }
 
     // Notes (scoped)

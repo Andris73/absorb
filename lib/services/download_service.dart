@@ -12,6 +12,7 @@ import '../l10n/app_localizations.dart';
 import '../main.dart' show rootNavigatorKey;
 import 'api_service.dart';
 import 'audio_player_service.dart';
+import 'offline_source.dart';
 
 enum DownloadStatus { none, downloading, downloaded, error }
 
@@ -140,6 +141,11 @@ class _PendingBook {
   final int trackCount;
   final List<String> expectedPaths; // index-aligned final file paths
   final String? slimSessionJson;
+  /// When set, this book downloads to internal storage first, then its files
+  /// are moved into the user's SAF folder ([safTreeUri]) under [safSubfolder]
+  /// (e.g. "Author/Title") on completion. Null for internal / iOS downloads.
+  final String? safTreeUri;
+  final String? safSubfolder;
 
   /// True once the user cancels, so terminal handling cleans up instead of
   /// surfacing an error.
@@ -157,6 +163,12 @@ class _PendingBook {
   final Map<int, double> trackProgress = {};
   final Map<int, TaskStatus> trackStatus = {};
   DateTime lastUi = DateTime.fromMillisecondsSinceEpoch(0);
+  /// Last time any track update arrived, so the slot-leak reconciler can spot a
+  /// book whose terminal updates were missed.
+  DateTime lastUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// True when this book's files get moved into a SAF folder on completion.
+  bool get isSaf => safTreeUri != null;
 
   _PendingBook({
     required this.itemId,
@@ -171,7 +183,12 @@ class _PendingBook {
     this.localCoverPath,
     this.libraryId,
     this.slimSessionJson,
-  });
+    this.safTreeUri,
+    this.safSubfolder,
+  }) {
+    // Start the no-progress watchdog clock at creation (fresh or restored).
+    lastUpdate = DateTime.now();
+  }
 
   double get overallProgress {
     if (trackCount == 0) return 0;
@@ -195,6 +212,8 @@ class _PendingBook {
         'trackCount': trackCount,
         'expectedPaths': expectedPaths,
         'slimSessionJson': slimSessionJson,
+        if (safTreeUri != null) 'safTreeUri': safTreeUri,
+        if (safSubfolder != null) 'safSubfolder': safSubfolder,
       };
 
   factory _PendingBook.fromJson(Map<String, dynamic> j) => _PendingBook(
@@ -213,19 +232,29 @@ class _PendingBook {
                 .toList() ??
             const [],
         slimSessionJson: j['slimSessionJson'] as String?,
+        safTreeUri: j['safTreeUri'] as String?,
+        safSubfolder: j['safSubfolder'] as String?,
       );
 }
 
-/// Strip the bulky `libraryItem` from persisted session data.
-/// For podcasts this contains ALL episodes and can be hundreds of KB.
+/// Trim the bulky parts of the persisted `libraryItem` while keeping the bits
+/// offline features need. Drops `media.episodes` (a podcast's full episode list
+/// is hundreds of KB) and `media.audioFiles` (the server file list, unused for
+/// local playback), but KEEPS `media.metadata` (so offline series auto-advance
+/// still knows the book's series + sequence), `duration`, and `chapters` (so the
+/// now-playing UI is correct).
 String? _stripLibraryItem(String? sessionJson) {
   if (sessionJson == null) return null;
   try {
     final session = jsonDecode(sessionJson) as Map<String, dynamic>;
-    if (session.containsKey('libraryItem')) {
-      session.remove('libraryItem');
-      return jsonEncode(session);
+    final libItem = session['libraryItem'] as Map<String, dynamic>?;
+    if (libItem == null) return sessionJson;
+    final media = libItem['media'] as Map<String, dynamic>?;
+    if (media != null) {
+      media.remove('episodes');
+      media.remove('audioFiles');
     }
+    return jsonEncode(session);
   } catch (_) {}
   return sessionJson;
 }
@@ -251,7 +280,14 @@ class DownloadService extends ChangeNotifier {
   final Map<String, DownloadInfo> _downloads = {};
   final Set<String> _activeDownloadIds = {};
   final Set<String> _cancelledIds = {};
-  String? _customDownloadPath;
+  /// SAF tree URI (content://) for the Android custom download folder, or null
+  /// to use internal storage. This is the only custom-location mechanism now;
+  /// the old raw-path approach (MANAGE_EXTERNAL_STORAGE) is gone.
+  String? _customDownloadUri;
+  /// Downloaded items still pointing at raw external paths from before the SAF
+  /// switch. Unreadable without the dropped storage permission, so they're kept
+  /// listed for the user to re-download rather than silently deleted.
+  final Set<String> _legacyExternalIds = {};
 
   /// All `background_downloader` tasks share this group, so a single grouped
   /// progress notification covers every active download.
@@ -264,22 +300,28 @@ class DownloadService extends ChangeNotifier {
   StreamSubscription<TaskUpdate>? _updatesSub;
   bool _downloaderConfigured = false;
 
+  /// Periodically reconverges in-flight books with the package task DB so a
+  /// missed terminal update can't leave a slot leaked and wedge the queue.
+  Timer? _reconcileTimer;
+
   /// Queue of pending download requests.
   final List<_QueuedDownload> _queue = [];
 
-  /// The current download directory path, or null if using default.
-  String? get customDownloadPath => _customDownloadPath;
+  /// The current Android SAF folder URI (content://), or null if using default.
+  String? get customDownloadUri => _customDownloadUri;
 
-  /// Get the effective download base directory.
+  /// Items left pointing at unreadable raw external paths from before SAF.
+  List<DownloadInfo> get legacyExternalDownloads =>
+      _legacyExternalIds.map((id) => _downloads[id]).whereType<DownloadInfo>().toList();
+
+  /// Get the effective default (non-custom) download base directory.
   ///
-  /// On iOS, audio files live in the app group container so the widget
-  /// extension and the native player core can read them. We fall back to
-  /// Documents/ if the app group lookup fails (entitlement not yet rolled
-  /// out, etc.) so existing users don't lose their downloads.
+  /// Android custom folders no longer use a filesystem base path - they go
+  /// through SAF ([_customDownloadUri]) in the task builder. This getter now
+  /// only resolves the built-in location: the iOS app group container (so the
+  /// widget extension and native player core can read it; falls back to
+  /// Documents/ if the app group lookup fails) or Android internal storage.
   Future<String> get downloadBasePath async {
-    if (_customDownloadPath != null && _customDownloadPath!.isNotEmpty) {
-      return _customDownloadPath!;
-    }
     if (Platform.isIOS) {
       final groupPath = await _iosAppGroupAudioBase();
       if (groupPath != null) return groupPath;
@@ -296,38 +338,40 @@ class DownloadService extends ChangeNotifier {
     return '${appDir.path}/downloads';
   }
 
-  /// Set a custom download location. Pass null to revert to default.
-  Future<void> setCustomDownloadPath(String? path) async {
-    _customDownloadPath = path;
+  /// Set the Android SAF custom download folder. Pass null to revert to default.
+  Future<void> setCustomDownloadUri(Uri? uri) async {
+    _customDownloadUri = uri?.toString();
     final prefs = await SharedPreferences.getInstance();
-    if (path != null && path.isNotEmpty) {
-      await prefs.setString('custom_download_path', path);
+    if (_customDownloadUri != null && _customDownloadUri!.isNotEmpty) {
+      await prefs.setString('custom_download_uri', _customDownloadUri!);
     } else {
-      await prefs.remove('custom_download_path');
+      await prefs.remove('custom_download_uri');
     }
     notifyListeners();
   }
 
   /// Get a human-readable label for the current download location.
   Future<String> get downloadLocationLabel async {
-    if (_customDownloadPath != null && _customDownloadPath!.isNotEmpty) {
-      // Shorten the path for display
-      final path = _customDownloadPath!;
-      // Try to show a friendly path relative to common roots
-      if (path.contains('/emulated/0/')) {
-        return path.split('/emulated/0/').last;
-      }
-      if (path.contains('/storage/')) {
-        return path.split('/storage/').last;
-      }
-      // Last two segments
-      final segments = path.split('/').where((s) => s.isNotEmpty).toList();
-      if (segments.length >= 2) {
-        return '${segments[segments.length - 2]}/${segments.last}';
-      }
-      return path;
-    }
+    final uri = _customDownloadUri;
+    if (uri != null && uri.isNotEmpty) return _friendlySafLabel(uri);
     return 'App Internal Storage (Default)';
+  }
+
+  /// Turn a SAF tree URI into a friendly folder name. Tree URIs encode the
+  /// location in their last path segment, e.g.
+  /// `.../tree/primary%3ADownload%2FAudiobooks` -> `Download/Audiobooks`.
+  String _friendlySafLabel(String uriString) {
+    try {
+      final uri = Uri.parse(uriString);
+      var docId =
+          uri.pathSegments.isNotEmpty ? uri.pathSegments.last : uriString;
+      docId = Uri.decodeComponent(docId);
+      final colon = docId.indexOf(':');
+      final rel = colon >= 0 ? docId.substring(colon + 1) : docId;
+      return rel.isEmpty ? docId : rel;
+    } catch (_) {
+      return uriString;
+    }
   }
 
   /// Calculate total size of all downloaded files.
@@ -336,6 +380,7 @@ class DownloadService extends ChangeNotifier {
     for (final info in _downloads.values) {
       if (info.status == DownloadStatus.downloaded) {
         for (final path in info.localPaths) {
+          if (isContentUri(path)) continue; // SAF audio not counted in the tally
           try {
             final file = File(path);
             if (file.existsSync()) {
@@ -354,6 +399,7 @@ class DownloadService extends ChangeNotifier {
     if (info == null || info.status != DownloadStatus.downloaded) return 0;
     int total = 0;
     for (final path in info.localPaths) {
+      if (isContentUri(path)) continue; // SAF audio not counted in the tally
       try {
         final file = File(path);
         if (file.existsSync()) {
@@ -463,7 +509,13 @@ class DownloadService extends ChangeNotifier {
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    _customDownloadPath = prefs.getString('custom_download_path');
+    _customDownloadUri = prefs.getString('custom_download_uri');
+    // Legacy raw-path custom folders can't be converted to a SAF content URI
+    // without a fresh user pick, and we no longer hold the storage permission
+    // to write them. Drop the old setting so new downloads use SAF or internal.
+    if (prefs.getString('custom_download_path') != null) {
+      await prefs.remove('custom_download_path');
+    }
     final json = prefs.getString('downloads');
     if (json != null) {
       try {
@@ -488,6 +540,10 @@ class DownloadService extends ChangeNotifier {
     // On iOS, remap paths when the app container UUID changes after updates
     await _migrateIOSPaths();
 
+    // On Android, flag downloads still pointing at raw external paths from
+    // before the SAF switch so the UI can offer a re-download.
+    await _detectLegacyExternal();
+
     // On iOS, move existing audio downloads from Documents/ into the app
     // group container so the widget / native player core can read them.
     // Runs in background so it doesn't block init() if the user has many
@@ -509,11 +565,76 @@ class DownloadService extends ChangeNotifier {
     await _loadPending();
     await _rehydratePending();
     await FileDownloader().resumeFromBackground();
+    _startReconciler();
 
     notifyListeners();
 
     // Validate files and clean up orphans in background after startup
     _validateDownloads();
+  }
+
+  void _startReconciler() {
+    _reconcileTimer?.cancel();
+    _reconcileTimer = Timer.periodic(
+        const Duration(minutes: 2), (_) => unawaited(_reconcilePending()));
+  }
+
+  /// Reconcile in-flight books against the package task DB. Two jobs:
+  /// 1. If a book's terminal updates were missed (e.g. an OEM ROM killed our
+  ///    callback), finalize / fail it from the DB so its slot frees.
+  /// 2. If a book has made no progress and gone silent for a while, it's a dead
+  ///    or zombie record (e.g. left over after an app update) holding a slot -
+  ///    fail it so the queue can move on. Healthy or wifi-waiting downloads keep
+  ///    emitting updates, so their lastUpdate stays fresh and they're left be.
+  Future<void> _reconcilePending() async {
+    if (_pending.isEmpty) return;
+    List<TaskRecord> records;
+    try {
+      records = await FileDownloader().database.allRecords();
+    } catch (_) {
+      return;
+    }
+    final byItem = <String, Map<int, TaskStatus>>{};
+    for (final r in records) {
+      final meta = _decodeMeta(r.task.metaData);
+      if (meta == null) continue;
+      if (!_pending.containsKey(meta.$1)) continue;
+      (byItem[meta.$1] ??= {})[meta.$2] = r.status;
+    }
+    for (final itemId in _pending.keys.toList()) {
+      final p = _pending[itemId];
+      if (p == null || p.finalizing) continue;
+      final statuses = byItem[itemId];
+      if (statuses != null && statuses.length >= p.trackCount) {
+        statuses.forEach((i, s) => p.trackStatus[i] = s);
+        bool allComplete = p.trackCount > 0;
+        bool allTerminal = true;
+        for (int i = 0; i < p.trackCount; i++) {
+          final s = p.trackStatus[i];
+          if (s != TaskStatus.complete) allComplete = false;
+          if (s == null || !_terminal.contains(s)) allTerminal = false;
+        }
+        if (allComplete) {
+          debugPrint('[Download] Reconciler finalizing missed-complete $itemId');
+          p.finalizing = true;
+          await _finalizeSuccess(itemId);
+          continue;
+        }
+        if (allTerminal) {
+          debugPrint('[Download] Reconciler failing stalled $itemId');
+          p.finalizing = true;
+          await _failBook(itemId, cause: 'Interrupted download');
+          continue;
+        }
+      }
+      // No progress and no updates for a while: a dead/zombie slot. Fail it.
+      if (p.overallProgress == 0 &&
+          DateTime.now().difference(p.lastUpdate) > const Duration(minutes: 3)) {
+        debugPrint('[Download] Reconciler failing stale $itemId (no progress)');
+        p.finalizing = true;
+        await _failBook(itemId, cause: 'Interrupted download');
+      }
+    }
   }
 
   /// Configure the single grouped download notification (replaces the old
@@ -522,6 +643,17 @@ class DownloadService extends ChangeNotifier {
   /// Android, so downloads continue when backgrounded, locked, or killed.
   Future<void> _configureDownloader() async {
     if (_downloaderConfigured) return;
+    // Always run downloads in the Android foreground service. Without this,
+    // smaller books can run as background WorkManager jobs that some OEM ROMs
+    // throttle or kill, leaving downloads stuck.
+    if (Platform.isAndroid) {
+      try {
+        await FileDownloader()
+            .configure(androidConfig: [(Config.runInForeground, Config.always)]);
+      } catch (e) {
+        debugPrint('[Download] androidConfig failed: $e');
+      }
+    }
     final l = _l();
     // NOTE: for group notifications, the count tokens ({numFinished}/{numTotal})
     // only substitute in the TITLE - in the body they print literally. {progress}
@@ -733,6 +865,68 @@ class DownloadService extends ChangeNotifier {
     return '$groupAudioBase${path.substring(idx + marker.length)}';
   }
 
+  /// Flag downloaded items whose files sit at a raw external path from before
+  /// the SAF switch (not a content URI, not under internal storage). Without
+  /// the dropped storage permission these can't be read, so they're kept listed
+  /// for re-download instead of being silently dropped by the validator.
+  Future<void> _detectLegacyExternal() async {
+    if (!Platform.isAndroid || _downloads.isEmpty) return;
+    final appDir = await getApplicationDocumentsDirectory();
+    final internalPrefix = appDir.path;
+    for (final entry in _downloads.entries) {
+      final info = entry.value;
+      if (info.status != DownloadStatus.downloaded || info.localPaths.isEmpty) {
+        continue;
+      }
+      final first = info.localPaths.first;
+      if (isContentUri(first) || first.startsWith(internalPrefix)) continue;
+      _legacyExternalIds.add(entry.key);
+    }
+    if (_legacyExternalIds.isNotEmpty) {
+      debugPrint('[Download] ${_legacyExternalIds.length} legacy external download(s) need re-download');
+    }
+  }
+
+  /// Drop a legacy external entry (its files are orphaned on storage we can no
+  /// longer reach) and re-enqueue it from stored metadata so it lands in the
+  /// current location (SAF folder or internal).
+  Future<void> redownloadLegacy(ApiService api, String itemId) async {
+    final info = _downloads[itemId];
+    if (info == null) return;
+    _downloads.remove(itemId);
+    _legacyExternalIds.remove(itemId);
+    await _save();
+    notifyListeners();
+    final episodeId = itemId.length > 36 ? itemId.substring(37) : null;
+    await downloadItem(
+      api: api,
+      itemId: itemId,
+      title: info.title ?? '',
+      author: info.author,
+      coverUrl: info.coverUrl,
+      episodeId: episodeId,
+      libraryId: info.libraryId,
+    );
+  }
+
+  /// Re-download every flagged legacy external item.
+  Future<void> redownloadAllLegacy(ApiService api) async {
+    for (final id in _legacyExternalIds.toList()) {
+      await redownloadLegacy(api, id);
+    }
+  }
+
+  /// Forget the legacy external entries without re-downloading (user dismissed).
+  Future<void> dismissLegacyDownloads() async {
+    if (_legacyExternalIds.isEmpty) return;
+    for (final id in _legacyExternalIds) {
+      _downloads.remove(id);
+    }
+    _legacyExternalIds.clear();
+    await _save();
+    notifyListeners();
+  }
+
   /// Validate that downloaded files still exist on disk and clean up orphans.
   /// Runs in background so it doesn't block app startup.
   Future<void> _validateDownloads() async {
@@ -741,8 +935,13 @@ class DownloadService extends ChangeNotifier {
       final entries = Map<String, DownloadInfo>.from(_downloads);
       for (final entry in entries.entries) {
         if (entry.value.status != DownloadStatus.downloaded) continue;
+        // Legacy external entries are kept for re-download, not validated away.
+        if (_legacyExternalIds.contains(entry.key)) continue;
         bool allExist = true;
         for (final path in entry.value.localPaths) {
+          // No cheap existence check for a SAF content URI; assume present and
+          // let a real playback failure surface a re-download instead.
+          if (isContentUri(path)) continue;
           try {
             final exists = await File(path).exists()
                 .timeout(const Duration(seconds: 3));
@@ -960,6 +1159,7 @@ class DownloadService extends ChangeNotifier {
 
     // If at capacity, queue this one
     if (_activeDownloadIds.length >= maxConcurrent) {
+      debugPrint('[Download] Queued "$title" ($itemId); slots ${_activeDownloadIds.length}/$maxConcurrent full, ${_queue.length} waiting');
       _queue.add(_QueuedDownload(
         api: api,
         itemId: itemId,
@@ -1036,6 +1236,7 @@ class DownloadService extends ChangeNotifier {
   }) async {
     _activeDownloadIds.add(itemId);
     _cancelledIds.remove(itemId);
+    debugPrint('[Download] Starting "$title" ($itemId)');
 
     _downloads[itemId] = DownloadInfo(
       itemId: itemId,
@@ -1048,7 +1249,13 @@ class DownloadService extends ChangeNotifier {
     );
     notifyListeners();
 
-    Directory? bookDir;
+    // SAF custom folder (Android only): files go to a flat per-book folder
+    // under the user-granted tree via content URIs, no storage permission.
+    final useSaf = Platform.isAndroid &&
+        _customDownloadUri != null &&
+        _customDownloadUri!.isNotEmpty;
+    String? bookDirRef; // filesystem path or content:// URI, for cleanup
+    Directory? bookDir; // filesystem branches only
     try {
       // For episodes, itemId is a composite key like 'podcastId-episodeId'.
       // Extract the real library item ID for the API call.
@@ -1071,14 +1278,26 @@ class DownloadService extends ChangeNotifier {
 
       final files = await _resolveDurableFiles(api, apiItemId, episodeId, audioTracks);
 
-      final basePath = await downloadBasePath;
-      final dirName = (author != null && author.isNotEmpty)
+      // Per-book destination. Android downloads to internal storage first - for
+      // both the internal default AND SAF custom folders. SAF books are then
+      // moved into the user's chosen folder under "Author/Title" on completion
+      // (a direct SAF write can't nest subfolders). iOS downloads into the app
+      // group container.
+      final nestedName = (author != null && author.isNotEmpty)
           ? '${_sanitizePath(author)}/${_sanitizePath(title)}'
           : _sanitizePath(title);
-      bookDir = Directory('$basePath/$dirName');
-      if (!bookDir.existsSync()) {
-        bookDir.createSync(recursive: true);
+      String? relDir; // Android: relative to applicationDocuments
+      if (Platform.isIOS) {
+        final basePath = await downloadBasePath;
+        bookDir = Directory('$basePath/$nestedName');
+      } else {
+        final appDir = await getApplicationDocumentsDirectory();
+        relDir = 'downloads/$nestedName';
+        bookDir = Directory('${appDir.path}/$relDir');
       }
+      if (!bookDir.existsSync()) bookDir.createSync(recursive: true);
+      bookDirRef = bookDir.path;
+      debugPrint('[Download] "$title" location=${useSaf ? 'SAF' : 'default'} dir=${bookDir.path} tracks=${files.length}');
 
       final localCoverPath = await _cacheCover(api, itemId, coverUrl);
 
@@ -1089,7 +1308,7 @@ class DownloadService extends ChangeNotifier {
 
       // Cancelled while we were resolving? Bail before enqueueing anything.
       if (_cancelledIds.remove(itemId)) {
-        _cleanupBookDir(bookDir);
+        await _cleanupBookDir(bookDirRef);
         _activeDownloadIds.remove(itemId);
         _downloads.remove(itemId);
         notifyListeners();
@@ -1109,36 +1328,58 @@ class DownloadService extends ChangeNotifier {
         coverUrl: coverUrl,
         localCoverPath: localCoverPath,
         libraryId: libraryId,
-        bookDir: bookDir.path,
+        bookDir: bookDirRef,
         trackCount: files.length,
         expectedPaths: expectedPaths,
         slimSessionJson: jsonEncode(slimSession),
+        safTreeUri: useSaf ? _customDownloadUri : null,
+        safSubfolder: useSaf ? nestedName : null,
       );
       _pending[itemId] = pending;
       await _persistPending();
 
       for (int i = 0; i < files.length; i++) {
-        final task = DownloadTask(
-          taskId: _taskId(itemId, i),
-          url: files[i].url,
-          headers: api.mediaHeaders,
-          filename: files[i].filename,
-          baseDirectory: BaseDirectory.root,
-          directory: bookDir.path,
-          group: _dlGroup,
-          metaData: jsonEncode({'itemId': itemId, 'i': i, 'n': files.length}),
-          updates: Updates.statusAndProgress,
-          requiresWiFi: wifiOnly,
-          retries: 3,
-          allowPause: true,
-        );
+        final meta = jsonEncode({'itemId': itemId, 'i': i, 'n': files.length});
+        final Task task;
+        if (Platform.isIOS) {
+          task = DownloadTask(
+            taskId: _taskId(itemId, i),
+            url: files[i].url,
+            headers: api.mediaHeaders,
+            filename: files[i].filename,
+            baseDirectory: BaseDirectory.root,
+            directory: bookDir.path,
+            group: _dlGroup,
+            metaData: meta,
+            updates: Updates.statusAndProgress,
+            requiresWiFi: wifiOnly,
+            retries: 3,
+            allowPause: true,
+          );
+        } else {
+          task = DownloadTask(
+            taskId: _taskId(itemId, i),
+            url: files[i].url,
+            headers: api.mediaHeaders,
+            filename: files[i].filename,
+            baseDirectory: BaseDirectory.applicationDocuments,
+            directory: relDir!,
+            group: _dlGroup,
+            metaData: meta,
+            updates: Updates.statusAndProgress,
+            requiresWiFi: wifiOnly,
+            retries: 3,
+            allowPause: true,
+          );
+        }
         final ok = await FileDownloader().enqueue(task);
+        debugPrint('[Download] enqueue ${i + 1}/${files.length} ok=$ok file=${files[i].filename}');
         if (!ok) throw Exception('Failed to enqueue track ${i + 1}');
       }
       debugPrint('[Download] Enqueued ${files.length} task(s) for "$title"');
     } catch (e) {
       await _failBook(itemId,
-          cause: e, bookDir: bookDir, title: title, author: author, coverUrl: coverUrl);
+          cause: e, bookDirRef: bookDirRef, title: title, author: author, coverUrl: coverUrl);
     }
   }
 
@@ -1253,6 +1494,7 @@ class DownloadService extends ChangeNotifier {
     final i = meta.$2;
     final p = _pending[itemId];
     if (p == null) return;
+    p.lastUpdate = DateTime.now();
 
     if (update is TaskProgressUpdate) {
       final prog = update.progress;
@@ -1262,6 +1504,9 @@ class DownloadService extends ChangeNotifier {
       }
     } else if (update is TaskStatusUpdate) {
       p.trackStatus[i] = update.status;
+      debugPrint('[Download] task $itemId #$i status=${update.status.name}'
+          '${update.exception != null ? ' ex=${update.exception}' : ''}'
+          '${update.responseStatusCode != null ? ' code=${update.responseStatusCode}' : ''}');
       if (update.status == TaskStatus.complete) p.trackProgress[i] = 1.0;
 
       // A hard failure aborts the whole book: cancel the remaining siblings so
@@ -1310,10 +1555,36 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
+  /// Move a completed book's internal files into the SAF folder [treeUri] under
+  /// [subfolder] (e.g. "Author/Title"), via the native DocumentFile helper.
+  /// Returns the created folder URI and the per-file content URIs, or null if
+  /// the move failed.
+  Future<({String dirUri, List<String> fileUris})?> _moveBookToSaf(
+      String treeUri, String subfolder, List<String> filenames, List<String> tempPaths) async {
+    try {
+      final res = await _storageChannel.invokeMethod<Map>('moveBookToSaf', {
+        'treeUri': treeUri,
+        'subfolder': subfolder,
+        'filenames': filenames,
+        'tempPaths': tempPaths,
+      });
+      final dirUri = res?['dirUri'] as String?;
+      final fileUris = (res?['fileUris'] as List?)?.map((e) => e as String).toList();
+      if (dirUri == null || fileUris == null || fileUris.length != filenames.length) {
+        return null;
+      }
+      return (dirUri: dirUri, fileUris: fileUris);
+    } catch (e) {
+      debugPrint('[Download] moveBookToSaf failed: $e');
+      return null;
+    }
+  }
+
   Future<void> _finalizeSuccess(String itemId) async {
     final p = _pending[itemId];
     if (p == null) return;
 
+    // Files always land in internal storage first.
     final localPaths = p.expectedPaths.where((path) => File(path).existsSync()).toList();
     if (localPaths.length != p.trackCount) {
       debugPrint('[Download] Finalize "$itemId": only ${localPaths.length}/${p.trackCount} '
@@ -1323,7 +1594,24 @@ class DownloadService extends ChangeNotifier {
       return;
     }
 
-    if (Platform.isIOS) {
+    var finalPaths = localPaths;
+    String? finalDirPath = p.bookDir;
+
+    // SAF: move the downloaded files into the user's chosen folder under
+    // "Author/Title" and play/delete via the returned content URIs. If the move
+    // fails the book stays usable from its internal copy.
+    if (p.isSaf) {
+      final filenames = [for (final path in localPaths) path.split('/').last];
+      final moved = await _moveBookToSaf(
+          p.safTreeUri!, p.safSubfolder ?? '', filenames, localPaths);
+      if (moved != null) {
+        finalPaths = moved.fileUris;
+        finalDirPath = moved.dirUri;
+        await _cleanupBookDir(p.bookDir); // drop the now-empty internal temp dir
+      } else {
+        debugPrint('[Download] SAF move failed for "$itemId", keeping internal copy');
+      }
+    } else if (Platform.isIOS) {
       for (final path in localPaths) {
         await _excludeFromBackup(path);
       }
@@ -1332,13 +1620,13 @@ class DownloadService extends ChangeNotifier {
     _downloads[itemId] = DownloadInfo(
       itemId: itemId,
       status: DownloadStatus.downloaded,
-      localPaths: localPaths,
+      localPaths: finalPaths,
       sessionData: p.slimSessionJson,
       title: p.title,
       author: p.author,
       coverUrl: p.coverUrl,
       localCoverPath: p.localCoverPath,
-      localDirPath: p.bookDir,
+      localDirPath: finalDirPath,
       libraryId: p.libraryId,
     );
     await _save();
@@ -1369,7 +1657,7 @@ class DownloadService extends ChangeNotifier {
     String? title,
     String? author,
     String? coverUrl,
-    Directory? bookDir,
+    String? bookDirRef,
   }) async {
     final p = _pending[itemId];
     if (p != null) {
@@ -1379,10 +1667,10 @@ class DownloadService extends ChangeNotifier {
     final t = title ?? p?.title ?? '';
     final a = author ?? p?.author;
     final c = coverUrl ?? p?.coverUrl;
-    final dir = bookDir ?? (p != null ? Directory(p.bookDir) : null);
+    final dir = bookDirRef ?? p?.bookDir;
 
     if (p != null) await _cancelSiblings(itemId, p, force: true);
-    _cleanupBookDir(dir);
+    await _cleanupBookDir(dir);
 
     final msg = _mapError(cause, taskException, responseCode);
     _downloads[itemId] = DownloadInfo(
@@ -1404,7 +1692,7 @@ class DownloadService extends ChangeNotifier {
 
   Future<void> _handleCanceled(String itemId) async {
     final p = _pending[itemId];
-    _cleanupBookDir(p != null ? Directory(p.bookDir) : null);
+    await _cleanupBookDir(p?.bookDir);
     _downloads.remove(itemId);
     _activeDownloadIds.remove(itemId);
     _pending.remove(itemId);
@@ -1429,8 +1717,12 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
-  void _cleanupBookDir(Directory? dir) {
-    if (dir == null) return;
+  /// Remove a book's download folder. [bookDir] is a filesystem path. SAF
+  /// downloads share the user's granted folder, so there's no per-book folder
+  /// to remove (cleanup of SAF files is per-file via [deleteDownload]).
+  Future<void> _cleanupBookDir(String? bookDir) async {
+    if (bookDir == null || isContentUri(bookDir)) return;
+    final dir = Directory(bookDir);
     try {
       if (dir.existsSync()) {
         dir.deleteSync(recursive: true);
@@ -1571,15 +1863,24 @@ class DownloadService extends ChangeNotifier {
 
     for (final path in info.localPaths) {
       try {
-        final file = File(path);
-        if (file.existsSync()) file.deleteSync();
+        if (isContentUri(path)) {
+          await FileDownloader().uri.deleteFile(Uri.parse(path));
+        } else {
+          final file = File(path);
+          if (file.existsSync()) file.deleteSync();
+        }
       } catch (_) {}
     }
 
     // Remove the download directory (new-style path from DownloadInfo, or legacy UUID path)
     try {
       final dirPath = info.localDirPath;
-      if (dirPath != null && Directory(dirPath).existsSync()) {
+      if (dirPath != null && isContentUri(dirPath)) {
+        // SAF book folder: best-effort delete (harmless if already emptied).
+        try {
+          await FileDownloader().uri.deleteFile(Uri.parse(dirPath));
+        } catch (_) {}
+      } else if (dirPath != null && Directory(dirPath).existsSync()) {
         Directory(dirPath).deleteSync(recursive: true);
         // Clean up empty parent (Author folder) if it's now empty
         final parent = Directory(dirPath).parent;
@@ -1623,15 +1924,20 @@ class DownloadService extends ChangeNotifier {
     _cancelledIds.add(itemId);
 
     final p = _pending[itemId];
-    if (p != null) {
+    if (p != null && !p.finalizing) {
       p.cancelled = true;
-      // Cancel every task; the resulting `canceled` updates drive _handleCanceled
-      // which removes partial files, the pending record, and the DB rows.
+      // Ask the package to cancel any live tasks, then clean up ourselves. We do
+      // NOT wait for the package's `canceled` update: it never fires for tasks
+      // the package no longer tracks (e.g. records left over after an app
+      // update), which would leak the slot and wedge the whole queue.
       final ids = [for (int i = 0; i < p.trackCount; i++) _taskId(itemId, i)];
       unawaited(FileDownloader().cancelTasksWithIds(ids));
+      unawaited(_handleCanceled(itemId)); // frees the slot + processes the queue
+    } else {
+      _activeDownloadIds.remove(itemId);
     }
 
-    // Instant UI feedback; full cleanup happens on the canceled updates.
+    // Instant UI feedback (cleanup paths also notify).
     _downloads.remove(itemId);
     notifyListeners();
   }

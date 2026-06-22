@@ -44,6 +44,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       pendingShortcut = nil
       forwardShortcut(shortcut)
     }
+
+    // This scene is now the foreground process. Claim audio ownership and tell
+    // any background process (e.g. one a widget play intent launched) to stop,
+    // so two streams can't overlap (#285).
+    (UIApplication.shared.delegate as? AppDelegate)?.claimAudioOwnershipAndNotifyOthers()
   }
 
   // Warm-launch via shortcut. iOS 13+ scene-based apps get the shortcut here

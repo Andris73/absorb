@@ -9,6 +9,10 @@ import 'admin_users_screen.dart';
 import 'admin_podcasts_screen.dart';
 import 'admin_email_screen.dart';
 import 'admin_api_keys_screen.dart';
+import 'admin_libraries_screen.dart';
+import 'admin_server_settings_screen.dart';
+import 'admin_stats_screen.dart';
+import 'admin_sessions_screen.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -172,6 +176,48 @@ class _AdminScreenState extends State<AdminScreen> {
                           onTap: () {
                             Navigator.push(context, MaterialPageRoute(
                               builder: (_) => AdminApiKeysScreen(users: _users)));
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        _navButton(cs, tt,
+                          icon: Icons.library_books_rounded,
+                          label: l.adminLibrariesManage,
+                          subtitle: l.adminLibrariesManageSubtitle,
+                          onTap: () async {
+                            await Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => AdminLibrariesScreen(libraries: _libraries)));
+                            _loadAll();
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        _navButton(cs, tt,
+                          icon: Icons.tune_rounded,
+                          label: l.adminServerSettings,
+                          subtitle: l.adminServerSettingsSubtitle,
+                          onTap: () {
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const AdminServerSettingsScreen()));
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        _navButton(cs, tt,
+                          icon: Icons.bar_chart_rounded,
+                          label: l.adminStats,
+                          subtitle: l.adminStatsSubtitle,
+                          onTap: () {
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const AdminStatsScreen()));
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        _navButton(cs, tt,
+                          icon: Icons.history_rounded,
+                          label: l.adminAllSessions,
+                          subtitle: l.adminAllSessionsSubtitle,
+                          onTap: () async {
+                            await Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => AdminSessionsScreen(users: _users)));
+                            _loadAll();
                           },
                         ),
                         const SizedBox(height: 10),

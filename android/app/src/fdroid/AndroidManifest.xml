@@ -1,10 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- F-Droid (GMS-free) overlay. MANAGE_EXTERNAL_STORAGE is kept on purpose
-         so custom download locations still work. Everything below is removed
-         because it depends on Google Play Services or is superseded by
-         F-Droid's own update mechanism. -->
+    <!-- F-Droid (GMS-free) overlay. Everything below is removed because it
+         depends on Google Play Services or is superseded by F-Droid's own
+         update mechanism. -->
 
     <!-- In-app APK updater: F-Droid updates apps itself -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" tools:node="remove"/>

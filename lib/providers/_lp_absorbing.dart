@@ -438,6 +438,8 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
           _autoAdvanceOffline(itemId);
         } else if (mode == 'playlist') {
           _advanceInPlaylist(itemId);
+        } else if (mode == 'collection') {
+          _advanceInCollection(itemId);
         }
       });
     }
@@ -740,6 +742,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     for (final entry in _absorbingItemCache.entries) {
       final key = entry.key;
       if (key == finishedBookId || key.length > 36) continue;
+      if (_manualAbsorbRemoves.contains(key)) continue;
       if ((this as LibraryProvider).isItemFinishedByKey(key)) continue;
       final (sid, seq) = _StateMixin._extractSeries(entry.value);
       if (sid != seriesId || seq == null || seq <= currentSeq) continue;
@@ -749,6 +752,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     for (final dlInfo in DownloadService().downloadedItems) {
       final id = dlInfo.itemId;
       if (id == finishedBookId || id.length > 36) continue;
+      if (_manualAbsorbRemoves.contains(id)) continue;
       if (candidates.values.any((e) => e.key == id)) continue;
       if (_progressMap[id]?['isFinished'] == true) continue;
       final data = _itemDataWithSeries(id);
@@ -768,6 +772,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
         if (book is! Map<String, dynamic>) continue;
         final id = book['id'] as String?;
         if (id == null || id == finishedBookId) continue;
+        if (_manualAbsorbRemoves.contains(id)) continue;
         if (_progressMap[id]?['isFinished'] == true) continue;
         final (sid, seq) = _StateMixin._extractSeries(book);
         if (sid != seriesId || seq == null || seq <= currentSeq) continue;
@@ -783,11 +788,6 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     final nextSeq = candidates.keys.toList()..sort();
     final next = candidates[nextSeq.first]!;
     final nextKey = next.key;
-
-    if (_manualAbsorbRemoves.contains(nextKey)) {
-      debugPrint('[Absorbing] Next book $nextKey was manually removed, skipping');
-      return;
-    }
 
     final mode = await PlayerSettings.getBookQueueMode();
     if (mode == 'auto_next') {
@@ -1116,6 +1116,84 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     debugPrint('[AutoAdvance] Playlist $playlistId exhausted after $finishedKey');
   }
 
+  // ── Collection queue mode (books only) ───────────────────────────────
+  // Collections aren't a native queue in ABS, so we drive them through the
+  // same machinery as playlists: a collection's books are normalized into the
+  // playlist-item shape and run through _playPlaylistItem / the finished-item
+  // advance, keyed on `queueCollectionId` instead of `queuePlaylistId`.
+
+  Future<Map<String, dynamic>?> _getCollectionById(String collectionId) async {
+    // Prefer the cached collection (works offline) before hitting the API,
+    // mirroring _getPlaylistById.
+    final cached = _collections.cast<Map<String, dynamic>>().where(
+      (c) => c['id'] == collectionId,
+    ).firstOrNull;
+    if (cached != null) return cached;
+    if (_api == null) return null;
+    try {
+      return await _api!.getCollection(collectionId);
+    } catch (e) {
+      debugPrint('[Collection] getCollection($collectionId) failed: $e');
+      return null;
+    }
+  }
+
+  List<Map<String, dynamic>> _collectionItems(Map<String, dynamic> collection) {
+    final books = (collection['books'] as List<dynamic>?) ?? const [];
+    return books
+        .whereType<Map<String, dynamic>>()
+        .map((b) => {'libraryItemId': b['id'] as String? ?? '', 'libraryItem': b})
+        .where((m) => (m['libraryItemId'] as String).isNotEmpty)
+        .toList();
+  }
+
+  /// Start playing the first unfinished book in [collectionId].
+  Future<bool> playCollectionFromStart(String collectionId) async {
+    final c = await _getCollectionById(collectionId);
+    if (c == null) return false;
+    final items = _collectionItems(c);
+    final idx = firstUnfinishedPlaylistIndex(items);
+    if (idx < 0) return false;
+    return _playPlaylistItem(items[idx]);
+  }
+
+  Future<bool> isInActiveQueueCollection(String libraryItemId,
+      {String? episodeId}) async {
+    final collectionId = await PlayerSettings.getQueueCollectionId();
+    if (collectionId == null) return false;
+    final c = await _getCollectionById(collectionId);
+    if (c == null) return false;
+    final items = _collectionItems(c);
+    final target = episodeId != null ? '$libraryItemId-$episodeId' : libraryItemId;
+    for (final m in items) {
+      if (_playlistItemKey(m) == target) return true;
+    }
+    return false;
+  }
+
+  Future<void> _advanceInCollection(String finishedKey) async {
+    final collectionId = await PlayerSettings.getQueueCollectionId();
+    if (collectionId == null) return;
+    final c = await _getCollectionById(collectionId);
+    if (c == null) {
+      await PlayerSettings.clearQueueModeCollection();
+      return;
+    }
+    final items = _collectionItems(c);
+    int idx = -1;
+    for (var i = 0; i < items.length; i++) {
+      if (_playlistItemKey(items[i]) == finishedKey) { idx = i; break; }
+    }
+    if (idx < 0) return;
+    final self = this as LibraryProvider;
+    for (var i = idx + 1; i < items.length; i++) {
+      final key = _playlistItemKey(items[i]);
+      if (key.isEmpty) continue;
+      if (self.isItemFinishedByKey(key)) continue;
+      if (await _playPlaylistItem(items[i])) return;
+    }
+  }
+
   /// Returns the (seriesId, sequence) for [item]. Public wrapper around the
   /// private `_StateMixin._extractSeries` so sheets in other files can use
   /// it without reaching into private mixins.
@@ -1139,6 +1217,9 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
 
   Future<Map<String, dynamic>?> fetchPlaylistById(String playlistId) =>
       _getPlaylistById(playlistId);
+
+  Future<Map<String, dynamic>?> fetchCollectionById(String collectionId) =>
+      _getCollectionById(collectionId);
 
   // ── Up-next preview ─────────────────────────────────────────────────
 
@@ -1311,6 +1392,28 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
         if (self.isItemFinishedByKey(key)) continue;
         final title = _playlistItemTitle(m);
         return playlistName.isNotEmpty ? '$playlistName - $title' : title;
+      }
+      return null;
+    }
+
+    if (mode == 'collection') {
+      final cid = await PlayerSettings.getQueueCollectionId();
+      if (cid == null) return null;
+      final c = await _getCollectionById(cid);
+      if (c == null) return null;
+      final items = _collectionItems(c);
+      final name = c['name'] as String? ?? '';
+      int currentIdx = -1;
+      for (var i = 0; i < items.length; i++) {
+        if (_playlistItemKey(items[i]) == currentItemId) { currentIdx = i; break; }
+      }
+      if (currentIdx < 0) return null;
+      for (var i = currentIdx + 1; i < items.length; i++) {
+        final key = _playlistItemKey(items[i]);
+        if (key.isEmpty) continue;
+        if (self.isItemFinishedByKey(key)) continue;
+        final title = _playlistItemTitle(items[i]);
+        return name.isNotEmpty ? '$name - $title' : title;
       }
       return null;
     }

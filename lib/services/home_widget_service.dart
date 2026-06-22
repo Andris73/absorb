@@ -113,11 +113,11 @@ class HomeWidgetService {
     // Fetch stats in the background so the StatsWidget renders fresh on launch.
     refreshStats();
 
-    // Stats timer runs even while the app is backgrounded so "today" keeps
-    // ticking on the widget during long listening sessions without needing
-    // the user to open the app. 15-min cadence matches the refresh throttle.
-    _statsTimer?.cancel();
-    _statsTimer = Timer.periodic(_statsThrottle, (_) => refreshStats());
+    // Poll stats so "today" keeps ticking on the widget during long listening
+    // sessions. Stopped while backgrounded-and-paused (see onAppBackgrounded)
+    // so it doesn't drain battery overnight. 15-min cadence matches the
+    // refresh throttle.
+    _ensureStatsTimer();
 
     // Phase 1.4 hand-off heartbeat. The iOS native player core checks this
     // before driving audio: a recent timestamp means Flutter is alive and
@@ -604,6 +604,12 @@ class HomeWidgetService {
       await HomeWidget.saveWidgetData<String>('np_api_token', api.token);
     }
 
+    // EQ-enabled flag in the app group so a cold widget-launch (engine never
+    // loaded this process) applies the user's EQ. `eq_enabled` itself lives in
+    // the default (non-group) prefs, so mirror it here as `np_eq_enabled`.
+    final eqEnabled = await ScopedPrefs.getBool('eq_enabled') ?? false;
+    await HomeWidget.saveWidgetData<bool>('np_eq_enabled', eqEnabled);
+
     // Cover path piggybacks on the existing widget_cover_path entry, but
     // expose it under the np_ namespace too for clarity on the native side.
     final coverPath = await HomeWidget.getWidgetData<String>('widget_cover_path');
@@ -950,8 +956,20 @@ class HomeWidgetService {
     _progressTimer = null;
   }
 
+  void _ensureStatsTimer() {
+    if (_statsTimer?.isActive == true) return;
+    _statsTimer = Timer.periodic(_statsThrottle, (_) => refreshStats());
+  }
+
   void onAppBackgrounded() {
     _stopProgressTimer();
+    // Stop polling stats while backgrounded-and-paused - nothing is accruing.
+    // Keep it running if we're still playing so the widget's "today" total
+    // keeps ticking during long background listening sessions.
+    if (!AudioPlayerService().isPlaying) {
+      _statsTimer?.cancel();
+      _statsTimer = null;
+    }
   }
 
   void onAppForegrounded() {
@@ -959,6 +977,7 @@ class HomeWidgetService {
       _startProgressTimer();
       _scheduleUpdate();
     }
+    _ensureStatsTimer();
     refreshStats();
   }
 }

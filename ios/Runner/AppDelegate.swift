@@ -3,6 +3,7 @@ import AppIntents
 import Flutter
 import UIKit
 import AVFoundation
+import AVKit
 import MediaPlayer
 import just_audio
 
@@ -11,6 +12,10 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   private var widgetChannel: FlutterMethodChannel?
+
+  /// True once this process has become the foreground audio owner. Used to
+  /// ignore our own takeover broadcast so we don't stop our own playback (#285).
+  private var didClaimAudioOwnership = false
 
   override func application(
     _ application: UIApplication,
@@ -105,6 +110,17 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
       AppDependencyManager.shared.add(dependency: core)
       AbsorbPlayerCore.logSink?("[NativeCore] Registered as AppIntent dependency")
     }
+
+    // When the app backgrounds, wire the native core's lock-screen / headphone
+    // command handlers. They defer to Flutter while it's alive, but staying
+    // registered means a play command after iOS suspends a paused Flutter still
+    // has a native target - so Absorb resumes instead of iOS handing the play to
+    // Apple Music. We arm on background (not launch) because Flutter is
+    // guaranteed alive here, and an app must background before iOS suspends it.
+    NotificationCenter.default.addObserver(
+      forName: UIApplication.didEnterBackgroundNotification,
+      object: nil, queue: .main
+    ) { _ in AbsorbPlayerCore.shared.armRemoteCommands() }
 
     registerAudioSessionObservers()
 
@@ -213,6 +229,7 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
       "com.barnabas.absorb.widget.playPause",
       "com.barnabas.absorb.widget.skipBack",
       "com.barnabas.absorb.widget.skipForward",
+      "com.barnabas.absorb.host.takeover",
     ]
     for name in names {
       CFNotificationCenterAddObserver(
@@ -222,6 +239,21 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
                 let rawName = name?.rawValue as String? else { return }
           NSLog("[WidgetDebug] AppDelegate received Darwin notification: %@", rawName)
           let appDelegate = Unmanaged<AppDelegate>.fromOpaque(observer).takeUnretainedValue()
+
+          // A foreground process claimed audio ownership. If that's not us,
+          // stop this process's engine so two streams can't overlap (#285).
+          // The owner itself set didClaimAudioOwnership and is .active, so it
+          // ignores its own broadcast.
+          if rawName == "com.barnabas.absorb.host.takeover" {
+            DispatchQueue.main.async {
+              if appDelegate.didClaimAudioOwnership { return }
+              if UIApplication.shared.applicationState == .active { return }
+              NSLog("[WidgetDebug] takeover: foreground app claimed audio, stopping this process's engine")
+              AbsorbPlayerCore.shared.yieldToForegroundOwner()
+            }
+            return
+          }
+
           let action: String
           switch rawName {
           case "com.barnabas.absorb.widget.playPause":   action = "playPause"
@@ -252,6 +284,16 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
     NSLog("[WidgetDebug] AppDelegate registered %d Darwin notification observers", names.count)
   }
 
+  /// Mark this process as the foreground audio owner and tell any other process
+  /// (e.g. one a widget play intent launched in the background) to stop its
+  /// engine, so two streams can't overlap (#285). A no-op when this is the only
+  /// process. Called from SceneDelegate.sceneDidBecomeActive.
+  func claimAudioOwnershipAndNotifyOthers() {
+    didClaimAudioOwnership = true
+    UserDefaults(suiteName: absorbAppGroup)?.set(Int(getpid()), forKey: "audio_owner_pid")
+    postAbsorbDarwinNotification("com.barnabas.absorb.host.takeover")
+  }
+
   private func registerPlatformChannels() {
     let messenger = flutterEngine.binaryMessenger
 
@@ -264,7 +306,8 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
 
     // iOS audio output device switching is not implemented yet — iOS routes
     // through the system's MPVolumeView/AVRoutePicker rather than letting apps
-    // pick output devices directly. Stub these so the channel responds.
+    // pick output devices directly. Stub those, but do expose the AirPlay
+    // picker (the one piece the in-app button needs).
     let channel = FlutterMethodChannel(name: "com.absorb.audio_output",
                                        binaryMessenger: messenger)
     channel.setMethodCallHandler { (call, result) in
@@ -273,6 +316,34 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
         result([])
       case "setAudioOutputDevice", "resetAudioOutput":
         result(false)
+      case "showRoutePicker":
+        // There is no public API to present the AirPlay picker directly, so
+        // add a transient AVRoutePickerView to the key window and tap its
+        // button. The view is removed again shortly after.
+        DispatchQueue.main.async {
+          let scenes = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+          let host = scenes.flatMap { $0.windows }.first { $0.isKeyWindow }
+            ?? scenes.flatMap { $0.windows }.first
+          guard let window = host else { result(false); return }
+          let picker = AVRoutePickerView(frame: CGRect(x: -1000, y: -1000, width: 0, height: 0))
+          picker.prioritizesVideoDevices = false
+          window.addSubview(picker)
+          func findButton(_ view: UIView) -> UIButton? {
+            if let b = view as? UIButton { return b }
+            for sub in view.subviews { if let b = findButton(sub) { return b } }
+            return nil
+          }
+          var triggered = false
+          if let button = findButton(picker) {
+            button.sendActions(for: .touchUpInside)
+            triggered = true
+          }
+          DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            picker.removeFromSuperview()
+          }
+          result(triggered)
+        }
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -292,6 +363,35 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
         }
       default:
         result(FlutterMethodNotImplemented)
+      }
+    }
+
+    // Bookmark clip export: extract a time window of a book and write a .m4a.
+    let clipChannel = FlutterMethodChannel(name: "com.absorb.clip",
+                                           binaryMessenger: messenger)
+    clipChannel.setMethodCallHandler { (call, result) in
+      guard call.method == "exportClip" else { result(FlutterMethodNotImplemented); return }
+      let args = call.arguments as? [String: Any]
+      guard let source = args?["source"] as? String,
+            let outPath = args?["outPath"] as? String else {
+        result(FlutterError(code: "CLIP_ARGS", message: "Missing source or outPath", details: nil))
+        return
+      }
+      let isLocal = args?["isLocal"] as? Bool ?? true
+      let headers = args?["headers"] as? [String: String]
+      let start = args?["startSeconds"] as? Double ?? 0
+      let duration = args?["durationSeconds"] as? Double ?? 60
+      AudioClipExporter.exportM4a(
+        source: source, isLocal: isLocal, headers: headers,
+        startSeconds: start, durationSeconds: duration, outPath: outPath
+      ) { ok, errMessage in
+        DispatchQueue.main.async {
+          if ok {
+            result(true)
+          } else {
+            result(FlutterError(code: "CLIP_FAILED", message: errMessage ?? "export failed", details: nil))
+          }
+        }
       }
     }
 
@@ -461,4 +561,64 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
     }
   }
 
+}
+
+/// Extracts a time window of an audiobook and exports it as an AAC .m4a clip
+/// via AVAssetExportSession, which copies the source's artwork so the clip keeps
+/// the book cover. iOS can't reliably export from a remote URL, so a streamed
+/// book is fetched to a temp file in Dart first and handed in as a local path -
+/// the native side here always works on a local file.
+enum AudioClipExporter {
+  static func exportM4a(
+    source: String,
+    isLocal: Bool,
+    headers: [String: String]?,
+    startSeconds: Double,
+    durationSeconds: Double,
+    outPath: String,
+    completion: @escaping (Bool, String?) -> Void
+  ) {
+    let asset: AVURLAsset
+    if isLocal {
+      asset = AVURLAsset(url: URL(fileURLWithPath: source))
+    } else {
+      guard let url = URL(string: source) else {
+        completion(false, "bad url")
+        return
+      }
+      var options: [String: Any] = [:]
+      if let headers = headers, !headers.isEmpty {
+        options["AVURLAssetHTTPHeaderFieldsKey"] = headers
+      }
+      asset = AVURLAsset(url: url, options: options)
+    }
+
+    let outURL = URL(fileURLWithPath: outPath)
+    try? FileManager.default.createDirectory(
+      at: outURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    // AVAssetExportSession refuses to overwrite an existing file.
+    try? FileManager.default.removeItem(at: outURL)
+
+    guard let export = AVAssetExportSession(
+      asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
+      completion(false, "could not create export session")
+      return
+    }
+    export.outputURL = outURL
+    export.outputFileType = .m4a
+    let start = CMTime(seconds: max(0, startSeconds), preferredTimescale: 600)
+    let duration = CMTime(seconds: max(1, durationSeconds), preferredTimescale: 600)
+    export.timeRange = CMTimeRange(start: start, duration: duration)
+
+    export.exportAsynchronously {
+      switch export.status {
+      case .completed:
+        completion(true, nil)
+      default:
+        let message = export.error?.localizedDescription ?? "status \(export.status.rawValue)"
+        try? FileManager.default.removeItem(at: outURL)
+        completion(false, message)
+      }
+    }
+  }
 }
