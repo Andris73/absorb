@@ -2746,8 +2746,16 @@ class AudioPlayerService extends ChangeNotifier {
       // metadata duration we'd let the user seek past the end of the file,
       // clamp them to ~the file's end on resume, and save that over their real
       // progress (GH #278). Flag it so seeks clamp and saves are protected.
+      //
+      // Only valid for single-file books. On a multi-file
+      // ConcatenatingAudioSource, setAudioSource returns just the first track's
+      // duration (the current ExoPlayer window), not the whole book — so this
+      // would flag every complete multi-file download as truncated and pin
+      // playback to the first track, breaking seek and resume. The single-point
+      // _shortLocalDurationSec clamp only models one truncated file anyway.
       final decodedSec = (decoded?.inMilliseconds ?? 0) / 1000.0;
-      if (totalDuration > 0 &&
+      if (trackSources.length == 1 &&
+          totalDuration > 0 &&
           decodedSec > 0 &&
           decodedSec < totalDuration - _kLocalTruncationMarginSec) {
         _shortLocalDurationSec = decodedSec;
