@@ -37,8 +37,12 @@ class EbookReaderViewState extends State<EbookReaderView> {
   bool _showControls = false;
   List<EpubChapter> _chapters = [];
   double _progress = 0;
+  // epub.js reports a usable page percentage only after its CFI location index
+  // is built/loaded. Until then we don't trust or sync value.progress.
+  bool _locationsReady = false;
   int _chapterPage = 0;
   int _chapterPageTotal = 0;
+  String? _currentChapterTitle;
 
   // Annotations
   final _annotationService = EbookAnnotationService();
@@ -72,6 +76,11 @@ class EbookReaderViewState extends State<EbookReaderView> {
   static const _kLineHeight = 'ereader_lineHeight';
   static const _kMargin = 'ereader_margin';
 
+  // Gates the WebView mount until the entering route animation completes, so
+  // the heavy platform view doesn't stutter the open transition.
+  bool _entered = false;
+  Animation<double>? _routeAnim;
+
   @override
   void initState() {
     super.initState();
@@ -79,6 +88,25 @@ class EbookReaderViewState extends State<EbookReaderView> {
     _loadInitialLocation();
     _loadSettings().then((_) => _downloadAndOpen());
     _setFullscreen(true);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_entered) return;
+    _routeAnim = ModalRoute.of(context)?.animation;
+    if (_routeAnim == null || _routeAnim!.isCompleted) {
+      _entered = true;
+    } else {
+      _routeAnim!.addStatusListener(_onRouteAnim);
+    }
+  }
+
+  void _onRouteAnim(AnimationStatus status) {
+    if (status == AnimationStatus.completed && mounted) {
+      _routeAnim?.removeStatusListener(_onRouteAnim);
+      setState(() => _entered = true);
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -146,6 +174,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
 
   @override
   void dispose() {
+    _routeAnim?.removeStatusListener(_onRouteAnim);
     // Restore system UI when leaving
     _setFullscreen(false);
     super.dispose();
@@ -175,6 +204,11 @@ class EbookReaderViewState extends State<EbookReaderView> {
     if (loc != null && loc.isNotEmpty) {
       _initialCfi = loc;
     }
+    // Seed the displayed percent from saved progress so the bar shows the
+    // resume position until epub.js's location index is ready, and so the
+    // pre-index save keeps this value instead of regressing to 0.
+    final savedProgress = (progressData?['ebookProgress'] as num?)?.toDouble();
+    if (savedProgress != null) _progress = savedProgress.clamp(0.0, 1.0);
   }
 
   Future<void> _downloadAndOpen() async {
@@ -293,72 +327,6 @@ class EbookReaderViewState extends State<EbookReaderView> {
     }
   }
 
-  // ── Locations cache ───────────────────────────────────────────────
-  // epub.js spends ~7s on first open building a CFI index for progress
-  // tracking, during which scrolling can produce visible jumps. Cache the
-  // index next to the EPUB file so subsequent opens are instant.
-  String? _locationsCachePath() {
-    final f = _cachedFile;
-    if (f == null) return null;
-    return '${f.path}.locations.json';
-  }
-
-  Future<String?> _loadCachedLocations() async {
-    final path = _locationsCachePath();
-    if (path == null) return null;
-    final f = File(path);
-    if (!await f.exists()) return null;
-    try {
-      return await f.readAsString();
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> _saveCachedLocations(String json) async {
-    final path = _locationsCachePath();
-    if (path == null) return;
-    try {
-      await File(path).writeAsString(json);
-    } catch (_) {}
-  }
-
-  Future<void> _setupLocations() async {
-    final cached = await _loadCachedLocations();
-    if (!mounted) return;
-    if (cached != null && cached.isNotEmpty) {
-      debugPrint('[Reader] Locations: loading cached (${cached.length} bytes)');
-      final injected = jsonEncode(cached);
-      _epubController?.webViewController?.evaluateJavascript(source: '''
-        (function() {
-          try { rendition.book.locations.load($injected); }
-          catch (e) { console.error('locations.load failed', e); }
-        })();
-      ''');
-      return;
-    }
-    debugPrint('[Reader] Locations: no cache, generating...');
-    _epubController?.webViewController?.addJavaScriptHandler(
-      handlerName: 'locationsGenerated',
-      callback: (args) async {
-        if (args.isEmpty) return;
-        final data = args[0] as String?;
-        if (data != null && data.isNotEmpty) {
-          debugPrint('[Reader] Locations: caching ${data.length} bytes');
-          await _saveCachedLocations(data);
-        }
-      },
-    );
-    _epubController?.webViewController?.evaluateJavascript(source: '''
-      (function() {
-        rendition.book.locations.generate(1024).then(function() {
-          var data = rendition.book.locations.save();
-          window.flutter_inappwebview.callHandler('locationsGenerated', data);
-        }).catch(function(e) { console.error('locations.generate failed', e); });
-      })();
-    ''');
-  }
-
   void _setupPageInfoHandler() {
     _epubController?.webViewController?.addJavaScriptHandler(
       handlerName: 'pageInfo',
@@ -368,13 +336,22 @@ class EbookReaderViewState extends State<EbookReaderView> {
         if (data == null) return;
         final page = data['page'] as int? ?? 0;
         final total = data['total'] as int? ?? 0;
+        final href = data['href'] as String? ?? '';
+        // Resolve the current section to its chapter title; keep the last one
+        // if this section isn't in the TOC.
+        final chapter = href.isNotEmpty
+            ? (_chapterForHref(href) ?? _currentChapterTitle)
+            : _currentChapterTitle;
         // Brief total=0 reports happen at chapter handoffs; keep the last
         // valid count visible rather than blanking the indicator.
         if (total == 0 && _chapterPageTotal > 0) return;
-        if (page != _chapterPage || total != _chapterPageTotal) {
+        if (page != _chapterPage ||
+            total != _chapterPageTotal ||
+            chapter != _currentChapterTitle) {
           setState(() {
             _chapterPage = page;
             _chapterPageTotal = total;
+            _currentChapterTitle = chapter;
           });
         }
       },
@@ -386,7 +363,8 @@ class EbookReaderViewState extends State<EbookReaderView> {
             if (location && location.start && location.start.displayed) {
               window.flutter_inappwebview.callHandler('pageInfo', {
                 page: location.start.displayed.page,
-                total: location.start.displayed.total
+                total: location.start.displayed.total,
+                href: location.start.href || ''
               });
             }
           });
@@ -583,7 +561,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
           children: [
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text('Chapters', style: Theme.of(ctx).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+              child: Text('Chapters', style: Theme.of(ctx).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
             ),
             Flexible(
               child: ListView.builder(
@@ -592,7 +570,8 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 itemBuilder: (ctx, i) {
                   final ch = _chapters[i];
                   return ListTile(
-                    title: Text(ch.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    title: Text(ch.title.trim(), maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: cs.onSurface)),
                     dense: true,
                     onTap: () {
                       Navigator.pop(ctx);
@@ -708,17 +687,33 @@ class EbookReaderViewState extends State<EbookReaderView> {
     );
   }
 
-  /// Maps a spine item href to its TOC chapter title. Match heuristic: first
-  /// TOC entry whose path is a suffix of the section's path (or vice versa).
-  /// Chapters pointing at sub-fragments of the same spine item all map to the
-  /// same label, which is fine for a search result subtitle.
+  /// Maps a spine item href to its TOC chapter title. The spine href and the
+  /// TOC href often differ by directory prefix or URL-encoding (e.g.
+  /// `OEBPS/Text/ch1.xhtml` vs `Text/ch1.xhtml` vs `ch1%20.xhtml`), so match on
+  /// the decoded basename first and fall back to a suffix check. Chapters
+  /// pointing at sub-fragments of the same spine item all map to the same
+  /// label, which is fine for a search result subtitle.
   String? _chapterForHref(String href) {
     if (href.isEmpty || _chapters.isEmpty) return null;
+    String basename(String s) {
+      var p = s.split('#').first;
+      try { p = Uri.decodeFull(p); } catch (_) {}
+      return p.split('/').last.toLowerCase();
+    }
+    // TOC labels often carry the nav markup's indentation/newlines, so trim.
+    String? label(String t) => t.trim().isEmpty ? null : t.trim();
+    final base = basename(href);
+    if (base.isNotEmpty) {
+      for (final ch in _chapters) {
+        if (basename(ch.href) == base) return label(ch.title);
+      }
+    }
+    // Fallback: suffix match on the full path.
     final path = href.split('#').first;
     for (final ch in _chapters) {
       final tocPath = ch.href.split('#').first;
       if (tocPath.isEmpty) continue;
-      if (path.endsWith(tocPath) || tocPath.endsWith(path)) return ch.title;
+      if (path.endsWith(tocPath) || tocPath.endsWith(path)) return label(ch.title);
     }
     return null;
   }
@@ -1006,7 +1001,9 @@ class EbookReaderViewState extends State<EbookReaderView> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? Colors.black : Colors.white;
 
-    if (_loading) {
+    // Hold the heavy WebView until the open animation finishes — mounting it
+    // mid-transition (e.g. for an already-cached book) stutters the slide-in.
+    if (_loading || !_entered) {
       return _wrap(
         const Center(child: CircularProgressIndicator(strokeWidth: 2)),
         bg,
@@ -1031,8 +1028,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
       );
     }
 
-    // EpubViewer + overlays. SafeAreas around the viewer and overlays are
-    // skipped in embedded mode (the host card already insets us).
+    // EpubViewer + overlays, each wrapped in a SafeArea for camera cutouts.
     final viewerBody = Stack(
       children: [
           // Epub viewer with safe area padding for camera cutouts
@@ -1047,13 +1043,17 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 useSnapAnimationAndroid: false,
                 // Font size at load time, not applied after: a post-load
                 // setFontSize reflows the text after initialCfi has displayed,
-                // which drifts the position and breaks the embedded/full-screen
-                // handoff landing on the same page.
+                // which would drift the resume position.
                 fontSize: _fontSize,
                 theme: _buildTheme(isDark),
               ),
               onChaptersLoaded: (chapters) {
                 if (mounted) setState(() => _chapters = _flattenChapters(chapters));
+              },
+              // Fires once the plugin finishes generating its location index;
+              // value.progress is only meaningful (and stable) after this.
+              onLocationLoaded: () {
+                if (mounted) setState(() => _locationsReady = true);
               },
               suppressNativeContextMenu: true,
               onSelection: _onSelection,
@@ -1068,10 +1068,10 @@ class EbookReaderViewState extends State<EbookReaderView> {
               },
               onEpubLoaded: () {
                 // Re-display the initial CFI once. The plugin already displays
-                // it at load, but in the small embedded viewport that first
-                // display can come up blank; this second display is the rescue.
-                // Position-safe: font size and theme are already in
-                // displaySettings, so nothing reflows after this.
+                // it at load, but that first display can occasionally come up
+                // blank; this second display is the rescue. Position-safe: font
+                // size and theme are already in displaySettings, so nothing
+                // reflows after this.
                 final once = _initialCfi;
                 if (once != null && once.isNotEmpty) {
                   _initialCfi = null;
@@ -1079,14 +1079,23 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 }
                 _loadAnnotations().then((_) => _restoreHighlights());
                 _setupPageInfoHandler();
-                _setupLocations();
               },
               onRelocated: (value) {
-                if (mounted) {
-                  _currentCfi = value.startCfi;
-                  _updateBookmarkState();
+                if (!mounted) return;
+                _currentCfi = value.startCfi;
+                _updateBookmarkState();
+                if (_locationsReady) {
+                  // Trust the percentage only once epub.js has built its
+                  // location index. Before that it reports a bogus spine
+                  // estimate that jumps around (e.g. 75% then 25%) — pushing
+                  // it would corrupt the server's percent and could even mark
+                  // the book finished (isFinished = progress >= 1.0).
                   setState(() => _progress = value.progress);
                   _syncProgress(value.startCfi, value.progress);
+                } else {
+                  // Still save the fresh position, but keep the last-known-good
+                  // percentage so the stored progress never regresses.
+                  _syncProgress(value.startCfi, _progress);
                 }
               },
               onTouchDown: (x, y) {
@@ -1217,15 +1226,24 @@ class EbookReaderViewState extends State<EbookReaderView> {
                           ),
                           const SizedBox(height: 4),
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               if (_chapterPageTotal > 0)
                                 Text(
                                   '$_chapterPage / $_chapterPageTotal',
                                   style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11),
-                                )
-                              else
-                                const SizedBox.shrink(),
+                                ),
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  child: Text(
+                                    _currentChapterTitle ?? '',
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11),
+                                  ),
+                                ),
+                              ),
                               Text(
                                 '${(_progress * 100).toStringAsFixed(1)}%',
                                 style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11),
