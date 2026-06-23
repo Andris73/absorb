@@ -87,8 +87,10 @@ class EbookReaderViewState extends State<EbookReaderView> {
   // Track touch start position to distinguish taps from swipes
   double? _touchDownX;
   double? _touchDownY;
-  // TEMP iOS tap diagnostic - shows whether the plugin's touch callbacks fire.
-  String _touchDebug = 'tap test: no touch yet';
+  double? _ptrDownX;
+  double? _ptrDownY;
+  // TEMP iOS tap diagnostic - shows which input path actually fires on iOS.
+  String _touchDebug = 'tap test: no input yet';
 
   // Key to force-rebuild EpubViewer when layout mode changes
   int _viewerKey = 0;
@@ -432,28 +434,38 @@ class EbookReaderViewState extends State<EbookReaderView> {
       handlerName: 'absorbReaderTap',
       callback: (args) {
         final frac = args.isNotEmpty ? (args[0] as num?)?.toDouble() : null;
-        if (frac != null) _readerTapAt(frac.clamp(0.0, 1.0), 'click');
+        final src = args.length > 1 ? '${args[1]}' : 'js';
+        if (frac != null) _readerTapAt(frac.clamp(0.0, 1.0), 'js:$src');
       },
     );
     _epubController?.webViewController?.evaluateJavascript(source: '''
       (function(){
         if (window.__absorbTapInit) return;
         window.__absorbTapInit = true;
-        function send(frac){
-          try { if(window.flutter_inappwebview){ window.flutter_inappwebview.callHandler('absorbReaderTap', frac); return; } } catch(e){}
-          try { if(window.parent && window.parent.flutter_inappwebview){ window.parent.flutter_inappwebview.callHandler('absorbReaderTap', frac); } } catch(e){}
+        function send(frac, kind){
+          try { if(window.flutter_inappwebview){ window.flutter_inappwebview.callHandler('absorbReaderTap', frac, kind); return; } } catch(e){}
+          try { if(window.parent && window.parent.flutter_inappwebview){ window.parent.flutter_inappwebview.callHandler('absorbReaderTap', frac, kind); } } catch(e){}
         }
-        function onClick(e){
+        function onTap(e, kind){
           try {
             var win = e.view || window;
             var sel = win.getSelection ? win.getSelection() : null;
             if (sel && String(sel).length > 0) return; // selecting text, not a tap
             var w = win.innerWidth || window.innerWidth;
             if (!w) return;
-            send(e.clientX / w);
+            var cx = (e.clientX != null) ? e.clientX
+              : (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : null);
+            if (cx == null) return;
+            send(cx / w, kind);
           } catch(err){}
         }
-        function attach(doc){ try { doc.addEventListener('click', onClick, true); } catch(e){} }
+        function attach(doc){
+          try {
+            doc.addEventListener('click', function(e){ onTap(e,'click'); }, true);
+            doc.addEventListener('pointerup', function(e){ onTap(e,'pointerup'); }, true);
+            doc.addEventListener('touchend', function(e){ onTap(e,'touchend'); }, true);
+          } catch(e){}
+        }
         try { rendition.getContents().forEach(function(c){ attach(c.document); }); } catch(e){}
         try { rendition.hooks.content.register(function(contents){ attach(contents.document); }); } catch(e){}
       })();
@@ -1483,7 +1495,25 @@ class EbookReaderViewState extends State<EbookReaderView> {
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: _marginH.toDouble()),
-        child: SizedBox.expand(child: viewer),
+        child: LayoutBuilder(
+          builder: (ctx, cons) => Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (e) {
+              _ptrDownX = e.localPosition.dx;
+              _ptrDownY = e.localPosition.dy;
+            },
+            onPointerUp: (e) {
+              final w = cons.maxWidth;
+              final dx = _ptrDownX != null ? (e.localPosition.dx - _ptrDownX!).abs() : 0.0;
+              final dy = _ptrDownY != null ? (e.localPosition.dy - _ptrDownY!).abs() : 0.0;
+              _ptrDownX = null;
+              _ptrDownY = null;
+              if (dx > 16 || dy > 16 || w <= 0) return;
+              _readerTapAt(e.localPosition.dx / w, 'flutterPtr');
+            },
+            child: SizedBox.expand(child: viewer),
+          ),
+        ),
       ),
     );
   }
