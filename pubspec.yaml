@@ -4,7 +4,7 @@ publish_to: 'none'
 version: 1.9.1+195
 
 environment:
-  sdk: '>=3.1.0 <4.0.0'
+  sdk: '>=3.10.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -95,6 +95,9 @@ dependencies:
 
   # eBook reader
   flutter_epub_viewer: ^1.2.6
+
+  # PDF reader (non-EPUB ebooks route here)
+  pdfrx: ^2.4.4
 
 dev_dependencies:
   flutter_test:

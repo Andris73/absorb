@@ -11,7 +11,7 @@ import '../screens/app_shell.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import 'absorbing_shared.dart';
-import 'ebook_reader_view.dart';
+import 'ebook_router.dart';
 import 'card_edge_progress_bar.dart';
 import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
@@ -986,15 +986,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   void _openEbookReader() {
     final ebookFile = _ebookFile;
     if (ebookFile == null) return; // CardButtons already toasts when no ebook
-    Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(
-        builder: (_) => EbookReaderView(
-          itemId: _itemId,
-          title: _title,
-          ebookFile: ebookFile,
-        ),
-      ),
-    );
+    openEbookReader(context, itemId: _itemId, title: _title, ebookFile: ebookFile);
   }
 
   int _currentChapterIndex() {

@@ -14,7 +14,7 @@ import 'absorbing_shared.dart';
 import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
 import 'card_buttons.dart';
-import 'ebook_reader_view.dart';
+import 'ebook_router.dart';
 import '../main.dart' show colorSourceNotifier, useColorEverywhereNotifier, manualSeedNotifier, manualColorScheme;
 
 // ─── Custom route: slide-up + fade ────────────────────────────
@@ -1136,15 +1136,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
   void _openReader() {
     final ef = _ebookFile;
     if (ef == null) return;
-    Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(
-        builder: (_) => EbookReaderView(
-          itemId: _itemId,
-          title: _title,
-          ebookFile: ef,
-        ),
-      ),
-    );
+    openEbookReader(context, itemId: _itemId, title: _title, ebookFile: ef);
   }
 
   int get _visibleButtonCount => _buttonVisibleCount;

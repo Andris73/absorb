@@ -41,7 +41,7 @@ import 'playlist_picker_sheet.dart';
 import 'collection_picker_sheet.dart';
 import 'absorb_wave_icon.dart';
 import 'stackable_sheet.dart';
-import 'ebook_reader_view.dart';
+import 'ebook_router.dart';
 import '../utils/duration_format.dart';
 
 // ─── BOOK DETAIL BOTTOM SHEET ───────────────────────────────
@@ -498,11 +498,21 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
         const SizedBox(height: 12),
       ],
-      if (isEbookOnly && ebookFile != null)
+      if (isEbookOnly && ebookFile != null && canReadEbook(ebookFile))
         SizedBox(height: 52, child: FilledButton.icon(
           onPressed: () => _openEbookReader(context, auth, ebookFile, title),
           icon: const Icon(Icons.menu_book_rounded, size: 24),
-          label: Text('Read',
+          label: Text(l.readEbook,
+            style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onPrimary)),
+          style: FilledButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+        ))
+      else if (isEbookOnly && ebookFile != null)
+        // Ebook-only but not an EPUB (PDF/comic/mobi) - can't read in-app, so
+        // the primary action downloads the file instead.
+        SizedBox(height: 52, child: FilledButton.icon(
+          onPressed: () => _saveEbook(context, auth, ebookFile, title),
+          icon: Icon(_ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded, size: 24),
+          label: Text(_ebookSaved ? l.downloadEbookAgain : l.downloadEbook,
             style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onPrimary)),
           style: FilledButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
         ))
@@ -604,7 +614,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             ]),
           ),
         )),
-        if (ebookFile != null) ...[
+        if (ebookFile != null && canReadEbook(ebookFile)) ...[
           const SizedBox(width: 8),
           Expanded(child: GestureDetector(
             onTap: () => _openEbookReader(context, auth, ebookFile, title),
@@ -876,8 +886,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         if (!lib.isOffline && !lib.isPodcastLibrary && auth.isAdmin) {
           add(Icons.collections_bookmark_rounded, l.addToCollection, () => CollectionPickerSheet.show(context, widget.itemId));
         }
-        if (ebookFile != null) {
-          add(Icons.menu_book_rounded, 'Read eBook', () => _openEbookReader(context, auth, ebookFile, title));
+        if (ebookFile != null && canReadEbook(ebookFile)) {
+          add(Icons.menu_book_rounded, l.readEbook, () => _openEbookReader(context, auth, ebookFile, title));
         }
         if (ebookFile != null) {
           add(_ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded,
@@ -1473,15 +1483,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   }
 
   void _openEbookReader(BuildContext context, AuthProvider auth, Map<String, dynamic> ebookFile, String title) {
-    Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(
-        builder: (_) => EbookReaderView(
-          itemId: widget.itemId,
-          title: title,
-          ebookFile: ebookFile,
-        ),
-      ),
-    );
+    openEbookReader(context, itemId: widget.itemId, title: title, ebookFile: ebookFile);
   }
 
   bool _ebookSaving = false;

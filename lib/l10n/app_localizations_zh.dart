@@ -3071,7 +3071,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String autoSleepTimerEnabledSubtitle(
-      String start, String end, String duration) {
+    String start,
+    String end,
+    String duration,
+  ) {
     return '$start – $end · $duration';
   }
 
@@ -4488,7 +4491,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String statsScreenDateAtTime(
-      String month, int day, int year, int hour, String minute, String ampm) {
+    String month,
+    int day,
+    int year,
+    int hour,
+    String minute,
+    String ampm,
+  ) {
     return '$month $day, $year at $hour:$minute $ampm';
   }
 
@@ -4705,7 +4714,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String audibleSeriesSummaryWithUpcoming(
-      int total, int missing, int upcoming) {
+    int total,
+    int missing,
+    int upcoming,
+  ) {
     return '$total on Audible · $missing missing · $upcoming upcoming';
   }
 
@@ -5473,7 +5485,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String upcomingNotifCheckingSeries(
-      String seriesName, int current, int total) {
+    String seriesName,
+    int current,
+    int total,
+  ) {
     return 'Checking $seriesName… ($current/$total)';
   }
 
@@ -6410,6 +6425,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readEbook => 'Read';
+
+  @override
+  String get readerFormatUnsupported =>
+      'This ebook format can\'t be opened in the reader yet';
 
   @override
   String get moreActions => 'More';

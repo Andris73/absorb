@@ -3802,6 +3802,7 @@
   "libRemoveFoldersBody": "Removing a folder deletes its items from the library. This can't be undone.",
 
   "readEbook": "Read",
+  "readerFormatUnsupported": "This ebook format can't be opened in the reader yet",
   "moreActions": "More",
   "readerChapters": "Chapters",
   "readerSettings": "Reader Settings",
