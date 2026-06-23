@@ -1633,8 +1633,11 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 _touchDownY = y;
               },
               onTouchUp: (x, y) {
-                final dx = _touchDownX != null ? (x - _touchDownX!).abs() : 1.0;
-                final dy = _touchDownY != null ? (y - _touchDownY!).abs() : 1.0;
+                // onTouchDown doesn't fire reliably on iOS; if we never got a
+                // down point, treat this as a tap (0 movement) instead of
+                // rejecting it, otherwise no taps register at all.
+                final dx = _touchDownX != null ? (x - _touchDownX!).abs() : 0.0;
+                final dy = _touchDownY != null ? (y - _touchDownY!).abs() : 0.0;
                 _touchDownX = null;
                 _touchDownY = null;
                 if (dx > 0.05 || dy > 0.05) return;
