@@ -3799,5 +3799,65 @@
   "libUpdated": "Library updated",
   "libUpdateFailed": "Couldn't update library",
   "libRemoveFoldersTitle": "Remove folders?",
-  "libRemoveFoldersBody": "Removing a folder deletes its items from the library. This can't be undone."
+  "libRemoveFoldersBody": "Removing a folder deletes its items from the library. This can't be undone.",
+
+  "readEbook": "Read",
+  "moreActions": "More",
+  "readerChapters": "Chapters",
+  "readerSettings": "Reader Settings",
+  "readerFontSize": "Font Size",
+  "readerLineSpacing": "Line Spacing",
+  "readerSideMargins": "Side margins",
+  "readerTopBottom": "Top & bottom",
+  "readerPageLayout": "Page layout",
+  "readerLayoutAuto": "Auto",
+  "readerLayoutSingle": "Single",
+  "readerLayoutTwoPage": "Two-page",
+  "readerTheme": "Theme",
+  "readerFont": "Font",
+  "readerMoreFonts": "Download more fonts",
+  "readerFontRemove": "Remove download",
+  "readerFontDownloadFailed": "Couldn't download {font}",
+  "@readerFontDownloadFailed": {
+    "placeholders": {
+      "font": {"type": "String"}
+    }
+  },
+  "readerAnnotations": "Annotations",
+  "readerHighlights": "Highlights ({count})",
+  "@readerHighlights": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "readerBookmarks": "Bookmarks ({count})",
+  "@readerBookmarks": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "readerNoHighlights": "No highlights yet",
+  "readerNoBookmarks": "No bookmarks yet",
+  "readerBookmarkDefault": "Bookmark",
+  "readerNoteTitle": "Note",
+  "readerNoteHint": "Add a note...",
+  "readerCopied": "Copied to clipboard",
+  "readerTooltipCopy": "Copy",
+  "readerTooltipSearch": "Search",
+  "readerTooltipDefine": "Define",
+  "readerSearchHint": "Search this book…",
+  "readerSearchMatches": "{count, plural, one{{count} match for \"{query}\"} other{{count} matches for \"{query}\"}}",
+  "@readerSearchMatches": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "query": {"type": "String"}
+    }
+  },
+  "readerSearchEmpty": "Type a word or phrase and tap search.",
+  "readerSearchNoResults": "No matches for \"{query}\".",
+  "@readerSearchNoResults": {
+    "placeholders": {
+      "query": {"type": "String"}
+    }
+  }
 }

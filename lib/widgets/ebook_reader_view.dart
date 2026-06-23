@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
@@ -89,8 +90,6 @@ class EbookReaderViewState extends State<EbookReaderView> {
   double? _touchDownY;
   double? _ptrDownX;
   double? _ptrDownY;
-  // TEMP iOS tap diagnostic - shows which input path actually fires on iOS.
-  String _touchDebug = 'tap test: no input yet';
 
   // Key to force-rebuild EpubViewer when layout mode changes
   int _viewerKey = 0;
@@ -409,19 +408,12 @@ class EbookReaderViewState extends State<EbookReaderView> {
     final now = DateTime.now();
     if (now.difference(_lastReaderTap).inMilliseconds < 350) return;
     _lastReaderTap = now;
-    String action;
     if (frac < 0.25) {
       _epubController?.prev();
-      action = 'prev';
     } else if (frac > 0.75) {
       _epubController?.next();
-      action = 'next';
     } else {
       _toggleControls();
-      action = 'toggle';
-    }
-    if (mounted) {
-      setState(() => _touchDebug = '$source frac=${frac.toStringAsFixed(2)} -> $action');
     }
   }
 
@@ -461,9 +453,27 @@ class EbookReaderViewState extends State<EbookReaderView> {
         }
         function attach(doc){
           try {
-            doc.addEventListener('click', function(e){ onTap(e,'click'); }, true);
-            doc.addEventListener('pointerup', function(e){ onTap(e,'pointerup'); }, true);
-            doc.addEventListener('touchend', function(e){ onTap(e,'touchend'); }, true);
+            // Track the touch start and whether the gesture became a drag, so a
+            // swipe doesn't fall through to a center-tap (menu toggle) on release.
+            var _tsx=null,_tsy=null,_dragged=false;
+            doc.addEventListener('touchstart',function(e){
+              if(e.touches.length===1){_tsx=e.touches[0].clientX;_tsy=e.touches[0].clientY;_dragged=false;}
+              else{_tsx=null;}
+            },{passive:true});
+            doc.addEventListener('touchmove',function(e){
+              if(_tsx==null)return;
+              var dx=Math.abs(e.touches[0].clientX-_tsx),dy=Math.abs(e.touches[0].clientY-_tsy);
+              if(dx>10||dy>10)_dragged=true;
+              // Swallow horizontal drags so epub.js can't partially scroll the column.
+              if(dx>dy)e.preventDefault();
+            },{passive:false});
+            function onTapGuarded(e,kind){
+              if(_dragged){ if(kind==='touchend')_dragged=false; return; }
+              onTap(e,kind);
+            }
+            doc.addEventListener('click', function(e){ onTapGuarded(e,'click'); }, true);
+            doc.addEventListener('pointerup', function(e){ onTapGuarded(e,'pointerup'); }, true);
+            doc.addEventListener('touchend', function(e){ onTapGuarded(e,'touchend'); }, true);
           } catch(e){}
         }
         try { rendition.getContents().forEach(function(c){ attach(c.document); }); } catch(e){}
@@ -732,7 +742,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
     Clipboard.setData(ClipboardData(text: _selectionText!));
     _dismissSelection();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Copied to clipboard'), duration: Duration(seconds: 1)),
+      SnackBar(content: Text(AppLocalizations.of(context)!.readerCopied), duration: const Duration(seconds: 1)),
     );
   }
 
@@ -762,27 +772,28 @@ class EbookReaderViewState extends State<EbookReaderView> {
 
   Future<void> _addNoteToAnnotation(EbookAnnotation annotation) async {
     final controller = TextEditingController(text: annotation.note ?? '');
+    final l = AppLocalizations.of(context)!;
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Note'),
+        title: Text(l.readerNoteTitle),
         content: TextField(
           controller: controller,
           maxLines: 5,
           autofocus: true,
           decoration: InputDecoration(
-            hintText: 'Add a note...',
+            hintText: l.readerNoteHint,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(l.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('Save'),
+            child: Text(l.save),
           ),
         ],
       ),
@@ -836,7 +847,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
           children: [
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text('Chapters', style: Theme.of(ctx).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
+              child: Text(AppLocalizations.of(ctx)!.readerChapters, style: Theme.of(ctx).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
             ),
             Flexible(
               child: ListView.builder(
@@ -876,7 +887,9 @@ class EbookReaderViewState extends State<EbookReaderView> {
       ),
       isScrollControlled: true,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) => SafeArea(
+        builder: (ctx, setSheetState) {
+          final l = AppLocalizations.of(ctx)!;
+          return SafeArea(
           child: SingleChildScrollView(
             child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
@@ -894,14 +907,14 @@ class EbookReaderViewState extends State<EbookReaderView> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text('Reader Settings', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                Text(l.readerSettings, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 20),
 
                 // Font size
                 Row(children: [
                   Icon(Icons.text_fields_rounded, size: 20, color: cs.onSurfaceVariant),
                   const SizedBox(width: 12),
-                  Text('Font Size', style: tt.bodyMedium),
+                  Text(l.readerFontSize, style: tt.bodyMedium),
                   const Spacer(),
                   IconButton(
                     icon: Icon(Icons.remove_rounded, size: 20, color: cs.onSurfaceVariant),
@@ -925,7 +938,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 Row(children: [
                   Icon(Icons.format_line_spacing_rounded, size: 20, color: cs.onSurfaceVariant),
                   const SizedBox(width: 12),
-                  Text('Line Spacing', style: tt.bodyMedium),
+                  Text(l.readerLineSpacing, style: tt.bodyMedium),
                   const Spacer(),
                   Text(_lineHeight.toStringAsFixed(1), style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
                 ]),
@@ -945,7 +958,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 Row(children: [
                   Icon(Icons.padding_rounded, size: 20, color: cs.onSurfaceVariant),
                   const SizedBox(width: 12),
-                  Text('Side margins', style: tt.bodyMedium),
+                  Text(l.readerSideMargins, style: tt.bodyMedium),
                   const Spacer(),
                   Text('${hPreview}px', style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
                 ]),
@@ -963,7 +976,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 Row(children: [
                   Icon(Icons.vertical_align_center_rounded, size: 20, color: cs.onSurfaceVariant),
                   const SizedBox(width: 12),
-                  Text('Top & bottom', style: tt.bodyMedium),
+                  Text(l.readerTopBottom, style: tt.bodyMedium),
                   const Spacer(),
                   Text('${_marginV}px', style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
                 ]),
@@ -983,16 +996,16 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 Row(children: [
                   Icon(Icons.auto_stories_rounded, size: 20, color: cs.onSurfaceVariant),
                   const SizedBox(width: 12),
-                  Text('Page layout', style: tt.bodyMedium),
+                  Text(l.readerPageLayout, style: tt.bodyMedium),
                 ]),
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
                   child: SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment(value: 0, label: Text('Auto')),
-                      ButtonSegment(value: 1, label: Text('Single')),
-                      ButtonSegment(value: 2, label: Text('Two-page')),
+                    segments: [
+                      ButtonSegment(value: 0, label: Text(l.readerLayoutAuto)),
+                      ButtonSegment(value: 1, label: Text(l.readerLayoutSingle)),
+                      ButtonSegment(value: 2, label: Text(l.readerLayoutTwoPage)),
                     ],
                     selected: {_spreadModes.indexOf(_spread)},
                     showSelectedIcon: false,
@@ -1008,7 +1021,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 Row(children: [
                   Icon(Icons.palette_outlined, size: 20, color: cs.onSurfaceVariant),
                   const SizedBox(width: 12),
-                  Text('Theme', style: tt.bodyMedium),
+                  Text(l.readerTheme, style: tt.bodyMedium),
                 ]),
                 const SizedBox(height: 10),
                 Row(
@@ -1038,7 +1051,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                     child: Row(children: [
                       Icon(Icons.font_download_outlined, size: 20, color: cs.onSurfaceVariant),
                       const SizedBox(width: 12),
-                      Text('Font', style: tt.bodyMedium),
+                      Text(l.readerFont, style: tt.bodyMedium),
                       const Spacer(),
                       Text(_font.label,
                           style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
@@ -1051,7 +1064,8 @@ class EbookReaderViewState extends State<EbookReaderView> {
             ),
           ),
           ),
-        ),
+        );
+        },
       ),
     );
   }
@@ -1121,7 +1135,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                             ? IconButton(
                                 icon: Icon(Icons.delete_outline_rounded,
                                     color: cs.onSurfaceVariant),
-                                tooltip: 'Remove download',
+                                tooltip: AppLocalizations.of(context)!.readerFontRemove,
                                 onPressed: () => svc.remove(f.id),
                               )
                             : Icon(Icons.download_rounded, color: cs.primary))
@@ -1137,7 +1151,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                     _updateReaderFont(f.id);
                     if (mounted) Navigator.of(ctx).pop();
                   } else if (mounted) {
-                    showOverlayToast(context, "Couldn't download ${f.label}",
+                    showOverlayToast(context, AppLocalizations.of(context)!.readerFontDownloadFailed(f.label),
                         icon: Icons.error_outline_rounded);
                   }
                 },
@@ -1161,7 +1175,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                   padding: const EdgeInsets.all(16),
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: Text('Font',
+                    child: Text(AppLocalizations.of(ctx)!.readerFont,
                         style: tt.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600, color: cs.onSurface)),
                   ),
@@ -1173,7 +1187,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                       for (final f in kBuiltinReaderFonts) tile(f),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                        child: Text('Download more fonts',
+                        child: Text(AppLocalizations.of(ctx)!.readerMoreFonts,
                             style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       ),
                       for (final f in kDownloadableReaderFonts) tile(f),
@@ -1346,7 +1360,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 child: Row(
                   children: [
-                    Text('Annotations', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                    Text(AppLocalizations.of(ctx)!.readerAnnotations, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                     const Spacer(),
                     Text(
                       '${_annotations.length}',
@@ -1357,8 +1371,8 @@ class EbookReaderViewState extends State<EbookReaderView> {
               ),
               TabBar(
                 tabs: [
-                  Tab(text: 'Highlights (${highlights.length})'),
-                  Tab(text: 'Bookmarks (${bookmarks.length})'),
+                  Tab(text: AppLocalizations.of(ctx)!.readerHighlights(highlights.length)),
+                  Tab(text: AppLocalizations.of(ctx)!.readerBookmarks(bookmarks.length)),
                 ],
                 labelColor: cs.primary,
                 unselectedLabelColor: cs.onSurfaceVariant,
@@ -1369,7 +1383,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                   children: [
                     // Highlights tab
                     highlights.isEmpty
-                        ? Center(child: Text('No highlights yet', style: TextStyle(color: cs.onSurfaceVariant)))
+                        ? Center(child: Text(AppLocalizations.of(ctx)!.readerNoHighlights, style: TextStyle(color: cs.onSurfaceVariant)))
                         : ListView.builder(
                             controller: scrollController,
                             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1418,7 +1432,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
 
                     // Bookmarks tab
                     bookmarks.isEmpty
-                        ? Center(child: Text('No bookmarks yet', style: TextStyle(color: cs.onSurfaceVariant)))
+                        ? Center(child: Text(AppLocalizations.of(ctx)!.readerNoBookmarks, style: TextStyle(color: cs.onSurfaceVariant)))
                         : ListView.builder(
                             controller: scrollController,
                             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1447,7 +1461,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                                 child: ListTile(
                                   leading: Icon(Icons.bookmark_rounded, color: cs.primary),
                                   title: Text(
-                                    bm.note ?? 'Bookmark',
+                                    bm.note ?? AppLocalizations.of(ctx)!.readerBookmarkDefault,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: tt.bodyMedium,
@@ -1661,7 +1675,10 @@ class EbookReaderViewState extends State<EbookReaderView> {
               displaySettings: EpubDisplaySettings(
                 flow: EpubFlow.paginated,
                 spread: _spread,
-                snap: true,
+                // Swipe-to-turn via epub.js's snap manager is janky inside the
+                // WebView and never fires on iOS, so it's off. Page turns come
+                // from edge taps; horizontal drags are swallowed below.
+                snap: false,
                 useSnapAnimationAndroid: false,
                 // Font size at load time, not applied after: a post-load
                 // setFontSize reflows the text after initialCfi has displayed,
@@ -1726,8 +1743,6 @@ class EbookReaderViewState extends State<EbookReaderView> {
               onTouchDown: (x, y) {
                 _touchDownX = x;
                 _touchDownY = y;
-                if (mounted) setState(() => _touchDebug =
-                    'DOWN ${x.toStringAsFixed(2)},${y.toStringAsFixed(2)}');
               },
               onTouchUp: (x, y) {
                 // onTouchDown doesn't fire reliably on iOS; if we never got a
@@ -1792,7 +1807,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                         ),
                         IconButton(
                           icon: Icon(Icons.search_rounded, color: fg),
-                          tooltip: 'Search',
+                          tooltip: AppLocalizations.of(context)!.readerTooltipSearch,
                           onPressed: _openSearchScreen,
                         ),
                         IconButton(
@@ -1909,19 +1924,19 @@ class EbookReaderViewState extends State<EbookReaderView> {
                         IconButton(
                           icon: Icon(Icons.copy_rounded, size: 20, color: cs.onSurfaceVariant),
                           onPressed: _copySelection,
-                          tooltip: 'Copy',
+                          tooltip: AppLocalizations.of(context)!.readerTooltipCopy,
                           visualDensity: VisualDensity.compact,
                         ),
                         IconButton(
                           icon: Icon(Icons.search_rounded, size: 20, color: cs.onSurfaceVariant),
                           onPressed: _searchSelection,
-                          tooltip: 'Search',
+                          tooltip: AppLocalizations.of(context)!.readerTooltipSearch,
                           visualDensity: VisualDensity.compact,
                         ),
                         IconButton(
                           icon: Icon(Icons.menu_book_rounded, size: 20, color: cs.onSurfaceVariant),
                           onPressed: _defineSelection,
-                          tooltip: 'Define',
+                          tooltip: AppLocalizations.of(context)!.readerTooltipDefine,
                           visualDensity: VisualDensity.compact,
                         ),
                         _divider(cs),
@@ -1937,25 +1952,6 @@ class EbookReaderViewState extends State<EbookReaderView> {
               ),
             ),
 
-          // TEMP iOS tap diagnostic - remove once taps are fixed.
-          Positioned(
-            top: 0, left: 0, right: 0,
-            child: SafeArea(
-              bottom: false,
-              child: IgnorePointer(
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.65),
-                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-                  child: Text(
-                    _touchDebug,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        color: Colors.yellow, fontSize: 13, fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ),
-            ),
-          ),
         ],
       );
     return _wrap(viewerBody, bg);
@@ -2057,7 +2053,7 @@ class _EbookSearchScreenState extends State<_EbookSearchScreen> {
           autofocus: true,
           textInputAction: TextInputAction.search,
           decoration: InputDecoration(
-            hintText: 'Search this book…',
+            hintText: AppLocalizations.of(context)!.readerSearchHint,
             border: InputBorder.none,
           ),
           onSubmitted: (_) => _run(),
@@ -2082,7 +2078,7 @@ class _EbookSearchScreenState extends State<_EbookSearchScreen> {
               child: Row(
                 children: [
                   Text(
-                    '${_results.length} ${_results.length == 1 ? 'match' : 'matches'} for "$_lastQuery"',
+                    AppLocalizations.of(context)!.readerSearchMatches(_results.length, _lastQuery),
                     style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                   ),
                 ],
@@ -2097,8 +2093,8 @@ class _EbookSearchScreenState extends State<_EbookSearchScreen> {
                           padding: const EdgeInsets.all(24),
                           child: Text(
                             _lastQuery.isEmpty
-                                ? 'Type a word or phrase and tap search.'
-                                : 'No matches for "$_lastQuery".',
+                                ? AppLocalizations.of(context)!.readerSearchEmpty
+                                : AppLocalizations.of(context)!.readerSearchNoResults(_lastQuery),
                             textAlign: TextAlign.center,
                             style: TextStyle(color: cs.onSurfaceVariant),
                           ),

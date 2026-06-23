@@ -569,7 +569,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           },
         ),
       ),
-      // ─── Action row: Download | Finished | More ─────────────────
+      // Primary action row: Download | Fully Absorb | Read (when ebook)
       const SizedBox(height: 12),
       Row(children: [
         if (!isEbookOnly) ...[
@@ -604,21 +604,44 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             ]),
           ),
         )),
-        const SizedBox(width: 8),
-        // More button - opens styled bottom sheet with secondary actions
-        GestureDetector(
-          onTap: () => _showMoreSheet(context, auth, lib, title, authorName, progress, isFinished, duration, ebookFile, isEbookOnly, serverPath),
-          child: Container(
-            height: 36, width: 44,
-            decoration: BoxDecoration(
-              color: cs.onSurface.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: cs.onSurface.withValues(alpha: 0.1)),
+        if (ebookFile != null) ...[
+          const SizedBox(width: 8),
+          Expanded(child: GestureDetector(
+            onTap: () => _openEbookReader(context, auth, ebookFile, title),
+            child: Container(
+              height: 36,
+              decoration: BoxDecoration(
+                color: cs.onSurface.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+              ),
+              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(Icons.menu_book_rounded, size: 16, color: cs.onSurfaceVariant),
+                const SizedBox(width: 6),
+                Text(l.readEbook, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500)),
+              ]),
             ),
-            child: Icon(Icons.more_horiz_rounded, size: 18, color: cs.onSurfaceVariant),
-          ),
-        ),
+          )),
+        ],
       ]),
+      // More button below primary row
+      const SizedBox(height: 8),
+      GestureDetector(
+        onTap: () => _showMoreSheet(context, auth, lib, title, authorName, progress, isFinished, duration, ebookFile, isEbookOnly, serverPath),
+        child: Container(
+          height: 36,
+          decoration: BoxDecoration(
+            color: cs.onSurface.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: cs.onSurface.withValues(alpha: 0.1)),
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(Icons.more_horiz_rounded, size: 16, color: cs.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Text(l.moreActions, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500)),
+          ]),
+        ),
+      ),
       const SizedBox(height: 16),
       Wrap(spacing: 8, runSpacing: 8, children: [
         if (year.isNotEmpty) _chip(Icons.calendar_today_rounded, year),
