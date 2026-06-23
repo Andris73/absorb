@@ -398,6 +398,68 @@ class EbookReaderViewState extends State<EbookReaderView> {
     setState(() => _showControls = !_showControls);
   }
 
+  DateTime _lastReaderTap = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Shared tap handler: left quarter = previous page, right quarter = next,
+  /// center = toggle controls. [frac] is the tap's x position 0..1 across the
+  /// page. Debounced so the touch and injected-click paths can't double-fire.
+  void _readerTapAt(double frac, String source) {
+    final now = DateTime.now();
+    if (now.difference(_lastReaderTap).inMilliseconds < 350) return;
+    _lastReaderTap = now;
+    String action;
+    if (frac < 0.25) {
+      _epubController?.prev();
+      action = 'prev';
+    } else if (frac > 0.75) {
+      _epubController?.next();
+      action = 'next';
+    } else {
+      _toggleControls();
+      action = 'toggle';
+    }
+    if (mounted) {
+      setState(() => _touchDebug = '$source frac=${frac.toStringAsFixed(2)} -> $action');
+    }
+  }
+
+  /// epub.js touch callbacks don't fire on iOS, so inject our own click
+  /// listener into each rendered section and route it to a handler we register
+  /// (the same callHandler bridge the selection menu uses). Skips taps while
+  /// text is selected so highlighting still works.
+  void _setupTapHandler() {
+    _epubController?.webViewController?.addJavaScriptHandler(
+      handlerName: 'absorbReaderTap',
+      callback: (args) {
+        final frac = args.isNotEmpty ? (args[0] as num?)?.toDouble() : null;
+        if (frac != null) _readerTapAt(frac.clamp(0.0, 1.0), 'click');
+      },
+    );
+    _epubController?.webViewController?.evaluateJavascript(source: '''
+      (function(){
+        if (window.__absorbTapInit) return;
+        window.__absorbTapInit = true;
+        function send(frac){
+          try { if(window.flutter_inappwebview){ window.flutter_inappwebview.callHandler('absorbReaderTap', frac); return; } } catch(e){}
+          try { if(window.parent && window.parent.flutter_inappwebview){ window.parent.flutter_inappwebview.callHandler('absorbReaderTap', frac); } } catch(e){}
+        }
+        function onClick(e){
+          try {
+            var win = e.view || window;
+            var sel = win.getSelection ? win.getSelection() : null;
+            if (sel && String(sel).length > 0) return; // selecting text, not a tap
+            var w = win.innerWidth || window.innerWidth;
+            if (!w) return;
+            send(e.clientX / w);
+          } catch(err){}
+        }
+        function attach(doc){ try { doc.addEventListener('click', onClick, true); } catch(e){} }
+        try { rendition.getContents().forEach(function(c){ attach(c.document); }); } catch(e){}
+        try { rendition.hooks.content.register(function(contents){ attach(contents.document); }); } catch(e){}
+      })();
+    ''');
+  }
+
   void _loadInitialLocation() {
     final lib = context.read<LibraryProvider>();
     final progressData = lib.getProgressData(widget.itemId);
@@ -1609,6 +1671,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 }
                 _loadAnnotations().then((_) => _restoreHighlights());
                 _setupPageInfoHandler();
+                _setupTapHandler();
                 _setupFontInjector();
                 _applyFontFace();
               },
@@ -1640,26 +1703,12 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 // onTouchDown doesn't fire reliably on iOS; if we never got a
                 // down point, treat this as a tap (0 movement) instead of
                 // rejecting it, otherwise no taps register at all.
-                final hadDown = _touchDownX != null;
                 final dx = _touchDownX != null ? (x - _touchDownX!).abs() : 0.0;
                 final dy = _touchDownY != null ? (y - _touchDownY!).abs() : 0.0;
                 _touchDownX = null;
                 _touchDownY = null;
-                String action;
-                if (dx > 0.05 || dy > 0.05) {
-                  action = 'ignored(moved)';
-                } else if (x < 0.25) {
-                  _epubController?.prev();
-                  action = 'prev';
-                } else if (x > 0.75) {
-                  _epubController?.next();
-                  action = 'next';
-                } else {
-                  _toggleControls();
-                  action = 'toggle';
-                }
-                if (mounted) setState(() => _touchDebug =
-                    'UP x=${x.toStringAsFixed(2)} down=$hadDown -> $action');
+                if (dx > 0.05 || dy > 0.05) return;
+                _readerTapAt(x, 'touch');
               },
           )),
 
