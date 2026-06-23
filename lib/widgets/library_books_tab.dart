@@ -149,6 +149,20 @@ class LibraryBooksTab extends StatelessWidget {
       );
     }
 
+    // On a tall/wide viewport (tablets) the first page often doesn't fill the
+    // screen, so nothing scrolls and the bottom-trigger below never fires. After
+    // layout, if the grid isn't scrollable yet and there's more to load, pull
+    // the next page. Repeats on each rebuild until the viewport fills or we run
+    // out of items.
+    if (hasMore && !isLoadingPage && items.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final c = scrollController;
+        if (c != null && c.hasClients && c.position.maxScrollExtent <= 0) {
+          onLoadMore();
+        }
+      });
+    }
+
     return NotificationListener<ScrollNotification>(
       onNotification: (n) {
         if (n is ScrollUpdateNotification &&
