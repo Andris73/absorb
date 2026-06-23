@@ -87,6 +87,8 @@ class EbookReaderViewState extends State<EbookReaderView> {
   // Track touch start position to distinguish taps from swipes
   double? _touchDownX;
   double? _touchDownY;
+  // TEMP iOS tap diagnostic - shows whether the plugin's touch callbacks fire.
+  String _touchDebug = 'tap test: no touch yet';
 
   // Key to force-rebuild EpubViewer when layout mode changes
   int _viewerKey = 0;
@@ -1631,23 +1633,33 @@ class EbookReaderViewState extends State<EbookReaderView> {
               onTouchDown: (x, y) {
                 _touchDownX = x;
                 _touchDownY = y;
+                if (mounted) setState(() => _touchDebug =
+                    'DOWN ${x.toStringAsFixed(2)},${y.toStringAsFixed(2)}');
               },
               onTouchUp: (x, y) {
                 // onTouchDown doesn't fire reliably on iOS; if we never got a
                 // down point, treat this as a tap (0 movement) instead of
                 // rejecting it, otherwise no taps register at all.
+                final hadDown = _touchDownX != null;
                 final dx = _touchDownX != null ? (x - _touchDownX!).abs() : 0.0;
                 final dy = _touchDownY != null ? (y - _touchDownY!).abs() : 0.0;
                 _touchDownX = null;
                 _touchDownY = null;
-                if (dx > 0.05 || dy > 0.05) return;
-                if (x < 0.25) {
+                String action;
+                if (dx > 0.05 || dy > 0.05) {
+                  action = 'ignored(moved)';
+                } else if (x < 0.25) {
                   _epubController?.prev();
+                  action = 'prev';
                 } else if (x > 0.75) {
                   _epubController?.next();
+                  action = 'next';
                 } else {
                   _toggleControls();
+                  action = 'toggle';
                 }
+                if (mounted) setState(() => _touchDebug =
+                    'UP x=${x.toStringAsFixed(2)} down=$hadDown -> $action');
               },
           )),
 
@@ -1845,6 +1857,26 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 ),
               ),
             ),
+
+          // TEMP iOS tap diagnostic - remove once taps are fixed.
+          Positioned(
+            top: 0, left: 0, right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: IgnorePointer(
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                  child: Text(
+                    _touchDebug,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        color: Colors.yellow, fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       );
     return _wrap(viewerBody, bg);
