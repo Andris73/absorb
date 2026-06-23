@@ -1069,7 +1069,11 @@ class ApiService {
       final body = jsonEncode({
         'ebookLocation': ebookLocation,
         'ebookProgress': ebookProgress,
-        'isFinished': ebookProgress >= 1.0,
+        // Only ever MARK finished from the ebook; never send isFinished:false.
+        // The server shares one isFinished flag for audio+ebook, and on a
+        // true->false transition it also resets currentTime to 0 - so sending
+        // false here would un-finish the book and wipe the audiobook's position.
+        if (ebookProgress >= 1.0) 'isFinished': true,
       });
       final progressPath = itemId.length > 36
           ? '${itemId.substring(0, 36)}/${itemId.substring(37)}'
