@@ -11,8 +11,30 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/ebook_annotation_service.dart';
+import '../services/reader_font_service.dart';
 import '../services/scoped_prefs.dart';
+import 'overlay_toast.dart';
 import 'card_buttons.dart' show CardSpeedSheet;
+
+/// Reader background/text presets (e-reader themes). Colors are hex so they
+/// feed both the WebView CSS and the Flutter overlays.
+class _ReaderPalette {
+  final String id;
+  final String label;
+  final String bg; // '#rrggbb'
+  final String fg;
+  const _ReaderPalette(this.id, this.label, this.bg, this.fg);
+  Color get bgColor => Color(int.parse('FF${bg.substring(1)}', radix: 16));
+  Color get fgColor => Color(int.parse('FF${fg.substring(1)}', radix: 16));
+}
+
+const _kReaderPalettes = [
+  _ReaderPalette('light', 'Light', '#ffffff', '#121212'),
+  _ReaderPalette('sepia', 'Sepia', '#f4ecd8', '#5b4636'),
+  _ReaderPalette('gray', 'Gray', '#333537', '#e6e6e6'),
+  _ReaderPalette('dark', 'Dark', '#000000', '#ffffff'),
+];
+
 
 class EbookReaderView extends StatefulWidget {
   final String itemId;
@@ -72,11 +94,24 @@ class EbookReaderViewState extends State<EbookReaderView> {
   // Reader settings
   int _fontSize = 16;
   double _lineHeight = 1.4;
-  int _margin = 16;
+  int _marginH = 16; // left + right
+  int _marginV = 16; // top + bottom
+  // Page layout: auto shows two pages on wide screens (tablets), single forces
+  // one page, two forces a spread. Stored as index 0=auto/1=single/2=two.
+  EpubSpread _spread = EpubSpread.auto;
+  static const _spreadModes = [EpubSpread.auto, EpubSpread.none, EpubSpread.always];
+  // E-reader background theme (empty = follow the app's light/dark) and font.
+  String _themeId = '';
+  String _fontId = 'original';
 
   static const _kFontSize = 'ereader_fontSize';
   static const _kLineHeight = 'ereader_lineHeight';
-  static const _kMargin = 'ereader_margin';
+  static const _kMargin = 'ereader_margin'; // legacy single margin (migrated)
+  static const _kMarginH = 'ereader_margin_h';
+  static const _kMarginV = 'ereader_margin_v';
+  static const _kSpread = 'ereader_spread';
+  static const _kTheme = 'ereader_theme';
+  static const _kFont = 'ereader_font';
 
   // Gates the WebView mount until the entering route animation completes, so
   // the heavy platform view doesn't stutter the open transition.
@@ -177,11 +212,99 @@ class EbookReaderViewState extends State<EbookReaderView> {
   Future<void> _loadSettings() async {
     _fontSize = await ScopedPrefs.getInt(_kFontSize) ?? 16;
     _lineHeight = await ScopedPrefs.getDouble(_kLineHeight) ?? 1.4;
-    _margin = await ScopedPrefs.getInt(_kMargin) ?? 16;
+    final legacyMargin = await ScopedPrefs.getInt(_kMargin) ?? 16;
+    _marginH = await ScopedPrefs.getInt(_kMarginH) ?? legacyMargin;
+    _marginV = await ScopedPrefs.getInt(_kMarginV) ?? legacyMargin;
+    final si = (await ScopedPrefs.getInt(_kSpread) ?? 0).clamp(0, 2);
+    _spread = _spreadModes[si];
+    _themeId = await ScopedPrefs.getString(_kTheme) ?? '';
+    _fontId = await ScopedPrefs.getString(_kFont) ?? 'original';
     if (mounted) setState(() {});
   }
 
-  EpubTheme _buildTheme(bool isDark) {
+  // Resolve the active palette; empty selection follows the app's brightness.
+  _ReaderPalette _resolvePalette(BuildContext context) {
+    for (final p in _kReaderPalettes) {
+      if (p.id == _themeId) return p;
+    }
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return dark ? _kReaderPalettes[3] : _kReaderPalettes[0];
+  }
+
+  ReaderFont get _font => readerFontById(_fontId) ?? kBuiltinReaderFonts.first;
+
+  Future<void> _updateReaderTheme(String id) async {
+    if (id == _themeId) return;
+    setState(() => _themeId = id);
+    _applySettings();
+    await ScopedPrefs.setString(_kTheme, id);
+  }
+
+  Future<void> _updateReaderFont(String id) async {
+    if (id == _fontId) return;
+    setState(() => _fontId = id);
+    _applySettings();
+    await _applyFontFace();
+    await ScopedPrefs.setString(_kFont, id);
+  }
+
+  /// Define the @font-face injector once: a content hook that stamps the
+  /// current downloaded font's @font-face into every rendered section's iframe.
+  void _setupFontInjector() {
+    _epubController?.webViewController?.evaluateJavascript(source: '''
+      (function(){
+        if (window.__absorbFontInit) return;
+        window.__absorbFontInit = true;
+        window.__absorbFontFace = '';
+        function applyTo(doc){
+          if(!doc || !doc.head) return;
+          var old = doc.getElementById('absorb-fontface');
+          if(old && old.parentNode) old.parentNode.removeChild(old);
+          if(!window.__absorbFontFace) return;
+          var s = doc.createElement('style');
+          s.id = 'absorb-fontface';
+          s.textContent = window.__absorbFontFace;
+          doc.head.appendChild(s);
+        }
+        window.__absorbApplyFont = function(css){
+          window.__absorbFontFace = css || '';
+          try { rendition.getContents().forEach(function(c){ applyTo(c.document); }); } catch(e){}
+        };
+        try { rendition.hooks.content.register(function(contents){ applyTo(contents.document); }); } catch(e){}
+      })();
+    ''');
+  }
+
+  /// Inject (or clear) the @font-face for the selected font as a base64 data
+  /// URI, so a downloaded woff2 renders inside the WebView on iOS and Android.
+  Future<void> _applyFontFace() async {
+    final font = _font;
+    String css = '';
+    if (font.downloadable) {
+      final b64 = await ReaderFontService().base64Woff2(font.id);
+      if (b64 != null) {
+        css = '@font-face{font-family:"${font.family}";'
+            'src:url(data:font/woff2;base64,$b64) format("woff2");font-display:swap;}';
+      }
+    }
+    await _epubController?.webViewController?.evaluateJavascript(
+        source: "if(window.__absorbApplyFont){window.__absorbApplyFont('$css');}");
+  }
+
+  Future<void> _updateSpread(int index) async {
+    final mode = _spreadModes[index];
+    if (mode == _spread) return;
+    setState(() {
+      // Re-open at the current page after the layout rebuild.
+      _initialCfi = _currentCfi ?? _initialCfi;
+      _spread = mode;
+      _locationsReady = false;
+      _viewerKey++; // force the viewer to remount with the new spread
+    });
+    await ScopedPrefs.setInt(_kSpread, index);
+  }
+
+  EpubTheme _buildTheme(_ReaderPalette p) {
     // No foregroundColor on purpose: all colors live in customCss. The
     // plugin's loadBook ends with updateTheme(background, foreground) WITHOUT
     // the customCss arg - if a foreground color is set, that call re-registers
@@ -189,34 +312,37 @@ class EbookReaderViewState extends State<EbookReaderView> {
     // color inherit, line height, margins, scroll smoothness). With no colors
     // passed, that wipe call builds zero rules and becomes a no-op, so the
     // full theme from load survives and no post-load re-apply is needed.
+    final font = _font;
+    final body = <String, String>{
+      'color': p.fg,
+      'background': p.bg,
+      'line-height': '$_lineHeight',
+      'padding': '${_marginV}px 0 !important',
+      'margin': '0px !important',
+      'box-sizing': 'border-box !important',
+      'max-width': '100vw !important',
+      'overflow-x': 'hidden !important',
+      '-webkit-overflow-scrolling': 'touch',
+      'will-change': 'scroll-position',
+    };
+    final textRule = <String, String>{'color': 'inherit !important'};
+    if (font.family.isNotEmpty) {
+      final fam = font.downloadable ? '"${font.family}"' : font.family;
+      body['font-family'] = '$fam !important';
+      textRule['font-family'] = '$fam !important';
+    }
     return EpubTheme.custom(
-      backgroundDecoration: BoxDecoration(
-        color: isDark ? Colors.black : Colors.white,
-      ),
+      backgroundDecoration: BoxDecoration(color: p.bgColor),
       customCss: {
-        'body': {
-          'color': isDark ? '#ffffff' : '#000000',
-          'background': isDark ? '#000000' : '#ffffff',
-          'line-height': '$_lineHeight',
-          'padding': '${_margin}px !important',
-          'margin': '0px !important',
-          'box-sizing': 'border-box !important',
-          'max-width': '100vw !important',
-          'overflow-x': 'hidden !important',
-          '-webkit-overflow-scrolling': 'touch',
-          'will-change': 'scroll-position',
-        },
-        'p, div, span, h1, h2, h3, h4, h5, h6, li, td, th, a, em, strong, blockquote': {
-          'color': 'inherit !important',
-        },
+        'body': body,
+        'p, div, span, h1, h2, h3, h4, h5, h6, li, td, th, a, em, strong, blockquote': textRule,
       },
     );
   }
 
   void _applySettings() {
     _epubController?.setFontSize(fontSize: _fontSize.toDouble());
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    _epubController?.updateTheme(theme: _buildTheme(isDark));
+    _epubController?.updateTheme(theme: _buildTheme(_resolvePalette(context)));
   }
 
   Future<void> _updateFontSize(int size) async {
@@ -231,10 +357,17 @@ class EbookReaderViewState extends State<EbookReaderView> {
     await ScopedPrefs.setDouble(_kLineHeight, height);
   }
 
-  Future<void> _updateMargin(int margin) async {
-    setState(() => _margin = margin);
+  Future<void> _updateMarginH(int margin) async {
+    // Side margins resize the WebView (handled in _buildViewerArea), so just
+    // rebuild - no CSS re-apply needed.
+    setState(() => _marginH = margin);
+    await ScopedPrefs.setInt(_kMarginH, margin);
+  }
+
+  Future<void> _updateMarginV(int margin) async {
+    setState(() => _marginV = margin);
     _applySettings();
-    await ScopedPrefs.setInt(_kMargin, margin);
+    await ScopedPrefs.setInt(_kMarginV, margin);
   }
 
   @override
@@ -656,15 +789,20 @@ class EbookReaderViewState extends State<EbookReaderView> {
   void _showSettingsSheet() {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    // Live preview for the side-margin slider so the WebView only re-paginates
+    // when the drag ends, not on every step.
+    int hPreview = _marginH;
     showModalBottomSheet(
       context: context,
       backgroundColor: cs.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      isScrollControlled: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
+            child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -727,27 +865,248 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 ),
                 const SizedBox(height: 8),
 
-                // Margins
+                // Side margins (left + right)
                 Row(children: [
                   Icon(Icons.padding_rounded, size: 20, color: cs.onSurfaceVariant),
                   const SizedBox(width: 12),
-                  Text('Margins', style: tt.bodyMedium),
+                  Text('Side margins', style: tt.bodyMedium),
                   const Spacer(),
-                  Text('${_margin}px', style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                  Text('${hPreview}px', style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
                 ]),
                 Slider(
-                  value: _margin.toDouble(),
+                  value: hPreview.toDouble(),
                   min: 0,
-                  max: 48,
-                  divisions: 12,
+                  max: 64,
+                  divisions: 16,
+                  onChanged: (v) => setSheetState(() => hPreview = v.round()),
+                  onChangeEnd: (v) => _updateMarginH(v.round()),
+                ),
+                const SizedBox(height: 4),
+
+                // Top & bottom margins
+                Row(children: [
+                  Icon(Icons.vertical_align_center_rounded, size: 20, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 12),
+                  Text('Top & bottom', style: tt.bodyMedium),
+                  const Spacer(),
+                  Text('${_marginV}px', style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                ]),
+                Slider(
+                  value: _marginV.toDouble(),
+                  min: 0,
+                  max: 64,
+                  divisions: 16,
                   onChanged: (v) {
                     setSheetState(() {});
-                    _updateMargin(v.round());
+                    _updateMarginV(v.round());
                   },
+                ),
+                const SizedBox(height: 12),
+
+                // Page layout — Auto shows two pages on wide screens (tablets).
+                Row(children: [
+                  Icon(Icons.auto_stories_rounded, size: 20, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 12),
+                  Text('Page layout', style: tt.bodyMedium),
+                ]),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(value: 0, label: Text('Auto')),
+                      ButtonSegment(value: 1, label: Text('Single')),
+                      ButtonSegment(value: 2, label: Text('Two-page')),
+                    ],
+                    selected: {_spreadModes.indexOf(_spread)},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (s) {
+                      setSheetState(() {});
+                      _updateSpread(s.first);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Theme (background + text colors)
+                Row(children: [
+                  Icon(Icons.palette_outlined, size: 20, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 12),
+                  Text('Theme', style: tt.bodyMedium),
+                ]),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    for (final p in _kReaderPalettes) ...[
+                      _themeSwatch(
+                        p,
+                        (_themeId.isEmpty ? _resolvePalette(context).id : _themeId) == p.id,
+                        () { setSheetState(() {}); _updateReaderTheme(p.id); },
+                        cs,
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Font — opens a picker with built-in + downloadable fonts.
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () async {
+                    await _showFontSheet();
+                    setSheetState(() {});
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(children: [
+                      Icon(Icons.font_download_outlined, size: 20, color: cs.onSurfaceVariant),
+                      const SizedBox(width: 12),
+                      Text('Font', style: tt.bodyMedium),
+                      const Spacer(),
+                      Text(_font.label,
+                          style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                      const SizedBox(width: 4),
+                      Icon(Icons.chevron_right_rounded, size: 20, color: cs.onSurfaceVariant),
+                    ]),
+                  ),
                 ),
               ],
             ),
           ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _themeSwatch(_ReaderPalette p, bool selected, VoidCallback onTap, ColorScheme cs) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: p.bgColor,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? cs.primary : cs.onSurface.withValues(alpha: 0.25),
+            width: selected ? 3 : 1,
+          ),
+        ),
+        child: Center(
+          child: Text('Aa',
+              style: TextStyle(color: p.fgColor, fontSize: 13, fontWeight: FontWeight.w600)),
+        ),
+      ),
+    );
+  }
+
+  /// Font picker: built-in fonts plus downloadable ones (downloaded once, then
+  /// rendered via injected @font-face). Live download state via the service.
+  Future<void> _showFontSheet() async {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final svc = ReaderFontService();
+    await svc.load();
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: cs.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: ListenableBuilder(
+          listenable: svc,
+          builder: (ctx, _) {
+            Widget tile(ReaderFont f) {
+              final selected = f.id == _fontId;
+              final installed = !f.downloadable || svc.isInstalled(f.id);
+              final downloading = svc.isDownloading(f.id);
+              return ListTile(
+                dense: true,
+                leading: Icon(
+                  selected
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: selected ? cs.primary : cs.onSurfaceVariant,
+                ),
+                title: Text(f.label,
+                    style: TextStyle(
+                        color: cs.onSurface,
+                        fontWeight: selected ? FontWeight.w700 : FontWeight.w400)),
+                trailing: downloading
+                    ? const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : (f.downloadable
+                        ? (installed
+                            ? IconButton(
+                                icon: Icon(Icons.delete_outline_rounded,
+                                    color: cs.onSurfaceVariant),
+                                tooltip: 'Remove download',
+                                onPressed: () => svc.remove(f.id),
+                              )
+                            : Icon(Icons.download_rounded, color: cs.primary))
+                        : null),
+                onTap: () async {
+                  if (installed) {
+                    _updateReaderFont(f.id);
+                    if (mounted) Navigator.of(ctx).pop();
+                    return;
+                  }
+                  final ok = await svc.download(f);
+                  if (ok) {
+                    _updateReaderFont(f.id);
+                    if (mounted) Navigator.of(ctx).pop();
+                  } else if (mounted) {
+                    showOverlayToast(context, "Couldn't download ${f.label}",
+                        icon: Icons.error_outline_rounded);
+                  }
+                },
+              );
+            }
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: cs.onSurface.withValues(alpha: 0.24),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Font',
+                        style: tt.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600, color: cs.onSurface)),
+                  ),
+                ),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final f in kBuiltinReaderFonts) tile(f),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                        child: Text('Download more fonts',
+                            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      ),
+                      for (final f in kDownloadableReaderFonts) tile(f),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1053,8 +1412,16 @@ class EbookReaderViewState extends State<EbookReaderView> {
   }
 
   /// Wrapped in SafeArea so the page never slides under the camera cutout.
+  /// Side margins are applied here (horizontal padding shrinks the WebView so
+  /// epub.js paginates into the narrower box) - epub.js's column layout ignores
+  /// horizontal body padding, so CSS only handles the vertical margins.
   Widget _buildViewerArea(Widget viewer) {
-    return SafeArea(child: SizedBox.expand(child: viewer));
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: _marginH.toDouble()),
+        child: SizedBox.expand(child: viewer),
+      ),
+    );
   }
 
   void _handleClose() {
@@ -1069,7 +1436,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
 
   /// Playback controls for immersion reading (listen while you read). Drives the
   /// shared player; only shown while a book is loaded.
-  Widget _buildMediaBar(ColorScheme cs) {
+  Widget _buildMediaBar(Color fg, Color accent) {
     final player = AudioPlayerService();
     return ListenableBuilder(
       listenable: player,
@@ -1084,7 +1451,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
         final backIcon = _backSkip == 5
             ? Icons.replay_5_rounded
             : _backSkip == 10 ? Icons.replay_10_rounded : Icons.replay_30_rounded;
-        final dim = cs.onSurface.withValues(alpha: 0.3);
+        final dim = fg.withValues(alpha: 0.3);
         return Padding(
           padding: const EdgeInsets.only(bottom: 6),
           child: Row(
@@ -1101,15 +1468,15 @@ class EbookReaderViewState extends State<EbookReaderView> {
                     ),
                     onPressed: () => showModalBottomSheet(
                       context: context,
-                      backgroundColor: cs.surface,
+                      backgroundColor: Theme.of(context).colorScheme.surface,
                       shape: const RoundedRectangleBorder(
                         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                       ),
                       builder: (_) => CardSpeedSheet(
-                        player: player, accent: cs.primary, itemId: widget.itemId),
+                        player: player, accent: accent, itemId: widget.itemId),
                     ),
                     child: Text(_speedLabel(player.speed),
-                        style: TextStyle(color: cs.onSurface, fontWeight: FontWeight.w700)),
+                        style: TextStyle(color: fg, fontWeight: FontWeight.w700)),
                   ),
                 ),
               ),
@@ -1119,7 +1486,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                   children: [
                     // Skips only act on the live session.
                     IconButton(
-                      icon: Icon(backIcon, color: isActive ? cs.onSurface : dim),
+                      icon: Icon(backIcon, color: isActive ? fg : dim),
                       iconSize: 30,
                       onPressed: isActive ? () => player.skipBackward(_backSkip) : null,
                     ),
@@ -1128,7 +1495,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                         (isActive && player.isPlaying)
                             ? Icons.pause_circle_filled_rounded
                             : Icons.play_circle_filled_rounded,
-                        color: cs.primary,
+                        color: accent,
                       ),
                       iconSize: 48,
                       // Active: toggle. Otherwise start this book's audiobook.
@@ -1137,7 +1504,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                           : (isActive ? player.togglePlayPause : _startThisBook),
                     ),
                     IconButton(
-                      icon: Icon(fwdIcon, color: isActive ? cs.onSurface : dim),
+                      icon: Icon(fwdIcon, color: isActive ? fg : dim),
                       iconSize: 30,
                       onPressed: isActive ? () => player.skipForward(_forwardSkip) : null,
                     ),
@@ -1155,8 +1522,11 @@ class EbookReaderViewState extends State<EbookReaderView> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? Colors.black : Colors.white;
+    final palette = _resolvePalette(context);
+    final bg = palette.bgColor;
+    final fg = palette.fgColor;
+    final fgDim = fg.withValues(alpha: 0.6);
+    final accent = cs.primary;
 
     // Hold the heavy WebView until the open animation finishes — mounting it
     // mid-transition (e.g. for an already-cached book) stutters the slide-in.
@@ -1196,13 +1566,14 @@ class EbookReaderViewState extends State<EbookReaderView> {
               initialCfi: _initialCfi,
               displaySettings: EpubDisplaySettings(
                 flow: EpubFlow.paginated,
+                spread: _spread,
                 snap: true,
                 useSnapAnimationAndroid: false,
                 // Font size at load time, not applied after: a post-load
                 // setFontSize reflows the text after initialCfi has displayed,
                 // which would drift the resume position.
                 fontSize: _fontSize,
-                theme: _buildTheme(isDark),
+                theme: _buildTheme(palette),
               ),
               onChaptersLoaded: (chapters) {
                 if (mounted) setState(() => _chapters = _flattenChapters(chapters));
@@ -1236,6 +1607,8 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 }
                 _loadAnnotations().then((_) => _restoreHighlights());
                 _setupPageInfoHandler();
+                _setupFontInjector();
+                _applyFontFace();
               },
               onRelocated: (value) {
                 if (!mounted) return;
@@ -1298,7 +1671,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                         IconButton(
                           icon: Icon(
                             Icons.arrow_back_rounded,
-                            color: cs.onSurface,
+                            color: fg,
                           ),
                           onPressed: _handleClose,
                         ),
@@ -1308,7 +1681,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: cs.onSurface,
+                              color: fg,
                               fontWeight: FontWeight.w600,
                               fontSize: 16,
                             ),
@@ -1319,26 +1692,26 @@ class EbookReaderViewState extends State<EbookReaderView> {
                             _hasBookmarkAtCurrent
                                 ? Icons.bookmark_rounded
                                 : Icons.bookmark_border_rounded,
-                            color: _hasBookmarkAtCurrent ? cs.primary : cs.onSurface,
+                            color: _hasBookmarkAtCurrent ? accent : fg,
                           ),
                           onPressed: _toggleBookmark,
                         ),
                         IconButton(
-                          icon: Icon(Icons.search_rounded, color: cs.onSurface),
+                          icon: Icon(Icons.search_rounded, color: fg),
                           tooltip: 'Search',
                           onPressed: _openSearchScreen,
                         ),
                         IconButton(
-                          icon: Icon(Icons.sticky_note_2_outlined, color: cs.onSurface),
+                          icon: Icon(Icons.sticky_note_2_outlined, color: fg),
                           onPressed: _showAnnotationsSheet,
                         ),
                         IconButton(
-                          icon: Icon(Icons.text_fields_rounded, color: cs.onSurface),
+                          icon: Icon(Icons.text_fields_rounded, color: fg),
                           onPressed: _showSettingsSheet,
                         ),
                         if (_chapters.isNotEmpty)
                           IconButton(
-                            icon: Icon(Icons.list_rounded, color: cs.onSurface),
+                            icon: Icon(Icons.list_rounded, color: fg),
                             onPressed: _showChapterList,
                           ),
                       ],
@@ -1372,14 +1745,14 @@ class EbookReaderViewState extends State<EbookReaderView> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          _buildMediaBar(cs),
+                          _buildMediaBar(fg, accent),
                           ClipRRect(
                             borderRadius: BorderRadius.circular(2),
                             child: LinearProgressIndicator(
                               value: _progress.clamp(0.0, 1.0),
                               minHeight: 3,
-                              backgroundColor: cs.onSurface.withValues(alpha: 0.1),
-                              valueColor: AlwaysStoppedAnimation(cs.primary),
+                              backgroundColor: fg.withValues(alpha: 0.1),
+                              valueColor: AlwaysStoppedAnimation(accent),
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -1388,7 +1761,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
                               if (_chapterPageTotal > 0)
                                 Text(
                                   '$_chapterPage / $_chapterPageTotal',
-                                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11),
+                                  style: TextStyle(color: fgDim, fontSize: 11),
                                 ),
                               Expanded(
                                 child: Padding(
@@ -1398,13 +1771,13 @@ class EbookReaderViewState extends State<EbookReaderView> {
                                     textAlign: TextAlign.center,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11),
+                                    style: TextStyle(color: fgDim, fontSize: 11),
                                   ),
                                 ),
                               ),
                               Text(
                                 '${(_progress * 100).toStringAsFixed(1)}%',
-                                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11),
+                                style: TextStyle(color: fgDim, fontSize: 11),
                               ),
                             ],
                           ),
