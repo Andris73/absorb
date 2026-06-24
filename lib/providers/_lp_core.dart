@@ -441,7 +441,24 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     if (local != null) return local;
     final mp = _progressMap[itemId];
     if (mp == null) return 0;
-    return (mp['progress'] as num?)?.toDouble() ?? 0;
+    final audio = (mp['progress'] as num?)?.toDouble() ?? 0;
+    if (audio > 0) return audio;
+    // Ebook-only books (comics, PDFs, mobi) have no audio progress; surface
+    // their reading progress so the cover bar and detail sheet still fill in.
+    return (mp['ebookProgress'] as num?)?.toDouble() ?? 0;
+  }
+
+  /// Reflect ebook reading progress in the in-memory map right away, so covers
+  /// and the detail sheet update on return from the reader instead of waiting
+  /// for the server round-trip / socket echo.
+  void applyLocalEbookProgress(String itemId,
+      {required String location, required double progress, bool finished = false}) {
+    final mp = Map<String, dynamic>.from(_progressMap[itemId] ?? {});
+    mp['ebookLocation'] = location;
+    mp['ebookProgress'] = progress.clamp(0.0, 1.0);
+    if (finished) mp['isFinished'] = true;
+    _progressMap[itemId] = mp;
+    notifyListeners();
   }
 
   double getEpisodeProgress(String itemId, String episodeId) {

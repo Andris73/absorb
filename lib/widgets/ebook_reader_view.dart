@@ -593,6 +593,8 @@ class EbookReaderViewState extends State<EbookReaderView> {
       ebookLocation: cfi,
       ebookProgress: progress,
     );
+    context.read<LibraryProvider>().applyLocalEbookProgress(
+      widget.itemId, location: cfi, progress: progress);
   }
 
   Future<void> _loadAnnotations() async {
