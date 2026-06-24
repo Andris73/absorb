@@ -205,13 +205,21 @@ class _SnapScrollListState extends State<_SnapScrollList> {
       onNotification: (notification) {
         final maxExtent = _controller.position.maxScrollExtent;
         final offset = _controller.offset;
-        final targetIndex = (offset / itemExtent).round();
-        var targetOffset = (targetIndex * itemExtent).toDouble();
-        // The last card can't left-align (no content after it), so snapping in
-        // the final stretch leaves it cut off the right edge. Rest at the true
-        // end instead so the last card stays fully visible.
-        if (targetOffset > maxExtent - itemExtent) targetOffset = maxExtent;
-        targetOffset = targetOffset.clamp(0.0, maxExtent);
+        double targetOffset;
+        if (maxExtent < itemExtent) {
+          // Short list that barely overflows: snapping to an item boundary would
+          // force the far end and cut off the first card. Rest at whichever end
+          // is closer so the first or last card stays fully visible.
+          targetOffset = offset < maxExtent / 2 ? 0.0 : maxExtent;
+        } else {
+          final targetIndex = (offset / itemExtent).round();
+          targetOffset = (targetIndex * itemExtent).toDouble();
+          // The last card can't left-align (no content after it), so snapping in
+          // the final stretch leaves it cut off the right edge. Rest at the true
+          // end instead so the last card stays fully visible.
+          if (targetOffset > maxExtent - itemExtent) targetOffset = maxExtent;
+          targetOffset = targetOffset.clamp(0.0, maxExtent);
+        }
         if ((offset - targetOffset).abs() > 1) {
           Future.microtask(() {
             if (_controller.hasClients) {
