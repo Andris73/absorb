@@ -5407,7 +5407,7 @@ abstract class AppLocalizations {
   /// No description provided for @saved.
   ///
   /// In en, this message translates to:
-  /// **'Saved'**
+  /// **'Downloaded'**
   String get saved;
 
   /// No description provided for @selectLibrary.

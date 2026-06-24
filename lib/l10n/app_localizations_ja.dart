@@ -2934,7 +2934,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get finished => 'Finished';
 
   @override
-  String get saved => 'Saved';
+  String get saved => 'Downloaded';
 
   @override
   String get selectLibrary => 'Select Library';
