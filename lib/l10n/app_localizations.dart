@@ -11397,6 +11397,54 @@ abstract class AppLocalizations {
   /// **'Read'**
   String get readEbook;
 
+  /// No description provided for @ebookDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get ebookDownload;
+
+  /// No description provided for @ebookDownloaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded'**
+  String get ebookDownloaded;
+
+  /// No description provided for @ebookSavedOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved for offline reading'**
+  String get ebookSavedOffline;
+
+  /// No description provided for @ebookRemovedOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed from offline'**
+  String get ebookRemovedOffline;
+
+  /// No description provided for @ebookOfflineFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t download the ebook'**
+  String get ebookOfflineFailed;
+
+  /// No description provided for @ebookSaveToDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Save to device'**
+  String get ebookSaveToDevice;
+
+  /// No description provided for @ebookSaveToDeviceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Save to device?'**
+  String get ebookSaveToDeviceTitle;
+
+  /// No description provided for @ebookSaveToDeviceBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This saves a copy of the ebook file somewhere on your device (you pick where). It won\'t make the book available offline in the reader - use Download for that.'**
+  String get ebookSaveToDeviceBody;
+
   /// No description provided for @readerFormatUnsupported.
   ///
   /// In en, this message translates to:

@@ -12,6 +12,7 @@ import '../l10n/app_localizations.dart';
 import '../main.dart' show rootNavigatorKey;
 import 'api_service.dart';
 import 'audio_player_service.dart';
+import 'ebook_cache.dart';
 import 'offline_source.dart';
 
 enum DownloadStatus { none, downloading, downloaded, error }
@@ -484,6 +485,49 @@ class DownloadService extends ChangeNotifier {
 
   bool isDownloaded(String itemId) =>
       _downloads[itemId]?.status == DownloadStatus.downloaded;
+
+  /// Registers an ebook-only book as a completed download so it shows in the
+  /// offline library and its detail sheet loads offline. There's no audio, so
+  /// localPaths is empty - the book opens in the reader, never the player. The
+  /// ebook bytes live in the reader's persistent cache (fetchEbookToCache).
+  /// Fetches a full copy of the item so the offline sheet has the cover,
+  /// description, and ebookFile - not just the title.
+  Future<void> registerEbookDownload({
+    required ApiService api,
+    required String itemId,
+    Map<String, dynamic>? item,
+    String? libraryId,
+  }) async {
+    Map<String, dynamic>? fullItem;
+    try {
+      fullItem = await api.getLibraryItem(itemId);
+    } catch (_) {}
+    final stored = fullItem ?? item ?? {'id': itemId};
+    final media = stored['media'] as Map<String, dynamic>?;
+    final metadata = media?['metadata'] as Map<String, dynamic>?;
+    final title = metadata?['title'] as String?;
+    final author = metadata?['authorName'] as String?;
+
+    final localCoverPath = await _cacheCover(api, itemId, api.getCoverUrl(itemId, width: 800));
+    final sessionJson = jsonEncode({
+      'libraryItem': stored,
+      'mediaMetadata': metadata,
+      'duration': 0,
+      'chapters': const <dynamic>[],
+    });
+    _downloads[itemId] = DownloadInfo(
+      itemId: itemId,
+      status: DownloadStatus.downloaded,
+      localPaths: const [],
+      sessionData: sessionJson,
+      title: title,
+      author: author,
+      localCoverPath: localCoverPath,
+      libraryId: libraryId ?? stored['libraryId'] as String?,
+    );
+    await _save();
+    notifyListeners();
+  }
 
   bool isDownloading(String itemId) =>
       _downloads[itemId]?.status == DownloadStatus.downloading;
@@ -1221,6 +1265,18 @@ class DownloadService extends ChangeNotifier {
     TaskStatus.canceled,
   };
 
+  /// Best-effort download of a book's ebook into the persistent reader cache so
+  /// it reads offline. Swallows errors - the audio download is what matters.
+  Future<void> _cacheEbookForOffline(
+      ApiService api, String itemId, Map<String, dynamic> ebookFile, String title) async {
+    try {
+      await fetchEbookToCache(api, itemId, ebookFile, title);
+      debugPrint('[Download] cached ebook for offline: $itemId');
+    } catch (e) {
+      debugPrint('[Download] ebook offline cache failed for $itemId: $e');
+    }
+  }
+
   /// Resolve a book/episode to durable per-file download tasks and enqueue them.
   /// Returns once the tasks are handed to `background_downloader`; progress and
   /// completion are driven asynchronously by [_onTaskUpdate] / [_finalizeSuccess]
@@ -1277,6 +1333,15 @@ class DownloadService extends ChangeNotifier {
       }
 
       final files = await _resolveDurableFiles(api, apiItemId, episodeId, audioTracks);
+
+      // Pull the companion ebook into the offline cache too, so a downloaded
+      // book is fully readable offline. Fire-and-forget - never blocks or fails
+      // the audio download.
+      final ebookFile = ((sessionData['libraryItem'] as Map<String, dynamic>?)?['media']
+          as Map<String, dynamic>?)?['ebookFile'] as Map<String, dynamic>?;
+      if (ebookFile != null) {
+        unawaited(_cacheEbookForOffline(api, apiItemId, ebookFile, title));
+      }
 
       // Per-book destination. Android downloads to internal storage first - for
       // both the internal default AND SAF custom folders. SAF books are then
@@ -1909,6 +1974,9 @@ class DownloadService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[Download] cover cleanup failed: $e');
     }
+
+    // Drop the offline ebook copy too, if any.
+    await deleteCachedEbook(itemId);
 
     _downloads.remove(itemId);
     await _save();

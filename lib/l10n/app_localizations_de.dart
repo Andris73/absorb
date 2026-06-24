@@ -6571,6 +6571,31 @@ class AppLocalizationsDe extends AppLocalizations {
   String get readEbook => 'Read';
 
   @override
+  String get ebookDownload => 'Download';
+
+  @override
+  String get ebookDownloaded => 'Downloaded';
+
+  @override
+  String get ebookSavedOffline => 'Saved for offline reading';
+
+  @override
+  String get ebookRemovedOffline => 'Removed from offline';
+
+  @override
+  String get ebookOfflineFailed => 'Couldn\'t download the ebook';
+
+  @override
+  String get ebookSaveToDevice => 'Save to device';
+
+  @override
+  String get ebookSaveToDeviceTitle => 'Save to device?';
+
+  @override
+  String get ebookSaveToDeviceBody =>
+      'This saves a copy of the ebook file somewhere on your device (you pick where). It won\'t make the book available offline in the reader - use Download for that.';
+
+  @override
   String get readerFormatUnsupported =>
       'This ebook format can\'t be opened in the reader yet';
 

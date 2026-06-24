@@ -161,6 +161,9 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
 
   bool _isLoadingPage = false;
   bool _hasMore = true;
+  // Tracks the offline state so the grid reloads when it flips (offline shows
+  // only downloads; back online shows the full library again).
+  bool _wasOffline = false;
   int _page = 0;
   int _totalItems = 0;
   int? _randomSeed;
@@ -222,6 +225,7 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
   @override
   void initState() {
     super.initState();
+    _wasOffline = context.read<LibraryProvider>().isOffline;
     // Reveal driver is fed by NotificationListener at the screen level —
     // works across multiple per-tab scroll controllers in the IndexedStack
     // without needing to re-attach on every tab switch.
@@ -1652,7 +1656,17 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
     // Watch LibraryProvider so this screen rebuilds when the active library
     // or its data changes; the actual lib object is consumed inside
     // _buildHeaderSliver via context.watch.
-    context.watch<LibraryProvider>();
+    final libWatch = context.watch<LibraryProvider>();
+    // Reload the grid when the offline state flips so it swaps between the full
+    // library and the downloads-only offline view.
+    if (libWatch.isOffline != _wasOffline) {
+      _wasOffline = libWatch.isOffline;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _isScoped) return;
+        setState(() { _items.clear(); _page = 0; _hasMore = true; _isLoadingPage = false; });
+        _loadPage();
+      });
+    }
     final hasTabs = _tabController != null && !_isInSearchMode;
 
     return Scaffold(

@@ -4,14 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_epub_viewer/flutter_epub_viewer.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/ebook_annotation_service.dart';
+import '../services/ebook_cache.dart';
 import '../services/reader_font_service.dart';
 import '../services/scoped_prefs.dart';
 import 'overlay_toast.dart';
@@ -504,77 +503,11 @@ class EbookReaderViewState extends State<EbookReaderView> {
         setState(() { _error = 'Not connected to server'; _loading = false; });
         return;
       }
-
-      final ino = widget.ebookFile['ino'] as String?;
-      if (ino == null) {
-        setState(() { _error = 'No ebook file found'; _loading = false; });
-        return;
-      }
-
-      final ebookName = widget.ebookFile['metadata']?['filename'] as String?
-          ?? widget.ebookFile['name'] as String?
-          ?? 'book.epub';
-      final ext = ebookName.contains('.')
-          ? ebookName.substring(ebookName.lastIndexOf('.'))
-          : '.epub';
-      final safeTitle = widget.title.replaceAll(RegExp(r'[^\w\s-]'), '').trim();
-
-      final cacheDir = await getTemporaryDirectory();
-      final cachedFile = File('${cacheDir.path}/ereader_$safeTitle$ext');
-
-      if (!cachedFile.existsSync()) {
-        final cleanBase = api.baseUrl.endsWith('/')
-            ? api.baseUrl.substring(0, api.baseUrl.length - 1)
-            : api.baseUrl;
-        final url = '$cleanBase/api/items/${widget.itemId}/file/$ino';
-
-        final request = http.Request('GET', Uri.parse(url));
-        request.followRedirects = false;
-        api.mediaHeaders.forEach((k, v) => request.headers[k] = v);
-        final client = http.Client();
-        try {
-          var response = await client.send(request);
-
-          // Follow redirects preserving auth headers
-          var redirects = 0;
-          while ([301, 302, 303, 307, 308].contains(response.statusCode) && redirects < 5) {
-            final location = response.headers['location'];
-            if (location == null) break;
-            final redirectUrl = Uri.parse(url).resolve(location);
-            final rReq = http.Request('GET', redirectUrl);
-            api.mediaHeaders.forEach((k, v) => rReq.headers[k] = v);
-            rReq.followRedirects = false;
-            response = await client.send(rReq);
-            redirects++;
-          }
-
-          if (response.statusCode != 200) {
-            setState(() { _error = 'Failed to download ebook (${response.statusCode})'; _loading = false; });
-            return;
-          }
-
-          final ct = response.headers['content-type'] ?? '';
-          if (ct.contains('text/html')) {
-            setState(() { _error = 'Server returned an error page'; _loading = false; });
-            return;
-          }
-
-          final sink = cachedFile.openWrite();
-          try {
-            await response.stream.pipe(sink);
-          } finally {
-            await sink.close();
-          }
-        } finally {
-          client.close();
-        }
-      }
-
+      // Shared persistent cache - reuses a downloaded/previously-opened copy so
+      // the book reads offline.
+      final file = await fetchEbookToCache(api, widget.itemId, widget.ebookFile, widget.title);
       if (mounted) {
-        setState(() {
-          _cachedFile = cachedFile;
-          _loading = false;
-        });
+        setState(() { _cachedFile = file; _loading = false; });
       }
     } catch (e) {
       debugPrint('[EbookReader] Error: $e');

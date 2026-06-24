@@ -25,6 +25,7 @@ import 'card_buttons.dart';
 import '../services/api_service.dart';
 import '../services/bookmark_service.dart';
 import '../services/download_service.dart';
+import '../services/ebook_cache.dart';
 import '../services/progress_sync_service.dart';
 import '../services/metadata_override_service.dart';
 import '../services/scoped_prefs.dart';
@@ -100,6 +101,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   bool _hasLocalOverride = false;
   bool _showGoodreads = false;
   bool _ebookSaved = false;
+  bool _ebookOfflineDownloading = false;
   bool _authorsExpanded = false;
   bool _narratorsExpanded = false;
   bool _squareCovers = false;
@@ -269,6 +271,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   }
 
   void _deriveCoverScheme() {
+    try {
     final url = _coverUrl;
     if (url == null) {
       debugPrint('[BookDetail] _deriveCoverScheme skipped (no cover url)');
@@ -308,6 +311,9 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         );
       });
     });
+    } catch (e) {
+      debugPrint('[BookDetail] _deriveCoverScheme failed (non-fatal): $e');
+    }
   }
 
   String? get _coverUrl {
@@ -507,12 +513,12 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           style: FilledButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
         ))
       else if (isEbookOnly && ebookFile != null)
-        // Ebook-only but not an EPUB (PDF/comic/mobi) - can't read in-app, so
-        // the primary action downloads the file instead.
+        // Ebook-only but not readable in-app (CBR) - can't open it, so the
+        // primary action exports the file to the device instead.
         SizedBox(height: 52, child: FilledButton.icon(
           onPressed: () => _saveEbook(context, auth, ebookFile, title),
           icon: Icon(_ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded, size: 24),
-          label: Text(_ebookSaved ? l.downloadEbookAgain : l.downloadEbook,
+          label: Text(l.ebookSaveToDevice,
             style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onPrimary)),
           style: FilledButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
         ))
@@ -616,22 +622,60 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         )),
         if (ebookFile != null && canReadEbook(ebookFile)) ...[
           const SizedBox(width: 8),
-          Expanded(child: GestureDetector(
-            onTap: () => _openEbookReader(context, auth, ebookFile, title),
-            child: Container(
-              height: 36,
-              decoration: BoxDecoration(
-                color: cs.onSurface.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
-              ),
-              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.menu_book_rounded, size: 16, color: cs.onSurfaceVariant),
-                const SizedBox(width: 6),
-                Text(l.readEbook, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500)),
-              ]),
-            ),
-          )),
+          // For ebook-only books the big button above is already "Read", so this
+          // slot is the offline download (matching the audiobook download
+          // button's Saved/green styling). For audiobooks with a companion ebook
+          // it stays "Read" - the audio download already pulls the ebook along.
+          Expanded(child: isEbookOnly
+              ? ListenableBuilder(
+                  listenable: DownloadService(),
+                  builder: (_, __) {
+                    final saved = DownloadService().isDownloaded(widget.itemId);
+                    final dlGreen = Theme.of(context).brightness == Brightness.dark
+                        ? Colors.greenAccent : Colors.green.shade700;
+                    return GestureDetector(
+                      onTap: _ebookOfflineDownloading
+                          ? null
+                          : (saved
+                              ? () => _removeEbookOffline(context)
+                              : () => _downloadEbookOffline(context, auth, ebookFile, title)),
+                      child: Container(
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: saved ? dlGreen.withValues(alpha: 0.08) : cs.onSurface.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: saved ? dlGreen.withValues(alpha: 0.2) : cs.onSurface.withValues(alpha: 0.08)),
+                        ),
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          if (_ebookOfflineDownloading)
+                            SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: cs.onSurfaceVariant))
+                          else
+                            Icon(saved ? Icons.download_done_rounded : Icons.download_rounded,
+                                size: 16, color: saved ? dlGreen : cs.onSurfaceVariant),
+                          const SizedBox(width: 6),
+                          Text(saved ? l.saved : l.ebookDownload,
+                              style: TextStyle(color: saved ? dlGreen : cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500)),
+                        ]),
+                      ),
+                    );
+                  },
+                )
+              : GestureDetector(
+                  onTap: () => _openEbookReader(context, auth, ebookFile, title),
+                  child: Container(
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: cs.onSurface.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+                    ),
+                    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Icon(Icons.menu_book_rounded, size: 16, color: cs.onSurfaceVariant),
+                      const SizedBox(width: 6),
+                      Text(l.readEbook, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500)),
+                    ]),
+                  ),
+                )),
         ],
       ]),
       // More button below primary row
@@ -891,7 +935,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         }
         if (ebookFile != null) {
           add(_ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded,
-            _ebookSaved ? l.downloadEbookAgain : l.downloadEbook, () => _saveEbook(context, auth, ebookFile, title));
+            l.ebookSaveToDevice, () => _saveEbook(context, auth, ebookFile, title));
         }
         if (ebookFile != null && auth.ereaderDevices.isNotEmpty) {
           add(Icons.send_to_mobile_rounded, l.sendToEreader, () => _sendToEreader(context, auth));
@@ -1486,12 +1530,64 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     openEbookReader(context, itemId: widget.itemId, title: title, ebookFile: ebookFile);
   }
 
+  /// Caches the ebook for offline reading and registers it as a download so it
+  /// shows in the offline library and its detail sheet loads offline. Distinct
+  /// from "Save to device", which exports a copy elsewhere.
+  Future<void> _downloadEbookOffline(
+      BuildContext context, AuthProvider auth, Map<String, dynamic> ebookFile, String title) async {
+    if (_ebookOfflineDownloading) return;
+    final l = AppLocalizations.of(context)!;
+    final api = auth.apiService;
+    if (api == null) return;
+    setState(() => _ebookOfflineDownloading = true);
+    try {
+      await fetchEbookToCache(api, widget.itemId, ebookFile, title);
+      await DownloadService().registerEbookDownload(
+        api: api,
+        itemId: widget.itemId,
+        item: _item,
+        libraryId: _item?['libraryId'] as String?,
+      );
+      if (mounted) {
+        setState(() => _ebookOfflineDownloading = false);
+        showOverlayToast(context, l.ebookSavedOffline, icon: Icons.download_done_rounded);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _ebookOfflineDownloading = false);
+        showOverlayToast(context, l.ebookOfflineFailed, icon: Icons.error_outline_rounded);
+      }
+    }
+  }
+
+  Future<void> _removeEbookOffline(BuildContext context) async {
+    final l = AppLocalizations.of(context)!;
+    await DownloadService().deleteDownload(widget.itemId);
+    if (mounted) showOverlayToast(context, l.ebookRemovedOffline, icon: Icons.delete_outline_rounded);
+  }
+
   bool _ebookSaving = false;
 
   Future<void> _saveEbook(BuildContext context, AuthProvider auth, Map<String, dynamic> ebookFile, String bookTitle) async {
     if (_ebookSaving) return;
-    setState(() => _ebookSaving = true);
     final l = AppLocalizations.of(context)!;
+
+    // Clarify this exports a copy elsewhere on the device and is NOT the same as
+    // the offline Download, which is a common point of confusion.
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.ebookSaveToDeviceTitle),
+        content: Text(l.ebookSaveToDeviceBody),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.ebookSaveToDevice)),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _ebookSaving = true);
 
     try {
       final api = auth.apiService;
