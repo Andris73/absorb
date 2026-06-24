@@ -3173,7 +3173,10 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String autoSleepTimerEnabledSubtitle(
-      String start, String end, String duration) {
+    String start,
+    String end,
+    String duration,
+  ) {
     return '$start - $end · $duration';
   }
 
@@ -4612,7 +4615,13 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String statsScreenDateAtTime(
-      String month, int day, int year, int hour, String minute, String ampm) {
+    String month,
+    int day,
+    int year,
+    int hour,
+    String minute,
+    String ampm,
+  ) {
     return '$day. $month $year um $hour:$minute $ampm';
   }
 
@@ -4832,7 +4841,10 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String audibleSeriesSummaryWithUpcoming(
-      int total, int missing, int upcoming) {
+    int total,
+    int missing,
+    int upcoming,
+  ) {
     return '$total auf Audible · $missing fehlen · $upcoming kommend';
   }
 
@@ -5612,7 +5624,10 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String upcomingNotifCheckingSeries(
-      String seriesName, int current, int total) {
+    String seriesName,
+    int current,
+    int total,
+  ) {
     return 'Prüfe $seriesName… ($current/$total)';
   }
 
@@ -6551,4 +6566,148 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get libRemoveFoldersBody =>
       'Removing a folder deletes its items from the library. This can\'t be undone.';
+
+  @override
+  String get readEbook => 'Read';
+
+  @override
+  String get ebookDownload => 'Download';
+
+  @override
+  String get ebookDownloaded => 'Downloaded';
+
+  @override
+  String get ebookSavedOffline => 'Saved for offline reading';
+
+  @override
+  String get ebookRemovedOffline => 'Removed from offline';
+
+  @override
+  String get ebookOfflineFailed => 'Couldn\'t download the ebook';
+
+  @override
+  String get ebookSaveToDevice => 'Save to device';
+
+  @override
+  String get ebookSaveToDeviceTitle => 'Save to device?';
+
+  @override
+  String get ebookSaveToDeviceBody =>
+      'This saves a copy of the ebook file somewhere on your device (you pick where). It won\'t make the book available offline in the reader - use Download for that.';
+
+  @override
+  String get readerFormatUnsupported =>
+      'This ebook format can\'t be opened in the reader yet';
+
+  @override
+  String get moreActions => 'More';
+
+  @override
+  String get readerChapters => 'Chapters';
+
+  @override
+  String get readerSettings => 'Reader Settings';
+
+  @override
+  String get readerFontSize => 'Font Size';
+
+  @override
+  String get readerLineSpacing => 'Line Spacing';
+
+  @override
+  String get readerSideMargins => 'Side margins';
+
+  @override
+  String get readerTopBottom => 'Top & bottom';
+
+  @override
+  String get readerPageLayout => 'Page layout';
+
+  @override
+  String get readerLayoutAuto => 'Auto';
+
+  @override
+  String get readerLayoutSingle => 'Single';
+
+  @override
+  String get readerLayoutTwoPage => 'Two-page';
+
+  @override
+  String get readerTheme => 'Theme';
+
+  @override
+  String get readerFont => 'Font';
+
+  @override
+  String get readerMoreFonts => 'Download more fonts';
+
+  @override
+  String get readerFontRemove => 'Remove download';
+
+  @override
+  String readerFontDownloadFailed(String font) {
+    return 'Couldn\'t download $font';
+  }
+
+  @override
+  String get readerAnnotations => 'Annotations';
+
+  @override
+  String readerHighlights(int count) {
+    return 'Highlights ($count)';
+  }
+
+  @override
+  String readerBookmarks(int count) {
+    return 'Bookmarks ($count)';
+  }
+
+  @override
+  String get readerNoHighlights => 'No highlights yet';
+
+  @override
+  String get readerNoBookmarks => 'No bookmarks yet';
+
+  @override
+  String get readerBookmarkDefault => 'Bookmark';
+
+  @override
+  String get readerNoteTitle => 'Note';
+
+  @override
+  String get readerNoteHint => 'Add a note...';
+
+  @override
+  String get readerCopied => 'Copied to clipboard';
+
+  @override
+  String get readerTooltipCopy => 'Copy';
+
+  @override
+  String get readerTooltipSearch => 'Search';
+
+  @override
+  String get readerTooltipDefine => 'Define';
+
+  @override
+  String get readerSearchHint => 'Search this book…';
+
+  @override
+  String readerSearchMatches(int count, String query) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count matches for \"$query\"',
+      one: '$count match for \"$query\"',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get readerSearchEmpty => 'Type a word or phrase and tap search.';
+
+  @override
+  String readerSearchNoResults(String query) {
+    return 'No matches for \"$query\".';
+  }
 }

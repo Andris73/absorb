@@ -1,10 +1,10 @@
 name: absorb
 description: An Audiobookshelf Client
 publish_to: 'none'
-version: 1.9.1+188
+version: 1.9.1+196
 
 environment:
-  sdk: '>=3.1.0 <4.0.0'
+  sdk: '>=3.10.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -93,6 +93,16 @@ dependencies:
   flutter_markdown_plus: ^1.0.7
   palette_generator: ^0.3.3+7
 
+  # eBook reader
+  flutter_epub_viewer: ^1.2.6
+
+  # PDF reader (non-EPUB ebooks route here)
+  pdfrx: ^2.4.4
+
+  # foliate-js host for MOBI/AZW3/FB2/CBZ (already transitive via the epub
+  # viewer; pinned direct so the bridge API is a declared dependency)
+  flutter_inappwebview: ^6.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -108,6 +118,9 @@ flutter:
   assets:
     - assets/icon/
     - assets/audio/
+    - assets/foliate/
+    - assets/foliate/foliate-js/
+    - assets/foliate/foliate-js/vendor/
   fonts:
     - family: NotoSansJP
       fonts:

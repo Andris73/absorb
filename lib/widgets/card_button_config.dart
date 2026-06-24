@@ -41,6 +41,8 @@ String localizedCardButtonLabel(AppLocalizations l, CardButtonDef def) {
       return l.notes;
     case 'download':
       return l.download;
+    case 'ebook':
+      return 'Read';
   }
   return def.label;
 }
@@ -70,6 +72,7 @@ const _allCardButtons = [
   CardButtonDef('car', 'Car Mode', Icons.directions_car_rounded),
   CardButtonDef('notes', 'Notes', Icons.note_rounded),
   CardButtonDef('download', 'Download', Icons.download_outlined),
+  CardButtonDef('ebook', 'Read', Icons.menu_book_rounded),
 ];
 
 /// Card buttons filtered for the current platform.

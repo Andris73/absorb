@@ -73,7 +73,7 @@ import 'app_localizations_zh.dart';
 /// property.
 abstract class AppLocalizations {
   AppLocalizations(String locale)
-      : localeName = intl.Intl.canonicalizedLocale(locale.toString());
+    : localeName = intl.Intl.canonicalizedLocale(locale.toString());
 
   final String localeName;
 
@@ -96,11 +96,11 @@ abstract class AppLocalizations {
   /// of delegates is preferred or required.
   static const List<LocalizationsDelegate<dynamic>> localizationsDelegates =
       <LocalizationsDelegate<dynamic>>[
-    delegate,
-    GlobalMaterialLocalizations.delegate,
-    GlobalCupertinoLocalizations.delegate,
-    GlobalWidgetsLocalizations.delegate,
-  ];
+        delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+      ];
 
   /// A list of this localizations delegate's supported locales.
   static const List<Locale> supportedLocales = <Locale>[
@@ -115,7 +115,7 @@ abstract class AppLocalizations {
     Locale('pt'),
     Locale('ro'),
     Locale('ru'),
-    Locale('zh')
+    Locale('zh'),
   ];
 
   /// No description provided for @appTitle.
@@ -5407,7 +5407,7 @@ abstract class AppLocalizations {
   /// No description provided for @saved.
   ///
   /// In en, this message translates to:
-  /// **'Saved'**
+  /// **'Downloaded'**
   String get saved;
 
   /// No description provided for @selectLibrary.
@@ -5751,7 +5751,10 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{start} – {end} · {duration}'**
   String autoSleepTimerEnabledSubtitle(
-      String start, String end, String duration);
+    String start,
+    String end,
+    String duration,
+  );
 
   /// No description provided for @endOfChapterShort.
   ///
@@ -8134,7 +8137,13 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{month} {day}, {year} at {hour}:{minute} {ampm}'**
   String statsScreenDateAtTime(
-      String month, int day, int year, int hour, String minute, String ampm);
+    String month,
+    int day,
+    int year,
+    int hour,
+    String minute,
+    String ampm,
+  );
 
   /// No description provided for @statsScreenMonthJan.
   ///
@@ -11381,6 +11390,258 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Removing a folder deletes its items from the library. This can\'t be undone.'**
   String get libRemoveFoldersBody;
+
+  /// No description provided for @readEbook.
+  ///
+  /// In en, this message translates to:
+  /// **'Read'**
+  String get readEbook;
+
+  /// No description provided for @ebookDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get ebookDownload;
+
+  /// No description provided for @ebookDownloaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded'**
+  String get ebookDownloaded;
+
+  /// No description provided for @ebookSavedOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved for offline reading'**
+  String get ebookSavedOffline;
+
+  /// No description provided for @ebookRemovedOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed from offline'**
+  String get ebookRemovedOffline;
+
+  /// No description provided for @ebookOfflineFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t download the ebook'**
+  String get ebookOfflineFailed;
+
+  /// No description provided for @ebookSaveToDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Save to device'**
+  String get ebookSaveToDevice;
+
+  /// No description provided for @ebookSaveToDeviceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Save to device?'**
+  String get ebookSaveToDeviceTitle;
+
+  /// No description provided for @ebookSaveToDeviceBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This saves a copy of the ebook file somewhere on your device (you pick where). It won\'t make the book available offline in the reader - use Download for that.'**
+  String get ebookSaveToDeviceBody;
+
+  /// No description provided for @readerFormatUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'This ebook format can\'t be opened in the reader yet'**
+  String get readerFormatUnsupported;
+
+  /// No description provided for @moreActions.
+  ///
+  /// In en, this message translates to:
+  /// **'More'**
+  String get moreActions;
+
+  /// No description provided for @readerChapters.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapters'**
+  String get readerChapters;
+
+  /// No description provided for @readerSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Reader Settings'**
+  String get readerSettings;
+
+  /// No description provided for @readerFontSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Font Size'**
+  String get readerFontSize;
+
+  /// No description provided for @readerLineSpacing.
+  ///
+  /// In en, this message translates to:
+  /// **'Line Spacing'**
+  String get readerLineSpacing;
+
+  /// No description provided for @readerSideMargins.
+  ///
+  /// In en, this message translates to:
+  /// **'Side margins'**
+  String get readerSideMargins;
+
+  /// No description provided for @readerTopBottom.
+  ///
+  /// In en, this message translates to:
+  /// **'Top & bottom'**
+  String get readerTopBottom;
+
+  /// No description provided for @readerPageLayout.
+  ///
+  /// In en, this message translates to:
+  /// **'Page layout'**
+  String get readerPageLayout;
+
+  /// No description provided for @readerLayoutAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto'**
+  String get readerLayoutAuto;
+
+  /// No description provided for @readerLayoutSingle.
+  ///
+  /// In en, this message translates to:
+  /// **'Single'**
+  String get readerLayoutSingle;
+
+  /// No description provided for @readerLayoutTwoPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Two-page'**
+  String get readerLayoutTwoPage;
+
+  /// No description provided for @readerTheme.
+  ///
+  /// In en, this message translates to:
+  /// **'Theme'**
+  String get readerTheme;
+
+  /// No description provided for @readerFont.
+  ///
+  /// In en, this message translates to:
+  /// **'Font'**
+  String get readerFont;
+
+  /// No description provided for @readerMoreFonts.
+  ///
+  /// In en, this message translates to:
+  /// **'Download more fonts'**
+  String get readerMoreFonts;
+
+  /// No description provided for @readerFontRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove download'**
+  String get readerFontRemove;
+
+  /// No description provided for @readerFontDownloadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t download {font}'**
+  String readerFontDownloadFailed(String font);
+
+  /// No description provided for @readerAnnotations.
+  ///
+  /// In en, this message translates to:
+  /// **'Annotations'**
+  String get readerAnnotations;
+
+  /// No description provided for @readerHighlights.
+  ///
+  /// In en, this message translates to:
+  /// **'Highlights ({count})'**
+  String readerHighlights(int count);
+
+  /// No description provided for @readerBookmarks.
+  ///
+  /// In en, this message translates to:
+  /// **'Bookmarks ({count})'**
+  String readerBookmarks(int count);
+
+  /// No description provided for @readerNoHighlights.
+  ///
+  /// In en, this message translates to:
+  /// **'No highlights yet'**
+  String get readerNoHighlights;
+
+  /// No description provided for @readerNoBookmarks.
+  ///
+  /// In en, this message translates to:
+  /// **'No bookmarks yet'**
+  String get readerNoBookmarks;
+
+  /// No description provided for @readerBookmarkDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Bookmark'**
+  String get readerBookmarkDefault;
+
+  /// No description provided for @readerNoteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Note'**
+  String get readerNoteTitle;
+
+  /// No description provided for @readerNoteHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a note...'**
+  String get readerNoteHint;
+
+  /// No description provided for @readerCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied to clipboard'**
+  String get readerCopied;
+
+  /// No description provided for @readerTooltipCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get readerTooltipCopy;
+
+  /// No description provided for @readerTooltipSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get readerTooltipSearch;
+
+  /// No description provided for @readerTooltipDefine.
+  ///
+  /// In en, this message translates to:
+  /// **'Define'**
+  String get readerTooltipDefine;
+
+  /// No description provided for @readerSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search this book…'**
+  String get readerSearchHint;
+
+  /// No description provided for @readerSearchMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{{count} match for \"{query}\"} other{{count} matches for \"{query}\"}}'**
+  String readerSearchMatches(int count, String query);
+
+  /// No description provided for @readerSearchEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Type a word or phrase and tap search.'**
+  String get readerSearchEmpty;
+
+  /// No description provided for @readerSearchNoResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No matches for \"{query}\".'**
+  String readerSearchNoResults(String query);
 }
 
 class _AppLocalizationsDelegate
@@ -11394,19 +11655,19 @@ class _AppLocalizationsDelegate
 
   @override
   bool isSupported(Locale locale) => <String>[
-        'de',
-        'el',
-        'en',
-        'es',
-        'fr',
-        'it',
-        'ja',
-        'no',
-        'pt',
-        'ro',
-        'ru',
-        'zh'
-      ].contains(locale.languageCode);
+    'de',
+    'el',
+    'en',
+    'es',
+    'fr',
+    'it',
+    'ja',
+    'no',
+    'pt',
+    'ro',
+    'ru',
+    'zh',
+  ].contains(locale.languageCode);
 
   @override
   bool shouldReload(_AppLocalizationsDelegate old) => false;
@@ -11442,8 +11703,9 @@ AppLocalizations lookupAppLocalizations(Locale locale) {
   }
 
   throw FlutterError(
-      'AppLocalizations.delegate failed to load unsupported locale "$locale". This is likely '
-      'an issue with the localizations generation tool. Please file an issue '
-      'on GitHub with a reproducible sample app and the gen-l10n configuration '
-      'that was used.');
+    'AppLocalizations.delegate failed to load unsupported locale "$locale". This is likely '
+    'an issue with the localizations generation tool. Please file an issue '
+    'on GitHub with a reproducible sample app and the gen-l10n configuration '
+    'that was used.',
+  );
 }

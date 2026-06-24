@@ -11,6 +11,7 @@ import '../screens/app_shell.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import 'absorbing_shared.dart';
+import 'ebook_router.dart';
 import 'card_edge_progress_bar.dart';
 import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
@@ -42,6 +43,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   ImageProvider? _coverProvider; // cached for re-deriving on theme change
   bool _isStarting = false;
   List<dynamic>? _fetchedChapters;
+  Map<String, dynamic>? _fetchedEbookFile;
   StreamSubscription<Duration>? _chapterTrackSub;
   int _lastChapterIdx = -1;
   ui.Image? _blurredCover; // Precached blurred background
@@ -72,6 +74,16 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   }
   String get _author => _metadata['authorName'] as String? ?? '';
   double get _duration => (_media['duration'] as num?)?.toDouble() ?? 0;
+  Map<String, dynamic>? get _ebookFile =>
+      (_media['ebookFile'] as Map<String, dynamic>?) ?? _fetchedEbookFile;
+  String? get _ebookExt {
+    final ebookFile = _ebookFile;
+    if (ebookFile == null) return null;
+    final fn = (ebookFile['metadata'] as Map<String, dynamic>?)?['filename'] as String?
+        ?? ebookFile['name'] as String?;
+    if (fn == null || !fn.contains('.')) return null;
+    return fn.substring(fn.lastIndexOf('.') + 1).toLowerCase();
+  }
   List<dynamic> get _chapters {
     // Prefer fetched chapters (from full item or episode), fall back to inline data
     if (_fetchedChapters != null && _fetchedChapters!.isNotEmpty) return _fetchedChapters!;
@@ -201,9 +213,10 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   }
 
   Future<void> _fetchChaptersIfNeeded() async {
-    // If chapters are already available, skip
-    if (_chapters.isNotEmpty) return;
-    // Fetch full item to get chapters
+    // Skip when the inline item already has both chapters and ebookFile
+    final inlineEbook = _media['ebookFile'] as Map<String, dynamic>?;
+    if (_chapters.isNotEmpty && inlineEbook != null) return;
+    // Fetch full item to fill in whatever's missing
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) return;
@@ -211,6 +224,11 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       final fullItem = await api.getLibraryItem(_itemId);
       if (fullItem != null && mounted) {
         final media = fullItem['media'] as Map<String, dynamic>? ?? {};
+        // Cache ebookFile if the inline item didn't have it
+        if (inlineEbook == null) {
+          final ef = media['ebookFile'] as Map<String, dynamic>?;
+          if (ef != null) setState(() => _fetchedEbookFile = ef);
+        }
         // Books: chapters at media level
         var chapters = media['chapters'] as List<dynamic>? ?? [];
         // Podcasts: chapters on the specific episode
@@ -315,6 +333,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       _blurredCover?.dispose();
       _blurredCover = null;
       _fetchedChapters = null;
+      _fetchedEbookFile = null;
       _lastChapterIdx = -1;
       _fetchChaptersIfNeeded();
     }
@@ -423,14 +442,12 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   @override
   Widget build(BuildContext context) {
     super.build(context); // required for AutomaticKeepAliveClientMixin
-    final tt = Theme.of(context).textTheme;
     final cs = _coverScheme ?? Theme.of(context).colorScheme;
     final accent = cs.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final l = AppLocalizations.of(context)!;
 
     final lib = context.watch<LibraryProvider>();
-    final mediaHeaders = lib.mediaHeaders;
     // For podcast episodes, look up progress by compound key (itemId-episodeId)
     final progress = (_episodeId != null)
         ? lib.getEpisodeProgress(_itemId, _episodeId!)
@@ -475,6 +492,8 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     // In gradient/off mode the cover image isn't painted, so derive its scheme separately.
     if (_cardBackground != 'blurred') _ensureCoverScheme();
 
+    final tt = Theme.of(context).textTheme;
+    final mediaHeaders = lib.mediaHeaders;
     // A chapterless book gets the same single-bar look as a chapterless
     // podcast: no top book bar, just the scrubber bar carrying the title.
     final showBookBar = _chapters.isNotEmpty;
@@ -677,9 +696,10 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                       final isCastingThis = castService.isCasting && castService.castingItemId == _itemId;
                       final coverPlaying = isCastingThis ? castService.isPlaying : (_isActive && widget.player.isPlaying);
                       final coverLoading = _isStarting || (_isActive && widget.player.isLoadingOrBuffering && !widget.player.isPlaying);
-                      return Center(child: Column(
-                        mainAxisSize: MainAxisSize.min,
+                      return Column(
+                        mainAxisSize: MainAxisSize.max,
                         children: [
+                          const Spacer(flex: 2),
                           Padding(
                             padding: const EdgeInsets.only(bottom: 4),
                             child: () {
@@ -820,7 +840,8 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                         ),
                       ),
                       ),
-                      ]));
+                      const Spacer(flex: 2),
+                      ]);
                     },
                   ),
                   ),
@@ -962,6 +983,12 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     );
   }
 
+  void _openEbookReader() {
+    final ebookFile = _ebookFile;
+    if (ebookFile == null) return; // CardButtons already toasts when no ebook
+    openEbookReader(context, itemId: _itemId, title: _title, ebookFile: ebookFile);
+  }
+
   int _currentChapterIndex() {
     final cast = ChromecastService();
     final chapters = _isCastingThis ? cast.castingChapters : (_isActive ? widget.player.chapters : _chapters);
@@ -1091,6 +1118,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       PlayerSettings.setCardButtonOrder(newOrder);
       PlayerSettings.setCardButtonVisibleCount(newCount);
     },
+    hasEbook: _ebookFile != null,
+    isEbookPdf: _ebookExt == 'pdf',
+    onEbookTap: _openEbookReader,
   );
 
   int get _visibleButtonCount => _buttonVisibleCount;

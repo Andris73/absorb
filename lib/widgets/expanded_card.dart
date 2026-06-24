@@ -14,6 +14,7 @@ import 'absorbing_shared.dart';
 import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
 import 'card_buttons.dart';
+import 'ebook_router.dart';
 import '../main.dart' show colorSourceNotifier, useColorEverywhereNotifier, manualSeedNotifier, manualColorScheme;
 
 // ─── Custom route: slide-up + fade ────────────────────────────
@@ -1117,7 +1118,26 @@ class _ExpandedCardState extends State<ExpandedCard> {
       PlayerSettings.setCardButtonOrder(newOrder);
       PlayerSettings.setCardButtonVisibleCount(newCount);
     },
+    hasEbook: _ebookFile != null,
+    isEbookPdf: _ebookExt == 'pdf',
+    onEbookTap: _openReader,
   );
+
+  Map<String, dynamic>? get _ebookFile => _media['ebookFile'] as Map<String, dynamic>?;
+  String? get _ebookExt {
+    final ef = _ebookFile;
+    if (ef == null) return null;
+    final fn = (ef['metadata'] as Map<String, dynamic>?)?['filename'] as String?
+        ?? ef['name'] as String?;
+    if (fn == null || !fn.contains('.')) return null;
+    return fn.substring(fn.lastIndexOf('.') + 1).toLowerCase();
+  }
+
+  void _openReader() {
+    final ef = _ebookFile;
+    if (ef == null) return;
+    openEbookReader(context, itemId: _itemId, title: _title, ebookFile: ef);
+  }
 
   int get _visibleButtonCount => _buttonVisibleCount;
 

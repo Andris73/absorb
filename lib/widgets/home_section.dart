@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../l10n/app_localizations.dart';
+import 'cover_badges.dart';
 import '../providers/library_provider.dart';
 import '../services/download_service.dart';
 import 'absorbing_shared.dart';
@@ -203,10 +203,23 @@ class _SnapScrollListState extends State<_SnapScrollList> {
 
     return NotificationListener<ScrollEndNotification>(
       onNotification: (notification) {
+        final maxExtent = _controller.position.maxScrollExtent;
         final offset = _controller.offset;
-        final targetIndex = (offset / itemExtent).round();
-        final targetOffset =
-            (targetIndex * itemExtent).clamp(0.0, _controller.position.maxScrollExtent);
+        double targetOffset;
+        if (maxExtent < itemExtent) {
+          // Short list that barely overflows: snapping to an item boundary would
+          // force the far end and cut off the first card. Rest at whichever end
+          // is closer so the first or last card stays fully visible.
+          targetOffset = offset < maxExtent / 2 ? 0.0 : maxExtent;
+        } else {
+          final targetIndex = (offset / itemExtent).round();
+          targetOffset = (targetIndex * itemExtent).toDouble();
+          // The last card can't left-align (no content after it), so snapping in
+          // the final stretch leaves it cut off the right edge. Rest at the true
+          // end instead so the last card stays fully visible.
+          if (targetOffset > maxExtent - itemExtent) targetOffset = maxExtent;
+          targetOffset = targetOffset.clamp(0.0, maxExtent);
+        }
         if ((offset - targetOffset).abs() > 1) {
           Future.microtask(() {
             if (_controller.hasClients) {
@@ -245,7 +258,6 @@ class _EpisodeCard extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final lib = context.watch<LibraryProvider>();
-    final l = AppLocalizations.of(context)!;
 
     final itemId = item['id'] as String? ?? '';
     final media = item['media'] as Map<String, dynamic>? ?? {};
@@ -335,47 +347,10 @@ class _EpisodeCard extends StatelessWidget {
                   if (isFinished || isDownloaded)
                     Positioned(
                       left: 0, right: 0, bottom: 0,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                        decoration: BoxDecoration(
-                          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
-                          gradient: LinearGradient(
-                            begin: Alignment.bottomCenter,
-                            end: Alignment.topCenter,
-                            colors: [
-                              Colors.black.withValues(alpha: 0.85),
-                              Colors.black.withValues(alpha: 0.0),
-                            ],
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (isFinished) ...[
-                              Icon(Icons.check_circle_rounded,
-                                  size: 10, color: Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400] : Colors.green.shade700),
-                              const SizedBox(width: 3),
-                              Text(l.homeSectionDoneBadge,
-                                  style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w600,
-                                      color: Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent[400] : Colors.green.shade700)),
-                            ],
-                            if (isFinished && isDownloaded)
-                              const SizedBox(width: 6),
-                            if (isDownloaded) ...[
-                              Icon(Icons.download_done_rounded,
-                                  size: 10, color: cs.primary),
-                              const SizedBox(width: 3),
-                              Text(l.saved,
-                                  style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w600,
-                                      color: cs.primary)),
-                            ],
-                          ],
-                        ),
+                      child: CoverStateBadges(
+                        isDownloaded: isDownloaded,
+                        isFinished: isFinished,
+                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
                       ),
                     ),
                   // Subscribed bell

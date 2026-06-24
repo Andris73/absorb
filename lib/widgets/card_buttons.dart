@@ -1362,6 +1362,9 @@ class CardActionDelegate {
   final VoidCallback removeFromAbsorbing;
   final VoidCallback? onRemoveExtra;
   final void Function(List<String>, int) onReorder;
+  final bool hasEbook;
+  final bool isEbookPdf;
+  final VoidCallback? onEbookTap;
 
   CardActionDelegate({
     required this.context,
@@ -1389,6 +1392,9 @@ class CardActionDelegate {
     required this.removeFromAbsorbing,
     this.onRemoveExtra,
     required this.onReorder,
+    this.hasEbook = false,
+    this.isEbookPdf = false,
+    this.onEbookTap,
   });
 
   Map<String, dynamic> get _media => item['media'] as Map<String, dynamic>? ?? {};
@@ -1618,6 +1624,19 @@ class CardActionDelegate {
             accent: accent, large: large, compact: compact, iconsOnly: iconsOnly,
           ),
         );
+      case 'ebook':
+        return CardWideButton(
+          icon: isEbookPdf ? Icons.picture_as_pdf_rounded : Icons.menu_book_rounded,
+          label: 'Read',
+          accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
+          onTap: () {
+            if (hasEbook) {
+              onEbookTap?.call();
+            } else {
+              showOverlayToast(context, 'No ebook file for this book', icon: Icons.menu_book_outlined);
+            }
+          },
+        );
       default:
         return const SizedBox.shrink();
     }
@@ -1781,6 +1800,19 @@ class CardActionDelegate {
                 }
               },
             );
+          },
+        );
+      case 'ebook':
+        return MoreMenuItem(
+          icon: isEbookPdf ? Icons.picture_as_pdf_rounded : Icons.menu_book_rounded,
+          label: 'Read', accent: accent,
+          onTap: () {
+            Navigator.pop(ctx);
+            if (hasEbook) {
+              onEbookTap?.call();
+            } else {
+              showOverlayToast(context, 'No ebook file for this book', icon: Icons.menu_book_outlined);
+            }
           },
         );
       default:

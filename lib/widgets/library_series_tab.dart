@@ -107,6 +107,18 @@ class LibrarySeriesTab extends StatelessWidget {
       );
     }
 
+    // Tablets: the first page may not fill the screen, so nothing scrolls and
+    // the bottom-trigger never fires. After layout, if the grid isn't scrollable
+    // yet and there's more to load, pull the next page until the viewport fills.
+    if (hasMoreSeries && !isLoadingSeriesPage && seriesItems.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final c = scrollController;
+        if (c != null && c.hasClients && c.position.maxScrollExtent <= 0) {
+          onLoadMore();
+        }
+      });
+    }
+
     return NotificationListener<ScrollNotification>(
       onNotification: (n) {
         if (n is ScrollUpdateNotification &&

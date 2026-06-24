@@ -1058,6 +1058,38 @@ class ApiService {
     }
   }
 
+  /// Update ebook reading progress on the server.
+  /// PATCH /api/me/progress/:id
+  Future<void> updateEbookProgress(
+    String itemId, {
+    required String ebookLocation,
+    required double ebookProgress,
+  }) async {
+    try {
+      final body = jsonEncode({
+        'ebookLocation': ebookLocation,
+        'ebookProgress': ebookProgress,
+        // Only ever MARK finished from the ebook; never send isFinished:false.
+        // The server shares one isFinished flag for audio+ebook, and on a
+        // true->false transition it also resets currentTime to 0 - so sending
+        // false here would un-finish the book and wipe the audiobook's position.
+        if (ebookProgress >= 1.0) 'isFinished': true,
+      });
+      final progressPath = itemId.length > 36
+          ? '${itemId.substring(0, 36)}/${itemId.substring(37)}'
+          : itemId;
+      debugPrint('[API] updateEbookProgress PATCH /api/me/progress/$progressPath');
+      final resp = await http.patch(
+        Uri.parse('$_cleanBaseUrl/api/me/progress/$progressPath'),
+        headers: _headers,
+        body: body,
+      ).timeout(const Duration(seconds: 10));
+      debugPrint('[API] updateEbookProgress response: ${resp.statusCode} ${resp.body}');
+    } catch (e) {
+      debugPrint('[API] updateEbookProgress error: $e');
+    }
+  }
+
   /// Mark a book as finished on the server.
   Future<void> markFinished(String itemId, double duration) async {
     await updateProgress(

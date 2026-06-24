@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'overlay_toast.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../l10n/app_localizations.dart';
+import 'cover_badges.dart';
 import '../services/wording.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
@@ -614,9 +615,6 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
   }
 
   Widget _buildItemList(ColorScheme cs, TextTheme tt, LibraryProvider lib, List<dynamic> items, AppLocalizations l) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final doneColor = isDark ? Colors.greenAccent[400]! : Colors.green.shade700;
-
     return ListView.builder(
       controller: widget.scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4).copyWith(bottom: 40),
@@ -720,33 +718,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                         if (isFinished || isDownloaded)
                           Positioned(
                             left: 0, right: 0, bottom: 0,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.bottomCenter,
-                                  end: Alignment.topCenter,
-                                  colors: [
-                                    Colors.black.withValues(alpha: 0.85),
-                                    Colors.black.withValues(alpha: 0.0),
-                                  ],
-                                ),
-                              ),
-                              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                                if (isFinished)
-                                  Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
-                                    Icon(Icons.check_circle_rounded, size: 10, color: doneColor),
-                                    const SizedBox(width: 3),
-                                    Text(l.playlistDetailDone, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: doneColor)),
-                                  ]),
-                                if (isDownloaded)
-                                  Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
-                                    Icon(Icons.download_done_rounded, size: 10, color: cs.primary),
-                                    const SizedBox(width: 3),
-                                    Text(l.saved, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: cs.primary)),
-                                  ]),
-                              ]),
-                            ),
+                            child: CoverStateBadges(isDownloaded: isDownloaded, isFinished: isFinished),
                           ),
                       ]),
                     ),
@@ -779,9 +751,6 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
   }
 
   Widget _buildGrid(ColorScheme cs, TextTheme tt, LibraryProvider lib, List<dynamic> items, AppLocalizations l) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final doneColor = isDark ? Colors.greenAccent[400]! : Colors.green.shade700;
-
     return GridView.builder(
       controller: widget.scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4)
@@ -864,33 +833,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                     if (isFinished || isDownloaded)
                       Positioned(
                         left: 0, right: 0, bottom: 0,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.bottomCenter,
-                              end: Alignment.topCenter,
-                              colors: [
-                                Colors.black.withValues(alpha: 0.85),
-                                Colors.black.withValues(alpha: 0.0),
-                              ],
-                            ),
-                          ),
-                          child: Column(mainAxisSize: MainAxisSize.min, children: [
-                            if (isFinished)
-                              Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
-                                Icon(Icons.check_circle_rounded, size: 10, color: doneColor),
-                                const SizedBox(width: 3),
-                                Text(l.playlistDetailDone, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: doneColor)),
-                              ]),
-                            if (isDownloaded)
-                              Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
-                                Icon(Icons.download_done_rounded, size: 10, color: cs.primary),
-                                const SizedBox(width: 3),
-                                Text(l.saved, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: cs.primary)),
-                              ]),
-                          ]),
-                        ),
+                        child: CoverStateBadges(isDownloaded: isDownloaded, isFinished: isFinished),
                       ),
                   ]),
                 ),
