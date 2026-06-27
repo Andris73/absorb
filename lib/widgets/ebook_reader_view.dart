@@ -749,8 +749,30 @@ class EbookReaderViewState extends State<EbookReaderView> {
     _epubController?.webViewController?.evaluateJavascript(
       source: '''
         (function() {
-          rendition.display('$escaped').then(function() {
+          rendition.display('$escaped').then(function(section) {
             rendition.resize();
+            // RTL books land on the wrong page after a chapter jump: epub.js resets
+            // the scroll to 0 and only repositions right-to-left content when the
+            // target carries an in-chapter anchor, which a bare chapter href does
+            // not. Re-run epub.js's own RTL placement (scroll the target section's
+            // view to offset+width, which resolves to its first/rightmost page)
+            // against the section we actually navigated to. find(section) is used
+            // rather than the last view because the continuous manager appends the
+            // next chapter during display. Gated to RTL so left-to-right books are
+            // untouched; epub.js's post-display location report picks up the
+            // corrected scroll, so we don't fire our own.
+            try {
+              var mgr = rendition.manager;
+              if (section && mgr && rendition.settings
+                  && rendition.settings.direction === 'rtl'
+                  && mgr.layout && mgr.layout.name !== 'pre-paginated') {
+                var view = mgr.views.find(section);
+                if (view) {
+                  var off = view.offset();
+                  mgr.scrollTo(off.left + view.width(), off.top, true);
+                }
+              }
+            } catch (e) {}
           });
         })();
       ''',
