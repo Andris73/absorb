@@ -461,6 +461,10 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
                           final lib = context.read<LibraryProvider>();
                           await lib.subscribePodcast(_itemId);
                           setState(() => _subscribed = true);
+                          // Surface where new episodes will land right after
+                          // subscribing; the position pill lets them change it
+                          // later.
+                          if (mounted) _showNewEpisodePositionPicker();
                         }
                       }
                     }),
