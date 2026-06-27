@@ -119,7 +119,12 @@ class BookResultTile extends StatelessWidget {
                     if (isFinished || isDownloaded)
                       Positioned(
                         left: 0, right: 0, bottom: 0,
-                        child: CoverStateBadges(isDownloaded: isDownloaded, isFinished: isFinished),
+                        child: CoverStateBadges(
+                          isDownloaded: isDownloaded,
+                          isFinished: isFinished,
+                          iconOnly: true,
+                          iconSize: 14,
+                        ),
                       ),
                   ],
                 ),

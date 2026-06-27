@@ -11,6 +11,10 @@ class CoverStateBadges extends StatelessWidget {
   final bool isFinished;
   final double iconSize;
 
+  /// Shows just the icons (no text labels), for covers too small to fit the
+  /// full banner like the search result tiles.
+  final bool iconOnly;
+
   /// Rounds the banner's bottom corners to match covers that aren't clipped by
   /// a parent ClipRRect (e.g. some cards).
   final BorderRadius? borderRadius;
@@ -20,6 +24,7 @@ class CoverStateBadges extends StatelessWidget {
     required this.isDownloaded,
     required this.isFinished,
     this.iconSize = 13,
+    this.iconOnly = false,
     this.borderRadius,
   });
 
@@ -28,6 +33,7 @@ class CoverStateBadges extends StatelessWidget {
     if (!isDownloaded && !isFinished) return const SizedBox.shrink();
     final l = AppLocalizations.of(context)!;
     final green = Colors.greenAccent.shade400;
+    if (iconOnly) return _iconOnly(green);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
       decoration: BoxDecoration(
@@ -50,6 +56,32 @@ class CoverStateBadges extends StatelessWidget {
           if (isFinished) _row(Icons.check_circle_rounded, l.finished, green),
           if (isFinished && isDownloaded) const SizedBox(height: 2),
           if (isDownloaded) _row(Icons.download_rounded, l.saved, Colors.white),
+        ],
+      ),
+    );
+  }
+
+  Widget _iconOnly(Color green) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+      decoration: BoxDecoration(
+        borderRadius: borderRadius,
+        gradient: LinearGradient(
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+          colors: [
+            Colors.black.withValues(alpha: 0.9),
+            Colors.black.withValues(alpha: 0.0),
+          ],
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isFinished) Icon(Icons.check_circle_rounded, size: iconSize, color: green),
+          if (isFinished && isDownloaded) const SizedBox(width: 3),
+          if (isDownloaded) Icon(Icons.download_rounded, size: iconSize, color: Colors.white),
         ],
       ),
     );
