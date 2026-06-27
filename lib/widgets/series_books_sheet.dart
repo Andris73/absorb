@@ -202,6 +202,11 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
 
   /// Extract the raw sequence string from the book data.
   String? _getRawSequence(Map<String, dynamic> book) {
+    // Books grouped under a collapsed sub-series carry that sub-series'
+    // sequence so the number and ordering reflect the sub-series, not the
+    // parent (e.g. Stormlight #1, not its position within Cosmere).
+    final sub = book['_subSequence'];
+    if (sub != null && sub.toString().trim().isNotEmpty) return sub.toString();
     final seq = book['sequence'];
     if (seq != null) return seq.toString();
     final media = book['media'] as Map<String, dynamic>? ?? {};
@@ -258,6 +263,45 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     }
     // Range or non-numeric sequence (e.g. "1-2") - show as-is
     return raw.trim();
+  }
+
+  /// Sortable number from a book's stored sub-series sequence; blanks sort last.
+  double _subSeqNum(Map<String, dynamic> book) {
+    final raw = book['_subSequence']?.toString().trim() ?? '';
+    final m = _leadingNumber.firstMatch(raw);
+    if (m == null) return double.maxFinite;
+    return double.tryParse(m.group(0)!) ?? double.maxFinite;
+  }
+
+  void _sortSubSeriesBooks(List<Map<String, dynamic>> books) {
+    books.sort((a, b) => _subSeqNum(a).compareTo(_subSeqNum(b)));
+  }
+
+  /// The sequence of [book] within a specific sub-series, found by id, falling
+  /// back to the joined `seriesName` string for minified list items.
+  String? _subSeqFor(Map<String, dynamic> book, String subId, String subName) {
+    final media = book['media'] as Map<String, dynamic>? ?? {};
+    final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+    final seriesRaw = metadata['series'];
+    final list = seriesRaw is List
+        ? seriesRaw.whereType<Map<String, dynamic>>()
+        : seriesRaw is Map<String, dynamic> ? [seriesRaw] : const <Map<String, dynamic>>[];
+    for (final s in list) {
+      if ((s['id'] as String? ?? '') == subId && s['sequence'] != null) {
+        return s['sequence'].toString();
+      }
+    }
+    final joined = metadata['seriesName'] as String? ?? '';
+    if (joined.isNotEmpty && subName.isNotEmpty) {
+      final target = subName.toLowerCase();
+      for (final entry in joined.split(',').map((e) => e.trim())) {
+        final m = RegExp(r'^(.+?)\s*#\s*([\d.]+)$').firstMatch(entry);
+        if (m != null && (m.group(1) ?? '').trim().toLowerCase() == target) {
+          return m.group(2);
+        }
+      }
+    }
+    return null;
   }
 
   // Cached sub-series grouping
@@ -339,12 +383,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     subSeriesMap.removeWhere((_, v) => (v['numBooks'] as int) < 2);
     // Sort books within each sub-series by their sub-series sequence
     for (final s in subSeriesMap.values) {
-      final books = s['books'] as List<Map<String, dynamic>>;
-      books.sort((a, b) {
-        final seqA = double.tryParse(RegExp(r'^[\d.]+').firstMatch(a['_subSequence']?.toString().trim() ?? '')?.group(0) ?? '') ?? double.maxFinite;
-        final seqB = double.tryParse(RegExp(r'^[\d.]+').firstMatch(b['_subSequence']?.toString().trim() ?? '')?.group(0) ?? '') ?? double.maxFinite;
-        return seqA.compareTo(seqB);
-      });
+      _sortSubSeriesBooks(s['books'] as List<Map<String, dynamic>>);
     }
     _subSeriesList = subSeriesMap.values.toList();
     _assignedBookIds = _subSeriesList
@@ -360,26 +399,38 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     final api = context.read<AuthProvider>().apiService;
     if (api == null) return;
     final results = await api.getSeriesCollapsed(seriesId, libraryId: libraryId);
+    final byId = {for (final b in _books) (b['id'] as String? ?? ''): b};
 
     for (final raw in results) {
       if (raw is! Map<String, dynamic>) continue;
       final collapsed = raw['collapsedSeries'] as Map<String, dynamic>?;
-      if (collapsed != null) {
-        final itemIds = (collapsed['libraryItemIds'] as List<dynamic>?)?.cast<String>() ?? [];
-        final matchingBooks = _books.where((b) => itemIds.contains(b['id'] as String? ?? '')).toList();
-        // For books not yet loaded (pagination), create minimal placeholders
-        final loadedIds = matchingBooks.map((b) => b['id'] as String? ?? '').toSet();
-        for (final id in itemIds) {
-          if (!loadedIds.contains(id)) matchingBooks.add({'id': id});
+      if (collapsed == null) continue;
+      final subId = collapsed['id'] as String? ?? '';
+      final subName = collapsed['name'] as String? ?? '';
+      final itemIds = (collapsed['libraryItemIds'] as List<dynamic>?)?.cast<String>() ?? [];
+      final matchingBooks = <Map<String, dynamic>>[];
+      for (final id in itemIds) {
+        final original = byId[id];
+        if (original == null) {
+          // Not yet loaded (pagination) - minimal placeholder, sorts last
+          matchingBooks.add({'id': id});
+          continue;
         }
-        _subSeriesList.add({
-          'name': collapsed['name'] as String? ?? '',
-          'id': collapsed['id'] as String? ?? '',
-          'books': matchingBooks,
-          'numBooks': (collapsed['numBooks'] as int? ?? 0) > 0 ? collapsed['numBooks'] as int : itemIds.length,
-        });
-        _assignedBookIds.addAll(itemIds);
+        // Copy so the sub-series sequence we tag on doesn't leak into the
+        // flat list, where the same book map is shown under the parent series.
+        final copy = Map<String, dynamic>.from(original);
+        final subSeq = _subSeqFor(original, subId, subName);
+        if (subSeq != null) copy['_subSequence'] = subSeq;
+        matchingBooks.add(copy);
       }
+      _sortSubSeriesBooks(matchingBooks);
+      _subSeriesList.add({
+        'name': subName,
+        'id': subId,
+        'books': matchingBooks,
+        'numBooks': (collapsed['numBooks'] as int? ?? 0) > 0 ? collapsed['numBooks'] as int : itemIds.length,
+      });
+      _assignedBookIds.addAll(itemIds);
     }
   }
 
