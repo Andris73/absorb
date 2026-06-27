@@ -57,6 +57,7 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
   bool _isDownloadingAll = false;
   bool _autoDownloadEnabled = false;
   bool _subscribed = false;
+  String _newEpisodePosition = 'start';
   bool _newestFirst = true;
   bool _hideFinished = false;
   bool _selectMode = false;
@@ -97,6 +98,13 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
     _loadHideFinished();
     _loadEpisodes();
     _loadAutoDownloadState();
+    _loadNewEpisodePosition();
+  }
+
+  void _loadNewEpisodePosition() async {
+    if (_itemId.isEmpty) return;
+    final pos = await PlayerSettings.getPodcastNewEpisodePosition(_itemId);
+    if (mounted) setState(() => _newEpisodePosition = pos);
   }
 
   void _loadSortOrder() async {
@@ -456,6 +464,11 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
                         }
                       }
                     }),
+                if (_itemId.isNotEmpty && _subscribed)
+                  ActionPillData(
+                    icon: Icons.low_priority_rounded,
+                    label: l.episodeListNewEpisodePosition,
+                    onTap: () { Navigator.pop(ctx); _showNewEpisodePositionPicker(); }),
                 ActionPillData(
                   icon: _hideFinished ? Icons.visibility_rounded : Icons.visibility_off_rounded,
                   label: _hideFinished ? l.episodeListShowFinishedEpisodes : l.episodeListHideFinishedEpisodes,
@@ -465,6 +478,55 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
           ),
         );
       },
+    );
+  }
+
+  void _showNewEpisodePositionPicker() {
+    final l = AppLocalizations.of(context)!;
+    final cs = Theme.of(context).colorScheme;
+    final options = <String, String>{
+      'start': l.episodeListPositionTop,
+      'second': l.episodeListPositionSecond,
+      'end': l.episodeListPositionEnd,
+    };
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(l.episodeListNewEpisodePosition,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+              ),
+            ),
+            for (final entry in options.entries)
+              ListTile(
+                leading: Icon(
+                  _newEpisodePosition == entry.key
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: _newEpisodePosition == entry.key ? cs.primary : cs.onSurfaceVariant,
+                ),
+                title: Text(entry.value),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await PlayerSettings.setPodcastNewEpisodePosition(_itemId, entry.key);
+                  if (mounted) setState(() => _newEpisodePosition = entry.key);
+                },
+              ),
+          ]),
+        ),
+      ),
     );
   }
 

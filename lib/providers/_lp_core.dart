@@ -1891,11 +1891,37 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       debugPrint('[Subscription] ${newEpisodes.length} new episode(s) for $itemId');
       int queued = 0;
 
+      // Per-show choice of where the new episode lands in the absorbing queue.
+      final position = await PlayerSettings.getPodcastNewEpisodePosition(itemId);
+      // 'second' means the 2nd item the user actually sees. With merge on the
+      // queue is global, so that's index 1. With merge off the home view is
+      // filtered to this podcast's library, so insert after the first entry from
+      // the same library instead (otherwise an item from another library at
+      // index 0 would push this to visible-first). 'start'/'end' are the list
+      // extremes and read correctly in both modes, so they need no adjustment.
+      final merged = await PlayerSettings.getMergeAbsorbingLibraries();
+      final libId = item['libraryId'] as String?;
+
       for (final epMap in newEpisodes) {
         final epId = epMap['id'] as String;
         final key = '$itemId-$epId';
 
-        _absorbingIdsAdd(key, atFront: true);
+        switch (position) {
+          case 'end':
+            _absorbingIdsAdd(key, atFront: false);
+            break;
+          case 'second':
+            if (merged) {
+              _absorbingIdsAdd(key, atIndex: 1);
+            } else {
+              final firstSameLib = _absorbingBookIds.indexWhere(
+                  (k) => _absorbingItemCache[k]?['libraryId'] == libId);
+              _absorbingIdsAdd(key, atIndex: firstSameLib >= 0 ? firstSameLib + 1 : 0);
+            }
+            break;
+          default:
+            _absorbingIdsAdd(key, atFront: true);
+        }
         _absorbingItemCache[key] = {
           'id': itemId,
           'libraryId': item['libraryId'] as String?,
@@ -1974,9 +2000,26 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final media = cached['media'] as Map<String, dynamic>? ?? {};
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
       final showTitle = metadata['title'] as String? ?? 'Podcast';
+      final position = await PlayerSettings.getPodcastNewEpisodePosition(podcastId);
       final l = _l();
-      _showRollingSnackBar(l?.lpSubscribedPodcastDownloading(showTitle, downloaded)
-          ?? '$showTitle: $downloaded new episode${downloaded == 1 ? '' : 's'} downloading');
+      final String message;
+      switch (position) {
+        case 'end':
+          message = l?.lpSubscribedEpisodeAddedEnd(showTitle)
+              ?? '$showTitle added to the end of your queue';
+          break;
+        case 'second':
+          message = l?.lpSubscribedEpisodeAddedSecond(showTitle)
+              ?? '$showTitle added 2nd in your queue';
+          break;
+        default:
+          message = l?.lpSubscribedEpisodeAddedStart(showTitle)
+              ?? '$showTitle added to the top of your queue';
+      }
+      final ctx = rootNavigatorKey.currentContext;
+      if (ctx != null) {
+        showOverlayToast(ctx, message, icon: Icons.playlist_add_rounded);
+      }
     }
   }
 
@@ -2373,7 +2416,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
   // ── Absorbing helpers used by _CoreMixin ──
 
-  void _absorbingIdsAdd(String key, {String? afterKey, bool atFront = true}) {
+  void _absorbingIdsAdd(String key, {String? afterKey, bool atFront = true, int? atIndex}) {
     if (_absorbingBookIds.contains(key) && afterKey == null) return;
 
     if (afterKey != null) {
@@ -2385,7 +2428,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       }
     }
     if (_absorbingBookIds.contains(key)) return;
-    if (atFront) {
+    if (atIndex != null) {
+      _absorbingBookIds.insert(atIndex.clamp(0, _absorbingBookIds.length), key);
+    } else if (atFront) {
       _absorbingBookIds.insert(0, key);
     } else {
       _absorbingBookIds.add(key);

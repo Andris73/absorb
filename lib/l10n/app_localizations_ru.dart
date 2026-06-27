@@ -5469,6 +5469,33 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
+  String lpSubscribedEpisodeAddedStart(String showTitle) {
+    return '$showTitle added to the top of your queue';
+  }
+
+  @override
+  String lpSubscribedEpisodeAddedSecond(String showTitle) {
+    return '$showTitle added 2nd in your queue';
+  }
+
+  @override
+  String lpSubscribedEpisodeAddedEnd(String showTitle) {
+    return '$showTitle added to the end of your queue';
+  }
+
+  @override
+  String get episodeListNewEpisodePosition => 'New episode position';
+
+  @override
+  String get episodeListPositionTop => 'Top of queue';
+
+  @override
+  String get episodeListPositionSecond => 'Second in queue';
+
+  @override
+  String get episodeListPositionEnd => 'End of queue';
+
+  @override
   String lpQueueDownloadingItems(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,

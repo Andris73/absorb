@@ -236,6 +236,19 @@ class PlayerSettings {
     _notify();
   }
 
+  /// Where a subscribed show's auto-downloaded new episode lands in the
+  /// absorbing queue: 'start' (top, default), 'second' (2nd), or 'end'. Per
+  /// show, stored under a raw key like the advance direction above.
+  static Future<String> getPodcastNewEpisodePosition(String showId) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('podcast_new_ep_pos_$showId') ?? 'start';
+  }
+  static Future<void> setPodcastNewEpisodePosition(String showId, String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('podcast_new_ep_pos_$showId', value);
+    _notify();
+  }
+
   /// Active playlist ID for playlist queue mode. Null when no playlist is selected.
   static Future<String?> getQueuePlaylistId() async {
     final s = await ScopedPrefs.getString('queuePlaylistId');

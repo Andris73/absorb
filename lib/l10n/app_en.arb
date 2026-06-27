@@ -3292,6 +3292,34 @@
       }
     }
   },
+  "lpSubscribedEpisodeAddedStart": "{showTitle} added to the top of your queue",
+  "@lpSubscribedEpisodeAddedStart": {
+    "placeholders": {
+      "showTitle": {
+        "type": "String"
+      }
+    }
+  },
+  "lpSubscribedEpisodeAddedSecond": "{showTitle} added 2nd in your queue",
+  "@lpSubscribedEpisodeAddedSecond": {
+    "placeholders": {
+      "showTitle": {
+        "type": "String"
+      }
+    }
+  },
+  "lpSubscribedEpisodeAddedEnd": "{showTitle} added to the end of your queue",
+  "@lpSubscribedEpisodeAddedEnd": {
+    "placeholders": {
+      "showTitle": {
+        "type": "String"
+      }
+    }
+  },
+  "episodeListNewEpisodePosition": "New episode position",
+  "episodeListPositionTop": "Top of queue",
+  "episodeListPositionSecond": "Second in queue",
+  "episodeListPositionEnd": "End of queue",
   "lpQueueDownloadingItems": "{count, plural, =1{Queue: downloading 1 item} other{Queue: downloading {count} items}}",
   "@lpQueueDownloadingItems": {
     "placeholders": {

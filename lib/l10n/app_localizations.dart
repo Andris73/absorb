@@ -9567,6 +9567,48 @@ abstract class AppLocalizations {
   /// **'{showTitle}: {count, plural, =1{1 new episode downloading} other{{count} new episodes downloading}}'**
   String lpSubscribedPodcastDownloading(String showTitle, int count);
 
+  /// No description provided for @lpSubscribedEpisodeAddedStart.
+  ///
+  /// In en, this message translates to:
+  /// **'{showTitle} added to the top of your queue'**
+  String lpSubscribedEpisodeAddedStart(String showTitle);
+
+  /// No description provided for @lpSubscribedEpisodeAddedSecond.
+  ///
+  /// In en, this message translates to:
+  /// **'{showTitle} added 2nd in your queue'**
+  String lpSubscribedEpisodeAddedSecond(String showTitle);
+
+  /// No description provided for @lpSubscribedEpisodeAddedEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'{showTitle} added to the end of your queue'**
+  String lpSubscribedEpisodeAddedEnd(String showTitle);
+
+  /// No description provided for @episodeListNewEpisodePosition.
+  ///
+  /// In en, this message translates to:
+  /// **'New episode position'**
+  String get episodeListNewEpisodePosition;
+
+  /// No description provided for @episodeListPositionTop.
+  ///
+  /// In en, this message translates to:
+  /// **'Top of queue'**
+  String get episodeListPositionTop;
+
+  /// No description provided for @episodeListPositionSecond.
+  ///
+  /// In en, this message translates to:
+  /// **'Second in queue'**
+  String get episodeListPositionSecond;
+
+  /// No description provided for @episodeListPositionEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'End of queue'**
+  String get episodeListPositionEnd;
+
   /// No description provided for @lpQueueDownloadingItems.
   ///
   /// In en, this message translates to:
