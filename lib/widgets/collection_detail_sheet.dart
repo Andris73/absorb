@@ -11,6 +11,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
+import 'add_books_search_sheet.dart';
 import 'book_detail_sheet.dart';
 import 'stackable_sheet.dart';
 import '../screens/app_shell.dart';
@@ -49,6 +50,25 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
 
   Future<void> _removeItem(LibraryProvider lib, String libraryItemId) async {
     await lib.removeFromCollection(widget.collectionId, libraryItemId);
+  }
+
+  void _openAddBooks(LibraryProvider lib, Map<String, dynamic> collection,
+      String name, List<dynamic> books) {
+    final libraryId = collection['libraryId'] as String? ?? lib.selectedLibraryId;
+    if (libraryId == null) return;
+    final memberIds = books
+        .whereType<Map<String, dynamic>>()
+        .map((b) => b['id'] as String? ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    AddBooksSearchSheet.show(
+      context,
+      title: name,
+      libraryId: libraryId,
+      initialMemberIds: memberIds,
+      onAdd: (id) => lib.addToCollection(widget.collectionId, id),
+      onRemove: (id) => lib.removeFromCollection(widget.collectionId, id),
+    );
   }
 
   Future<void> _deleteCollection(BuildContext context, LibraryProvider lib) async {
@@ -178,6 +198,14 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
             Text(l.collectionDetailBookCount(books.length),
               style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
             ),
+            if (canEditCollection) ...[
+              const SizedBox(width: 12),
+              GestureDetector(
+                onTap: () => _openAddBooks(lib, collection, name, books),
+                child: Icon(Icons.library_add_rounded, size: 20,
+                  color: cs.onSurfaceVariant),
+              ),
+            ],
             const SizedBox(width: 12),
             GestureDetector(
               onTap: () => setState(() => _gridView = !_gridView),

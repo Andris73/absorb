@@ -12,6 +12,7 @@ import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import '../screens/app_shell.dart';
+import 'add_books_search_sheet.dart';
 import 'book_detail_sheet.dart';
 import 'episode_list_sheet.dart';
 import 'stackable_sheet.dart';
@@ -201,6 +202,27 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
     );
   }
 
+  void _openAddBooks(LibraryProvider lib, Map<String, dynamic> playlist,
+      String name, List<dynamic> items) {
+    final libraryId = playlist['libraryId'] as String? ?? lib.selectedLibraryId;
+    if (libraryId == null) return;
+    // Only plain books count as members here (episodes use a different add flow).
+    final memberIds = items
+        .whereType<Map<String, dynamic>>()
+        .where((i) => i['episodeId'] == null)
+        .map((i) => i['libraryItemId'] as String? ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    AddBooksSearchSheet.show(
+      context,
+      title: name,
+      libraryId: libraryId,
+      initialMemberIds: memberIds,
+      onAdd: (id) => lib.addToPlaylist(widget.playlistId, id),
+      onRemove: (id) => lib.removeFromPlaylist(widget.playlistId, id),
+    );
+  }
+
   Future<void> _deletePlaylist(BuildContext context, LibraryProvider lib) async {
     final l = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
@@ -269,6 +291,13 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
 
     final name = playlist['name'] as String? ?? l.playlistDetailDefaultName;
     final items = (playlist['items'] as List<dynamic>?) ?? [];
+    // The add-books search only finds books, so hide it for podcast playlists.
+    final isPodcastPlaylist = lib.libraries
+            .cast<Map<String, dynamic>>()
+            .where((lb) => lb['id'] == playlist['libraryId'])
+            .map((lb) => (lb['mediaType'] as String? ?? 'book') == 'podcast')
+            .firstOrNull ??
+        lib.isPodcastLibrary;
 
     return Column(children: [
       const SizedBox(height: 4),
@@ -339,6 +368,14 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
             Text(l.playlistDetailItemCount(items.length),
               style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
             ),
+            if (!isPodcastPlaylist) ...[
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => _openAddBooks(lib, playlist, name, items),
+                child: Icon(Icons.library_add_rounded, size: 20,
+                  color: cs.onSurfaceVariant),
+              ),
+            ],
             const SizedBox(width: 8),
             GestureDetector(
               onTap: () => setState(() => _gridView = !_gridView),
