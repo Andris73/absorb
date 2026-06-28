@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/android_auto_service.dart';
+import '../services/book_search_index.dart';
 import '../services/carplay_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/equalizer_service.dart';
@@ -857,6 +858,9 @@ class AuthProvider extends ChangeNotifier {
     // Clear Android Auto / CarPlay browse tree cache so it doesn't show stale data
     AndroidAutoService().clearCache();
     CarPlayService().clearAndRefresh();
+
+    // Drop the per-library search index so the next account can't reuse it.
+    BookSearchIndex().clear();
 
     // Clear the stats widget so the previous user's numbers don't linger.
     await HomeWidgetService().clearStats();

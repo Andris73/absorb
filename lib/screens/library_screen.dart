@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/api_service.dart';
+import '../services/book_search_index.dart';
 import '../services/download_service.dart';
 import '../services/audio_player_service.dart';
 import '../widgets/absorb_page_header.dart';
@@ -1393,6 +1394,34 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
         _hasSearched = true;
       });
     }
+
+    // Upgrade book results to the lenient client-side index (out-of-order
+    // words, punctuation, typos). The server results above show instantly;
+    // this replaces them once the index is built (instant on later searches).
+    // Only override when the index actually built, so a failed fetch keeps the
+    // server results instead of blanking them.
+    if (!isPodcast) {
+      final libId = lib.selectedLibraryId!;
+      await BookSearchIndex().ensureIndex(api, libId);
+      if (mounted &&
+          BookSearchIndex().isReady(libId) &&
+          _searchController.text.trim() == query) {
+        var books = BookSearchIndex()
+            .search(libId, query)
+            .map((h) => <String, dynamic>{
+                  'libraryItem': h.item,
+                  '_titleMatch': h.titleMatch,
+                })
+            .toList();
+        if (_hideEbookOnly) {
+          books = books
+              .where((r) =>
+                  !PlayerSettings.isEbookOnly(r['libraryItem'] as Map<String, dynamic>))
+              .toList();
+        }
+        setState(() => _searchBookResults = books);
+      }
+    }
   }
 
   Future<void> _searchNarrators(String query, String libraryId, dynamic api) async {
@@ -2429,6 +2458,10 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
           ...() {
             final query = _searchController.text.trim().toLowerCase();
             final titleMatches = _searchBookResults.where((result) {
+              // Fuzzy index results carry their own title-match flag; fall back
+              // to a substring check for server/podcast results.
+              final tm = result['_titleMatch'];
+              if (tm is bool) return tm;
               final item = result['libraryItem'] as Map<String, dynamic>? ?? {};
               final media = item['media'] as Map<String, dynamic>? ?? {};
               final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
