@@ -4,7 +4,7 @@ import '../l10n/app_localizations.dart';
 import '../screens/library_screen.dart';
 
 /// Which library tab the sort/filter sheet is being shown for.
-enum LibraryTab { library, series, authors, narrators }
+enum LibraryTab { library, series, authors, narrators, lists }
 
 // ═══════════════════════════════════════════════════════════════
 // Sort & Filter bottom sheet with tabs
@@ -33,12 +33,6 @@ class SortFilterSheet extends StatefulWidget {
   /// callers don't have to pass it; null = no filter active.
   final SeriesFilter currentSeriesFilter;
   final void Function(SeriesFilter)? onSeriesFilterChanged;
-  /// Collections + playlists for the Library tab's "Lists" tab. Tapping one
-  /// scopes the library page to that list's items (handled by the screen).
-  final List<Map<String, dynamic>> collections;
-  final List<Map<String, dynamic>> playlists;
-  final void Function(Map<String, dynamic>)? onOpenCollection;
-  final void Function(Map<String, dynamic>)? onOpenPlaylist;
 
   const SortFilterSheet({
     super.key,
@@ -55,10 +49,6 @@ class SortFilterSheet extends StatefulWidget {
     this.onUpcomingReleases,
     this.currentSeriesFilter = SeriesFilter.none,
     this.onSeriesFilterChanged,
-    this.collections = const [],
-    this.playlists = const [],
-    this.onOpenCollection,
-    this.onOpenPlaylist,
   });
 
   @override
@@ -80,17 +70,11 @@ class _SortFilterSheetState extends State<SortFilterSheet> with SingleTickerProv
       widget.currentFilter != LibraryFilter.none ||
       widget.currentSeriesFilter != SeriesFilter.none;
 
-  bool get _showListsTab =>
-      widget.libraryTab == LibraryTab.library &&
-      (widget.collections.isNotEmpty || widget.playlists.isNotEmpty);
-
-  int get _listsTabIndex => 1 + (_showFilterTab ? 1 : 0);
-
   @override
   void initState() {
     super.initState();
     _collapseSeries = widget.collapseSeries;
-    final tabCount = 1 + (_showFilterTab ? 1 : 0) + (_showListsTab ? 1 : 0);
+    final tabCount = 1 + (_showFilterTab ? 1 : 0);
     _tabCtrl = TabController(
       length: tabCount, vsync: this,
       initialIndex: widget.initialTab.clamp(0, tabCount - 1),
@@ -156,20 +140,14 @@ class _SortFilterSheetState extends State<SortFilterSheet> with SingleTickerProv
       Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.filter_list_rounded, size: 18), const SizedBox(width: 6),
         Text(_anyFilterActive ? l.filterActive : l.filter)])),
-    if (_showListsTab)
-      Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.collections_bookmark_rounded, size: 18), const SizedBox(width: 6),
-        const Text('Lists')])),
   ];
 
   List<Widget> _buildViews(ColorScheme cs, AppLocalizations l) => [
     _buildSortTab(cs, l),
     if (_showFilterTab) _buildFilterTab(cs, l),
-    if (_showListsTab) _buildListsTab(cs, l),
   ];
 
   double _calcHeight() {
-    if (_showListsTab && _tabCtrl.index == _listsTabIndex) return 440;
     if (widget.libraryTab == LibraryTab.series) {
       // Need extra room when the filter tab is showing on series.
       if (_showFilterTab && _tabCtrl.index == 1) return 280;
@@ -177,6 +155,7 @@ class _SortFilterSheetState extends State<SortFilterSheet> with SingleTickerProv
     }
     if (widget.libraryTab == LibraryTab.authors) return 180;
     if (widget.libraryTab == LibraryTab.narrators) return 130;
+    if (widget.libraryTab == LibraryTab.lists) return 230;
     if (_genreExpanded || _tagExpanded) return 420;
     return widget.isPodcastLibrary ? 200 : 440;
   }
@@ -291,6 +270,12 @@ class _SortFilterSheetState extends State<SortFilterSheet> with SingleTickerProv
       case LibraryTab.narrators:
         return [
           (LibrarySort.alphabetical, l.name, Icons.sort_by_alpha_rounded),
+        ];
+      case LibraryTab.lists:
+        return [
+          (LibrarySort.alphabetical, l.name, Icons.sort_by_alpha_rounded),
+          (LibrarySort.recentlyAdded, l.dateAdded, Icons.schedule_rounded),
+          (LibrarySort.totalDuration, l.numberOfBooks, Icons.format_list_numbered_rounded),
         ];
       case LibraryTab.library:
         if (widget.isPodcastLibrary) {
@@ -450,42 +435,6 @@ class _SortFilterSheetState extends State<SortFilterSheet> with SingleTickerProv
     );
   }
 
-  Widget _buildListsTab(ColorScheme cs, AppLocalizations l) {
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      children: [
-        if (widget.collections.isNotEmpty) ...[
-          _listsHeader(cs, 'Collections'),
-          ...widget.collections.map((c) => SheetOption(
-                icon: Icons.collections_bookmark_rounded,
-                label: (c['name'] as String?) ?? '',
-                selected: false,
-                selectedColor: cs.secondary,
-                marquee: true,
-                onTap: () => widget.onOpenCollection?.call(c),
-              )),
-        ],
-        if (widget.playlists.isNotEmpty) ...[
-          _listsHeader(cs, 'Playlists'),
-          ...widget.playlists.map((p) => SheetOption(
-                icon: Icons.playlist_play_rounded,
-                label: (p['name'] as String?) ?? '',
-                selected: false,
-                selectedColor: cs.secondary,
-                marquee: true,
-                onTap: () => widget.onOpenPlaylist?.call(p),
-              )),
-        ],
-      ],
-    );
-  }
-
-  Widget _listsHeader(ColorScheme cs, String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(4, 8, 4, 6),
-        child: Text(text, style: TextStyle(
-          fontSize: 12, fontWeight: FontWeight.w700,
-          color: cs.onSurfaceVariant.withValues(alpha: 0.7), letterSpacing: 0.5)),
-      );
 }
 
 class SheetOption extends StatelessWidget {

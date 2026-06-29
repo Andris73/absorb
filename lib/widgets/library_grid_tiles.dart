@@ -626,6 +626,103 @@ class GridSeriesTileDirect extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Grid tile for a collection or playlist (stacked covers + name + count),
+// styled like a series tile. Used by the library Lists tab.
+// ═══════════════════════════════════════════════════════════════
+class GridListTile extends StatelessWidget {
+  final String name;
+  final List<String> bookIds;
+  final int count;
+  final bool isPlaylist;
+  final double coverAspectRatio;
+  final VoidCallback onTap;
+
+  const GridListTile({
+    super.key,
+    required this.name,
+    required this.bookIds,
+    required this.count,
+    required this.isPlaylist,
+    required this.onTap,
+    this.coverAspectRatio = 1.0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
+    final lib = context.watch<LibraryProvider>();
+
+    final coverUrls = bookIds.take(4).map((id) => lib.getCoverUrl(id)).toList();
+
+    double totalProgress = 0;
+    int finished = 0;
+    for (final id in bookIds) {
+      final pd = lib.getProgressData(id);
+      if (pd?['isFinished'] == true) {
+        finished++;
+        totalProgress += 1.0;
+      } else {
+        totalProgress += lib.getProgress(id);
+      }
+    }
+    final progress = bookIds.isNotEmpty ? totalProgress / bookIds.length : 0.0;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _StackedCovers(
+            coverUrls: coverUrls.isEmpty ? const [null] : coverUrls,
+            numBooks: count,
+            mediaHeaders: lib.mediaHeaders,
+            cs: cs,
+            seriesProgress: progress,
+            booksFinished: finished,
+            coverAspectRatio: coverAspectRatio,
+          ),
+          const SizedBox(height: 5),
+          Row(
+            children: [
+              Icon(
+                  isPlaylist
+                      ? Icons.playlist_play_rounded
+                      : Icons.collections_bookmark_rounded,
+                  size: 12,
+                  color: cs.onSurfaceVariant),
+              const SizedBox(width: 3),
+              Expanded(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tt.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: cs.onSurface,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Text(
+            isPlaylist
+                ? l.playlistDetailItemCount(count)
+                : l.collectionDetailBookCount(count),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant, fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Grid author tile (circular avatar + name + book count)
 // ═══════════════════════════════════════════════════════════════
 class GridAuthorTile extends StatelessWidget {

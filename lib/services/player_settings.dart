@@ -495,6 +495,12 @@ class PlayerSettings {
   static Future<bool> getSeriesSortAsc() => _get('seriesSortAsc', true);
   static Future<void> setSeriesSortAsc(bool value) => _set('seriesSortAsc', value);
 
+  static Future<String> getListsSort() => _get('listsSort', 'alphabetical');
+  static Future<void> setListsSort(String value) => _set('listsSort', value);
+
+  static Future<bool> getListsSortAsc() => _get('listsSortAsc', true);
+  static Future<void> setListsSortAsc(bool value) => _set('listsSortAsc', value);
+
   static Future<String> getAuthorSort() => _get('authorSort', 'alphabetical');
   static Future<void> setAuthorSort(String value) => _set('authorSort', value);
 
