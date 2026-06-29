@@ -94,6 +94,11 @@ mixin _StateMixin on ChangeNotifier {
   List<String> _absorbingBookIds = [];
   Map<String, Map<String, dynamic>> _absorbingItemCache = {};
   String? _lastFinishedItemId;
+  // A just-arrived subscribed-podcast episode the user asked to land at the top
+  // of the queue. The absorbing screen's "keep last-finished/playing on top"
+  // pins yield to this so a "beginning" episode actually stays first. Persisted
+  // so it survives an app kill; cleared once the user plays or reorders.
+  String? _freshQueuedFrontKey;
   final Set<String> _locallyFinishedItems = {};
 
   StreamSubscription? _connectivitySub;
@@ -125,6 +130,7 @@ mixin _StateMixin on ChangeNotifier {
   List<String> get absorbingBookIds => _absorbingBookIds;
   Map<String, Map<String, dynamic>> get absorbingItemCache =>
       _absorbingItemCache;
+  String? get freshQueuedFrontKey => _freshQueuedFrontKey;
 
   Map<String, dynamic>? get selectedLibrary {
     if (_selectedLibraryId == null) return null;

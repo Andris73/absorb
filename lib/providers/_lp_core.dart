@@ -1901,6 +1901,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       // extremes and read correctly in both modes, so they need no adjustment.
       final merged = await PlayerSettings.getMergeAbsorbingLibraries();
       final libId = item['libraryId'] as String?;
+      // For 'start', remember the front-most new episode so the absorbing
+      // screen's keep-on-top pins yield to it (otherwise a paused/last-finished
+      // item gets pulled above it and it shows 2nd).
+      String? startFrontKey;
 
       for (final epMap in newEpisodes) {
         final epId = epMap['id'] as String;
@@ -1921,6 +1925,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
             break;
           default:
             _absorbingIdsAdd(key, atFront: true);
+            startFrontKey = key;
         }
         _absorbingItemCache[key] = {
           'id': itemId,
@@ -1937,6 +1942,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       }
 
       if (queued > 0) {
+        if (startFrontKey != null) {
+          (this as _AbsorbingMixin).setFreshQueuedFront(startFrontKey);
+        }
         _saveKnownEpisodeIds(itemId);
         (this as _AbsorbingMixin)._saveManualAbsorbing();
         notifyListeners();

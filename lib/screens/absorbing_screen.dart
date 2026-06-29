@@ -506,7 +506,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
         final activeKey = activeEpId != null ? '$activeId-$activeEpId' : activeId;
 
         final existingIdx = items.indexWhere((b) => _absorbingKey(b) == activeKey);
-        if (!_suppressReorder && existingIdx > 0) {
+        // Only pull the active item to the top while it's actually playing.
+        // When paused, leave the queue order alone so a freshly-queued
+        // "beginning" episode stays first instead of being bumped to 2nd.
+        final activePlaying = _player.hasBook ? _player.isPlaying : _cast.isCasting;
+        if (!_suppressReorder && existingIdx > 0 && activePlaying) {
           final item = items.removeAt(existingIdx);
           items.insert(0, item);
         } else if (existingIdx < 0) {
@@ -542,7 +546,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       final finishedIsPodcast = _lastFinishedId!.length > 36;
       if (_mergeLibraries || finishedIsPodcast == isPod) {
         final finishedIdx = items.indexWhere((b) => _absorbingKey(b) == _lastFinishedId);
-        if (finishedIdx > 0) {
+        // Don't pull the last-finished item over a brand-new "beginning"
+        // episode that's deliberately sitting at the top.
+        final freshOnTop = items.isNotEmpty &&
+            _absorbingKey(items[0]) == lib.freshQueuedFrontKey;
+        if (finishedIdx > 0 && !freshOnTop) {
           final item = items.removeAt(finishedIdx);
           items.insert(0, item);
         }

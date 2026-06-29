@@ -14,10 +14,25 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
 
   void moveAbsorbingToFront(String key) {
     if (!_absorbingBookIds.contains(key)) return;
+    // The user engaged with the queue, so the "keep a fresh episode on top"
+    // protection has done its job - drop it.
+    setFreshQueuedFront(null);
     if (_absorbingBookIds.first == key) return;
     _absorbingBookIds.remove(key);
     _absorbingBookIds.insert(0, key);
     _saveManualAbsorbing();
+  }
+
+  /// Mark (or clear) the just-arrived subscribed episode that should stay at the
+  /// top of the queue. Persisted so it survives an app kill.
+  void setFreshQueuedFront(String? key) {
+    if (_freshQueuedFrontKey == key) return;
+    _freshQueuedFrontKey = key;
+    if (key == null) {
+      ScopedPrefs.remove('absorbing_fresh_front');
+    } else {
+      ScopedPrefs.setString('absorbing_fresh_front', key);
+    }
   }
 
   Future<void> _loadManualAbsorbing() async {
@@ -27,6 +42,8 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
         (await ScopedPrefs.getStringList('absorbing_manual_removes')).toSet();
     _absorbingBookIds =
         (await ScopedPrefs.getStringList('absorbing_seen_ids')).toList();
+    final fresh = await ScopedPrefs.getString('absorbing_fresh_front');
+    _freshQueuedFrontKey = (fresh != null && fresh.isNotEmpty) ? fresh : null;
     final cacheList =
         await ScopedPrefs.getStringList('absorbing_item_cache_v2');
     _absorbingItemCache = {};
@@ -321,6 +338,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
 
   Future<void> reorderAbsorbing(List<String> newOrder) async {
     _absorbingBookIds = newOrder;
+    setFreshQueuedFront(null);
     await _saveManualAbsorbing();
     notifyListeners();
     _catchUpQueueAutoDownloads();
