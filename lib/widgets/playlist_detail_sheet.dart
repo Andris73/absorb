@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -223,6 +224,37 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
     );
   }
 
+  /// Header icon with a comfortable (>=44px tall) tap target and ripple, so
+  /// the small top-row controls aren't fiddly to press.
+  Widget _headerIconButton(ColorScheme cs, IconData icon, VoidCallback onTap,
+      {String? tooltip, Color? color}) {
+    return IconButton(
+      icon: Icon(icon, size: 20, color: color ?? cs.onSurfaceVariant),
+      onPressed: onTap,
+      tooltip: tooltip,
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 44),
+      style: IconButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+      ),
+    );
+  }
+
+  Widget _headerTextButton(ColorScheme cs, String label, VoidCallback onTap,
+      {required Color color}) {
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        foregroundColor: color,
+        minimumSize: const Size(0, 44),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+    );
+  }
+
   Future<void> _deletePlaylist(BuildContext context, LibraryProvider lib) async {
     final l = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
@@ -257,11 +289,14 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
     });
   }
 
-  Future<void> _saveReorder(LibraryProvider lib) async {
-    if (_reorderItems != null) {
-      await lib.reorderPlaylistItems(widget.playlistId, _reorderItems!);
+  void _saveReorder(LibraryProvider lib) {
+    final items = _reorderItems;
+    if (items != null) {
+      // Persist in the background so "Done" closes instantly instead of
+      // hanging on the PATCH + playlists reload.
+      unawaited(lib.reorderPlaylistItems(widget.playlistId, items));
     }
-    if (mounted) Navigator.pop(context);
+    Navigator.pop(context);
   }
 
   void _cancelReorder() {
@@ -305,59 +340,41 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Row(children: [
           if (_reordering) ...[
-            GestureDetector(
-              onTap: _cancelReorder,
-              child: Text(l.cancel, style: tt.labelMedium?.copyWith(
-                color: cs.onSurfaceVariant, fontWeight: FontWeight.w500,
-              )),
+            _headerTextButton(cs, l.cancel, _cancelReorder, color: cs.onSurfaceVariant),
+            const Spacer(),
+            Flexible(
+              child: Text(name,
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: tt.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600, color: cs.onSurface)),
             ),
             const Spacer(),
-            Text(name, style: tt.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600, color: cs.onSurface,
-            )),
-            const Spacer(),
-            GestureDetector(
-              onTap: () => _saveReorder(lib),
-              child: Text(l.done, style: tt.labelMedium?.copyWith(
-                color: cs.primary, fontWeight: FontWeight.w600,
-              )),
-            ),
+            _headerTextButton(cs, l.done, () => _saveReorder(lib), color: cs.primary),
           ] else if (_selectMode) ...[
-            GestureDetector(
-              onTap: () => setState(() {
-                _selectMode = false;
-                _selectedKeys.clear();
-              }),
-              child: Icon(Icons.close_rounded, size: 20, color: cs.onSurfaceVariant),
-            ),
-            const SizedBox(width: 8),
+            _headerIconButton(cs, Icons.close_rounded, () => setState(() {
+              _selectMode = false;
+              _selectedKeys.clear();
+            })),
+            const SizedBox(width: 4),
             Text(l.selectedCount(_selectedKeys.length),
               style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  if (_selectedKeys.length == items.length) {
-                    _selectedKeys.clear();
-                  } else {
-                    _selectedKeys.clear();
-                    for (final i in items) {
-                      _selectedKeys.add(_itemKey(i as Map<String, dynamic>));
-                    }
+            const SizedBox(width: 4),
+            _headerTextButton(cs, l.selectAll, () {
+              setState(() {
+                if (_selectedKeys.length == items.length) {
+                  _selectedKeys.clear();
+                } else {
+                  _selectedKeys.clear();
+                  for (final i in items) {
+                    _selectedKeys.add(_itemKey(i as Map<String, dynamic>));
                   }
-                });
-              },
-              child: Text(l.selectAll,
-                style: TextStyle(fontSize: 12, color: cs.primary, fontWeight: FontWeight.w500)),
-            ),
+                }
+              });
+            }, color: cs.primary),
             const Spacer(),
           ] else ...[
-            GestureDetector(
-              onTap: () => _deletePlaylist(context, lib),
-              child: Icon(Icons.delete_outline_rounded, size: 20,
-                color: cs.onSurfaceVariant),
-            ),
-            const SizedBox(width: 12),
+            _headerIconButton(cs, Icons.delete_outline_rounded,
+              () => _deletePlaylist(context, lib), tooltip: l.delete),
             Icon(Icons.playlist_play_rounded, size: 20, color: cs.primary),
             const SizedBox(width: 8),
             Expanded(
@@ -368,34 +385,17 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
             Text(l.playlistDetailItemCount(items.length),
               style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
             ),
-            if (!isPodcastPlaylist) ...[
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () => _openAddBooks(lib, playlist, name, items),
-                child: Icon(Icons.library_add_rounded, size: 20,
-                  color: cs.onSurfaceVariant),
-              ),
-            ],
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () => setState(() => _gridView = !_gridView),
-              child: Icon(
-                _gridView ? Icons.view_list_rounded : Icons.grid_view_rounded,
-                size: 20, color: cs.onSurfaceVariant),
-            ),
+            if (!isPodcastPlaylist)
+              _headerIconButton(cs, Icons.library_add_rounded,
+                () => _openAddBooks(lib, playlist, name, items)),
+            _headerIconButton(cs,
+              _gridView ? Icons.view_list_rounded : Icons.grid_view_rounded,
+              () => setState(() => _gridView = !_gridView)),
             if (items.length > 1) ...[
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () => setState(() => _selectMode = true),
-                child: Icon(Icons.checklist_rounded, size: 20,
-                  color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () => _startReorder(items),
-                child: Icon(Icons.tune_rounded, size: 20,
-                  color: cs.onSurfaceVariant),
-              ),
+              _headerIconButton(cs, Icons.checklist_rounded,
+                () => setState(() => _selectMode = true),
+                color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+              _headerIconButton(cs, Icons.tune_rounded, () => _startReorder(items)),
             ],
           ],
         ]),

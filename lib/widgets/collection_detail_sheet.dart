@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -71,6 +72,37 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
     );
   }
 
+  /// Header icon with a comfortable (>=44px tall) tap target and ripple, so
+  /// the small top-row controls aren't fiddly to press.
+  Widget _headerIconButton(ColorScheme cs, IconData icon, VoidCallback onTap,
+      {String? tooltip}) {
+    return IconButton(
+      icon: Icon(icon, size: 20, color: cs.onSurfaceVariant),
+      onPressed: onTap,
+      tooltip: tooltip,
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 44),
+      style: IconButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+      ),
+    );
+  }
+
+  Widget _headerTextButton(ColorScheme cs, String label, VoidCallback onTap,
+      {required Color color}) {
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        foregroundColor: color,
+        minimumSize: const Size(0, 44),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+    );
+  }
+
   Future<void> _deleteCollection(BuildContext context, LibraryProvider lib) async {
     final l = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
@@ -114,15 +146,18 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
     });
   }
 
-  Future<void> _saveReorder(LibraryProvider lib) async {
-    if (_reorderItems != null) {
-      final bookIds = _reorderItems!
+  void _saveReorder(LibraryProvider lib) {
+    final items = _reorderItems;
+    if (items != null) {
+      final bookIds = items
           .map((b) => b['id'] as String? ?? '')
           .where((id) => id.isNotEmpty)
           .toList();
-      await lib.reorderCollectionBooks(widget.collectionId, bookIds);
+      // Persist in the background so "Done" closes instantly instead of
+      // hanging on the PATCH + collections reload.
+      unawaited(lib.reorderCollectionBooks(widget.collectionId, bookIds));
     }
-    if (mounted) Navigator.pop(context);
+    Navigator.pop(context);
   }
 
   void _cancelReorder() {
@@ -162,32 +197,20 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Row(children: [
           if (_reordering) ...[
-            GestureDetector(
-              onTap: _cancelReorder,
-              child: Text(l.cancel, style: tt.labelMedium?.copyWith(
-                color: cs.onSurfaceVariant, fontWeight: FontWeight.w500,
-              )),
+            _headerTextButton(cs, l.cancel, _cancelReorder, color: cs.onSurfaceVariant),
+            const Spacer(),
+            Flexible(
+              child: Text(name,
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: tt.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600, color: cs.onSurface)),
             ),
             const Spacer(),
-            Text(name, style: tt.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600, color: cs.onSurface,
-            )),
-            const Spacer(),
-            GestureDetector(
-              onTap: () => _saveReorder(lib),
-              child: Text(l.done, style: tt.labelMedium?.copyWith(
-                color: cs.primary, fontWeight: FontWeight.w600,
-              )),
-            ),
+            _headerTextButton(cs, l.done, () => _saveReorder(lib), color: cs.primary),
           ] else ...[
-            if (canDeleteCollection) ...[
-              GestureDetector(
-                onTap: () => _deleteCollection(context, lib),
-                child: Icon(Icons.delete_outline_rounded, size: 20,
-                  color: cs.onSurfaceVariant),
-              ),
-              const SizedBox(width: 12),
-            ],
+            if (canDeleteCollection)
+              _headerIconButton(cs, Icons.delete_outline_rounded,
+                () => _deleteCollection(context, lib), tooltip: l.delete),
             Icon(Icons.collections_bookmark_rounded, size: 20, color: cs.primary),
             const SizedBox(width: 8),
             Expanded(
@@ -198,29 +221,14 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
             Text(l.collectionDetailBookCount(books.length),
               style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
             ),
-            if (canEditCollection) ...[
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: () => _openAddBooks(lib, collection, name, books),
-                child: Icon(Icons.library_add_rounded, size: 20,
-                  color: cs.onSurfaceVariant),
-              ),
-            ],
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTap: () => setState(() => _gridView = !_gridView),
-              child: Icon(
-                _gridView ? Icons.view_list_rounded : Icons.grid_view_rounded,
-                size: 20, color: cs.onSurfaceVariant),
-            ),
-            if (canEditCollection && books.length > 1) ...[
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: () => _startReorder(books),
-                child: Icon(Icons.tune_rounded, size: 20,
-                  color: cs.onSurfaceVariant),
-              ),
-            ],
+            if (canEditCollection)
+              _headerIconButton(cs, Icons.library_add_rounded,
+                () => _openAddBooks(lib, collection, name, books)),
+            _headerIconButton(cs,
+              _gridView ? Icons.view_list_rounded : Icons.grid_view_rounded,
+              () => setState(() => _gridView = !_gridView)),
+            if (canEditCollection && books.length > 1)
+              _headerIconButton(cs, Icons.tune_rounded, () => _startReorder(books)),
           ],
         ]),
       ),
