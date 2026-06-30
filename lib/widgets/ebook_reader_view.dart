@@ -92,6 +92,11 @@ class EbookReaderViewState extends State<EbookReaderView> {
 
   // Key to force-rebuild EpubViewer when layout mode changes
   int _viewerKey = 0;
+  // onEpubLoaded is wired to epub.js's "displayed" event, which re-fires on
+  // every display() - so the load-time rescue re-display must run at most once
+  // per mount, or it re-triggers itself into an endless display->displayed loop
+  // that freezes page-turn taps. Reset whenever the viewer remounts.
+  bool _didLoadRescue = false;
 
   // Reader settings
   int _fontSize = 16;
@@ -302,6 +307,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
       _spread = mode;
       _locationsReady = false;
       _viewerKey++; // force the viewer to remount with the new spread
+      _didLoadRescue = false; // let the remounted viewer rescue its first paint
     });
     await ScopedPrefs.setInt(_kSpread, index);
   }
@@ -405,8 +411,14 @@ class EbookReaderViewState extends State<EbookReaderView> {
   /// page. Debounced so the touch and injected-click paths can't double-fire.
   void _readerTapAt(double frac, String source) {
     final now = DateTime.now();
-    if (now.difference(_lastReaderTap).inMilliseconds < 350) return;
+    final sinceMs = now.difference(_lastReaderTap).inMilliseconds;
+    if (sinceMs < 350) {
+      debugPrint('[ReaderTap] DEBOUNCED frac=${frac.toStringAsFixed(2)} src=$source since=${sinceMs}ms');
+      return;
+    }
     _lastReaderTap = now;
+    final action = frac < 0.25 ? 'prev' : (frac > 0.75 ? 'next' : 'menu');
+    debugPrint('[ReaderTap] frac=${frac.toStringAsFixed(2)} src=$source -> $action ctrl=${_epubController != null}');
     if (frac < 0.25) {
       _epubController?.prev();
     } else if (frac > 0.75) {
@@ -505,7 +517,12 @@ class EbookReaderViewState extends State<EbookReaderView> {
       }
       // Shared persistent cache - reuses a downloaded/previously-opened copy so
       // the book reads offline.
+      final playing = AudioPlayerService().isPlaying;
+      debugPrint('[EbookReader] open item=${widget.itemId} ext=${ebookExtFromFile(widget.ebookFile)} '
+          'cached=${await isEbookCached(widget.itemId, widget.ebookFile)} playing=$playing');
       final file = await fetchEbookToCache(api, widget.itemId, widget.ebookFile, widget.title);
+      final len = file.existsSync() ? await file.length() : 0;
+      debugPrint('[EbookReader] file ready item=${widget.itemId} bytes=$len path=${file.path}');
       if (mounted) {
         setState(() { _cachedFile = file; _loading = false; });
       }
@@ -1644,11 +1661,13 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 theme: _buildTheme(palette),
               ),
               onChaptersLoaded: (chapters) {
+                debugPrint('[EbookReader] onChaptersLoaded item=${widget.itemId} count=${chapters.length}');
                 if (mounted) setState(() => _chapters = _flattenChapters(chapters));
               },
               // Fires once the plugin finishes generating its location index;
               // value.progress is only meaningful (and stable) after this.
               onLocationLoaded: () {
+                debugPrint('[EbookReader] onLocationLoaded item=${widget.itemId}');
                 if (mounted) setState(() => _locationsReady = true);
               },
               suppressNativeContextMenu: true,
@@ -1663,15 +1682,27 @@ class EbookReaderViewState extends State<EbookReaderView> {
                 if (match != null) _addNoteToAnnotation(match);
               },
               onEpubLoaded: () {
-                // Re-display the initial CFI once. The plugin already displays
-                // it at load, but that first display can occasionally come up
-                // blank; this second display is the rescue. Position-safe: font
-                // size and theme are already in displaySettings, so nothing
-                // reflows after this.
-                final once = _initialCfi;
-                if (once != null && once.isNotEmpty) {
-                  _initialCfi = null;
-                  _epubController?.display(cfi: once);
+                // Re-display once to rescue an occasionally-blank first paint.
+                // Guarded so it runs at most once per mount: onEpubLoaded fires
+                // on every epub.js "displayed" event, so an unguarded re-display
+                // would re-trigger itself forever (freezing taps and snapping
+                // back to the start). Position-safe: font size and theme are
+                // already in displaySettings, so nothing reflows after this.
+                if (!_didLoadRescue) {
+                  _didLoadRescue = true;
+                  final once = _initialCfi;
+                  if (once != null && once.isNotEmpty) {
+                    _initialCfi = null;
+                    _epubController?.display(cfi: once);
+                  } else {
+                    // First open (no saved position) - the same blank-first-paint
+                    // can happen here, but display(cfi:) needs a target, so force
+                    // epub.js to re-display the start directly.
+                    _epubController?.webViewController?.evaluateJavascript(
+                        source: 'try{rendition.display();}catch(e){}');
+                  }
+                  debugPrint('[EbookReader] onEpubLoaded item=${widget.itemId} '
+                      'rescue=${once != null && once.isNotEmpty ? "cfi" : "start"}');
                 }
                 _loadAnnotations().then((_) => _restoreHighlights());
                 _setupPageInfoHandler();

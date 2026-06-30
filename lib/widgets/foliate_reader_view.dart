@@ -7,6 +7,7 @@ import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/api_service.dart';
+import '../services/audio_player_service.dart';
 import '../services/ebook_cache.dart';
 import '../services/foliate_book_server.dart';
 
@@ -75,6 +76,9 @@ class _FoliateReaderViewState extends State<FoliateReaderView> {
   // Progress sync throttling - matches the EPUB/PDF reader cadence.
   DateTime _lastSync = DateTime.fromMillisecondsSinceEpoch(0);
   String? _lastSyncedCfi;
+  bool _firstRelocate = true; // log only the first render position
+
+  void _log(String msg) => debugPrint('[Foliate] item=${widget.itemId} $msg');
 
   @override
   void initState() {
@@ -150,34 +154,50 @@ class _FoliateReaderViewState extends State<FoliateReaderView> {
         setState(() { _error = 'Not connected to server'; _loading = false; });
         return;
       }
+      _log('prepare ext=$_ext playing=${AudioPlayerService().isPlaying}');
       final file = await fetchEbookToCache(api, widget.itemId, widget.ebookFile, widget.title);
       final ext = _ext.isEmpty ? '.epub' : _ext;
       _bookUrlName = 'book$ext';
       final port = await _server.start(bookFile: file, mime: _mimeFor(ext));
+      final len = file.existsSync() ? await file.length() : 0;
+      _log('server up port=$port bytes=$len mime=${_mimeFor(ext)}');
       if (!mounted) return;
       setState(() { _port = port; _loading = false; });
     } catch (e) {
+      _log('prepare error $e');
       if (mounted) setState(() { _error = '$e'; _loading = false; });
     }
   }
 
   void _registerHandlers(InAppWebViewController c) {
     c.addJavaScriptHandler(handlerName: 'onReady', callback: (args) {
+      _log('onReady');
       _openBook();
       return null;
     });
     c.addJavaScriptHandler(handlerName: 'onBookLoaded', callback: (args) {
       final data = args.isNotEmpty ? args[0] as Map? : null;
       final toc = (data?['toc'] as List?) ?? [];
+      _log('onBookLoaded toc=${toc.length}');
       if (mounted) {
         setState(() => _toc = toc.whereType<Map>().map(_TocItem.fromJson).toList());
       }
+      // Rescue a blank first paint: re-apply the position after a tick so the
+      // renderer relays out (mirrors the EPUB reader's re-display rescue).
+      Future.delayed(const Duration(milliseconds: 120), () {
+        if (!mounted) return;
+        final cfi = _initialCfi;
+        _controller?.evaluateJavascript(source: (cfi != null && cfi.isNotEmpty)
+            ? 'window.AbsorbReader.goTo(${jsonEncode(cfi)});'
+            : 'window.AbsorbReader.goToFraction(0);');
+      });
       return null;
     });
     c.addJavaScriptHandler(handlerName: 'onRelocate', callback: (args) {
       final data = args.isNotEmpty ? args[0] as Map? : null;
       if (data == null) return null;
       final cfi = data['cfi'] as String?;
+      if (_firstRelocate) { _firstRelocate = false; _log('first onRelocate cfi=${cfi != null}'); }
       final frac = (data['fraction'] as num?)?.toDouble();
       final label = data['tocLabel'] as String?;
       if (mounted) {
@@ -198,6 +218,7 @@ class _FoliateReaderViewState extends State<FoliateReaderView> {
     });
     c.addJavaScriptHandler(handlerName: 'onError', callback: (args) {
       final msg = args.isNotEmpty ? '${args[0]}' : 'Unknown error';
+      _log('onError tocEmpty=${_toc.isEmpty} msg=$msg');
       if (mounted && _toc.isEmpty) setState(() => _error = msg);
       return null;
     });

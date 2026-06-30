@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'api_service.dart';
@@ -43,7 +44,10 @@ Future<File> fetchEbookToCache(
   String title,
 ) async {
   final cachedFile = await ebookCacheFileFor(itemId, ebookFile);
-  if (cachedFile.existsSync() && await cachedFile.length() > 0) return cachedFile;
+  if (cachedFile.existsSync() && await cachedFile.length() > 0) {
+    debugPrint('[EbookCache] cache hit item=$itemId bytes=${await cachedFile.length()}');
+    return cachedFile;
+  }
 
   final ino = ebookFile['ino'] as String?;
   if (ino == null) throw Exception('No ebook file found');
@@ -53,6 +57,8 @@ Future<File> fetchEbookToCache(
       : api.baseUrl;
   final url = '$cleanBase/api/items/$itemId/file/$ino';
 
+  debugPrint('[EbookCache] downloading item=$itemId url=$url');
+  final startedAt = DateTime.now();
   final partFile = File('${cachedFile.path}.part');
   final request = http.Request('GET', Uri.parse(url));
   request.followRedirects = false;
@@ -84,6 +90,8 @@ Future<File> fetchEbookToCache(
     }
     if (cachedFile.existsSync()) await cachedFile.delete();
     await partFile.rename(cachedFile.path);
+    final secs = DateTime.now().difference(startedAt).inMilliseconds / 1000.0;
+    debugPrint('[EbookCache] downloaded item=$itemId bytes=${await cachedFile.length()} in ${secs}s');
   } finally {
     client.close();
     if (partFile.existsSync()) {
