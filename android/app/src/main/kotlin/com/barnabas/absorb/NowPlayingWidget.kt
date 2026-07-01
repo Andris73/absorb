@@ -30,7 +30,12 @@ class NowPlayingWidget : AppWidgetProvider() {
         appWidgetIds: IntArray
     ) {
         for (appWidgetId in appWidgetIds) {
-            updateWidget(context, appWidgetManager, appWidgetId)
+            // Never let a widget render failure crash the whole app.
+            try {
+                updateWidget(context, appWidgetManager, appWidgetId)
+            } catch (e: Exception) {
+                android.util.Log.e("NowPlayingWidget", "updateWidget failed", e)
+            }
         }
     }
 
@@ -158,8 +163,12 @@ class NowPlayingWidget : AppWidgetProvider() {
                         if (bitmap != null) {
                             val rounded = roundBitmap(bitmap, 18f, context)
                             views.setImageViewBitmap(R.id.widget_cover, rounded)
+                            // Recycle only the source. RemoteViews serialises
+                            // `rounded` later in updateAppWidget (Android 17 copies
+                            // it to shared memory at that point) - recycling it here
+                            // throws "Can't copy a recycled bitmap" and crashes the
+                            // whole app when the widget is on the home screen.
                             bitmap.recycle()
-                            rounded.recycle()
                         } else {
                             views.setImageViewResource(R.id.widget_cover, R.mipmap.ic_launcher)
                         }
