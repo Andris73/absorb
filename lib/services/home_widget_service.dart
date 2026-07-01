@@ -468,20 +468,29 @@ class HomeWidgetService {
     await HomeWidget.saveWidgetData<int>('widget_skip_forward', skipForward);
 
     if (hasBook) {
+      // GH #298: the widget is a now-playing surface too — show the chapter as
+      // the title and "Author · Book" beneath, same as the lock screen. The
+      // separate chapter line is cleared so the large widget doesn't repeat it.
       await HomeWidget.saveWidgetData<String>(
-          'widget_title', player.currentTitle ?? '');
+          'widget_title', player.nowPlayingTitle);
       await HomeWidget.saveWidgetData<String>(
-          'widget_author', player.currentAuthor ?? '');
-      final chapter = player.currentChapter;
-      final chapterTitle = chapter?['title'] as String? ?? '';
-      await HomeWidget.saveWidgetData<String>('widget_chapter', chapterTitle);
+          'widget_author', player.nowPlayingSubtitle);
+      await HomeWidget.saveWidgetData<String>('widget_chapter', '');
       await HomeWidget.saveWidgetData<bool>(
           'widget_is_playing', player.isPlaying);
 
       final totalDur = player.totalDuration;
       final posSec = player.position.inMilliseconds / 1000.0;
       int progress = 0;
-      if (totalDur > 0) {
+      if (player.notifChapterMode) {
+        // Chapter-progress mode: fill the widget bar over the current chapter,
+        // matching the notification and Android Auto (same setting drives all).
+        final chStart = player.currentChapterStart;
+        final chLen = player.currentChapterEnd - chStart;
+        if (chLen > 0) {
+          progress = (((posSec - chStart) / chLen) * 1000).round().clamp(0, 1000);
+        }
+      } else if (totalDur > 0) {
         progress = ((posSec / totalDur) * 1000).round().clamp(0, 1000);
       }
       await HomeWidget.saveWidgetData<int>('widget_progress', progress);
@@ -617,10 +626,12 @@ class HomeWidgetService {
     if (coverPath != null) {
       await HomeWidget.saveWidgetData<String>('np_cover_path', coverPath);
     }
+    // GH #298: iOS native now-playing (AbsorbPlayerCore) reads these — feed it
+    // the same chapter-as-title / "Author · Book" treatment as the lock screen.
     await HomeWidget.saveWidgetData<String>(
-        'np_title', player.currentTitle ?? '');
+        'np_title', player.nowPlayingTitle);
     await HomeWidget.saveWidgetData<String>(
-        'np_author', player.currentAuthor ?? '');
+        'np_author', player.nowPlayingSubtitle);
 
     debugPrint('[WidgetDebug] [NativeCore] Stashed: item=$itemId ep=${player.currentEpisodeId} '
         'pos=${posSec.toStringAsFixed(1)}s tot=${player.totalDuration.toStringAsFixed(0)}s '

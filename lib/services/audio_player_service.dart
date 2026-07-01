@@ -1312,6 +1312,35 @@ class AudioPlayerService extends ChangeNotifier {
   double get totalDuration => _totalDuration;
   List<dynamic> get chapters => _chapters;
 
+  /// GH #298: how every "now playing" surface (lock screen, CarPlay, Android
+  /// Auto, home widget) labels the current item — the chapter goes on the
+  /// primary line and the book sits beside the author ("Author · Book").
+  /// Chapterless content (podcasts, books with no chapters) keeps the
+  /// book/episode on the primary line.
+  static ({String title, String subtitle}) nowPlayingLabels(
+      String primaryTitle, String author, String? chapter) {
+    final ch = chapter?.trim() ?? '';
+    if (ch.isEmpty) return (title: primaryTitle, subtitle: author);
+    final a = author.trim();
+    final String subtitle;
+    if (a.isEmpty) {
+      subtitle = primaryTitle;
+    } else if (primaryTitle.isEmpty) {
+      subtitle = a;
+    } else {
+      subtitle = '$a · $primaryTitle';
+    }
+    return (title: ch, subtitle: subtitle);
+  }
+
+  /// Chapter-aware primary line for the current item (GH #298).
+  String get nowPlayingTitle => nowPlayingLabels(_currentTitle ?? '',
+      _currentAuthor ?? '', currentChapter?['title'] as String?).title;
+
+  /// Chapter-aware secondary line ("Author · Book") for the current item.
+  String get nowPlayingSubtitle => nowPlayingLabels(_currentTitle ?? '',
+      _currentAuthor ?? '', currentChapter?['title'] as String?).subtitle;
+
   void updateChapters(List<dynamic> chapters) {
     _chapters = chapters;
     _handler?.updateChaptersQueue(chapters);
@@ -1490,12 +1519,19 @@ class AudioPlayerService extends ChangeNotifier {
 
       final startS = (next['startS'] as num?)?.toDouble() ?? 0;
 
+      // GH #298: label the pre-buffered next book like the lock screen — its
+      // chapter at the resume point as title, "Author · Book" beneath.
+      final nextLabels = nowPlayingLabels(
+          (next['title'] as String?) ?? '',
+          (next['author'] as String?) ?? '',
+          _chapterTitleAt((next['chapters'] as List<dynamic>?) ?? const [], startS));
+
       final ok = await _queueAdvancerChannel.invokeMethod<bool>('prepareNext', {
         'url': url,
         'isLocal': isLocal,
         'headers': audioHeaders ?? <String, String>{},
-        'title': next['title'] ?? '',
-        'artist': next['author'] ?? '',
+        'title': nextLabels.title,
+        'artist': nextLabels.subtitle,
         'durationS': (next['duration'] as num?)?.toDouble() ?? 0,
         'coverPath': coverPath,
         'startS': startS,
@@ -1547,7 +1583,8 @@ class AudioPlayerService extends ChangeNotifier {
         title: _currentTitle ?? '',
         artist: _currentAuthor ?? '',
         duration: _totalDuration,
-        elapsed: startS));
+        elapsed: startS,
+        chapter: initChapter));
 
     if (Platform.isIOS) {
       unawaited(_iosAutoAdvanceKick());
@@ -1691,16 +1728,19 @@ class AudioPlayerService extends ChangeNotifier {
     required String artist,
     required double duration,
     required double elapsed,
+    String? chapter,
   }) async {
     if (!Platform.isIOS) return;
+    // GH #298: match the lock screen — chapter as title, "Author · Book" beneath.
+    final labels = nowPlayingLabels(title, artist, chapter);
     try {
       await _eqChannelForDiag.invokeMethod('primeNowPlaying', {
-        'title': title,
-        'artist': artist,
+        'title': labels.title,
+        'artist': labels.subtitle,
         'duration': duration,
         'elapsed': elapsed,
       });
-      debugPrint('[Player] primeNowPlaying title="$title" elapsed=${elapsed.toStringAsFixed(1)}');
+      debugPrint('[Player] primeNowPlaying title="${labels.title}" elapsed=${elapsed.toStringAsFixed(1)}');
     } catch (e) {
       debugPrint('[Player] primeNowPlaying failed: $e');
     }
@@ -2774,7 +2814,7 @@ class AudioPlayerService extends ChangeNotifier {
       _subscribeTrackIndex();
       final initChapter = _initChapterInfo(startTime);
       _pushMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: initChapter);
-      await _primeNowPlaying(title: title, artist: author, duration: totalDuration, elapsed: startTime);
+      await _primeNowPlaying(title: title, artist: author, duration: totalDuration, elapsed: startTime, chapter: initChapter);
       final speedKey = _currentItemId ?? itemId;
       final bookSpeed = await PlayerSettings.getBookSpeed(speedKey);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
@@ -2894,7 +2934,7 @@ class AudioPlayerService extends ChangeNotifier {
       _subscribeTrackIndex();
       final initChapter = _initChapterInfo(startTime);
       _pushMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: initChapter);
-      await _primeNowPlaying(title: title, artist: author, duration: totalDuration, elapsed: startTime);
+      await _primeNowPlaying(title: title, artist: author, duration: totalDuration, elapsed: startTime, chapter: initChapter);
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
       await _player!.setSpeed(speed);
@@ -3158,7 +3198,7 @@ class AudioPlayerService extends ChangeNotifier {
       _subscribeTrackIndex();
       final initChapter = _initChapterInfo(startTime);
       _pushMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: initChapter);
-      await _primeNowPlaying(title: title, artist: author, duration: totalDuration, elapsed: startTime);
+      await _primeNowPlaying(title: title, artist: author, duration: totalDuration, elapsed: startTime, chapter: initChapter);
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
       await _player!.setSpeed(speed);
@@ -3387,6 +3427,19 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   /// Set _currentChapterStart/End for the chapter containing [posSeconds].
+  /// Chapter title covering [posSeconds] in an arbitrary chapter list (used for
+  /// the pre-buffered next book, whose chapters aren't in [_chapters] yet).
+  String? _chapterTitleAt(List<dynamic> chapters, double posSeconds) {
+    if (chapters.isEmpty) return null;
+    for (final ch in chapters) {
+      final m = ch as Map<String, dynamic>;
+      final start = (m['start'] as num?)?.toDouble() ?? 0;
+      final end = (m['end'] as num?)?.toDouble() ?? double.infinity;
+      if (posSeconds >= start && posSeconds < end) return m['title'] as String?;
+    }
+    return (chapters.first as Map<String, dynamic>)['title'] as String?;
+  }
+
   /// Returns the chapter title (or null) so _pushMediaItem can show it.
   String? _initChapterInfo(double posSeconds) {
     if (_chapters.isEmpty) return null;
@@ -3469,9 +3522,8 @@ class AudioPlayerService extends ChangeNotifier {
 
   void _updateNotificationMediaItem(String itemId, String title, String author,
       String? coverUrl, double totalDuration, {String? chapter}) {
-    final displayArtist = chapter != null && chapter.isNotEmpty
-        ? '$author · $chapter'
-        : author;
+    // GH #298: chapter becomes the title, book moves beside the author.
+    final labels = nowPlayingLabels(title, author, chapter);
     // In chapter progress mode, show chapter duration instead of full book
     final rawDuration = notifChapterMode
         ? (_currentChapterEnd - _currentChapterStart)
@@ -3486,11 +3538,11 @@ class AudioPlayerService extends ChangeNotifier {
     // (BT car display stuck on prior chapter). If this fires with fresh
     // artist/chapter text but the car still shows old, the issue is downstream
     // of audio_service's MediaSession push.
-    debugPrint('[Handler] mediaItem.add: item=$itemId title="$title" artist="$displayArtist" dur=${displayDuration.round()}s chapter=$chapter hasHandler=${_handler != null}');
+    debugPrint('[Handler] mediaItem.add: item=$itemId title="${labels.title}" artist="${labels.subtitle}" dur=${displayDuration.round()}s chapter=$chapter hasHandler=${_handler != null}');
     _handler!.mediaItem.add(MediaItem(
       id: itemId,
-      title: title,
-      artist: displayArtist,
+      title: labels.title,
+      artist: labels.subtitle,
       album: title,
       duration: Duration(seconds: displayDuration.round()),
       artUri: coverUrl != null ? Uri.tryParse(coverUrl) : null,
