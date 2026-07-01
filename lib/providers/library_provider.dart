@@ -388,7 +388,7 @@ class LibraryProvider extends ChangeNotifier
             if (b is Map<String, dynamic>) {
               final id = b['id'] as String?;
               final ts = b['updatedAt'] as num?;
-              if (id != null && ts != null) _itemUpdatedAt[id] = ts.toInt();
+              if (id != null && ts != null) registerUpdatedAt(id, ts.toInt());
             }
           }
         }

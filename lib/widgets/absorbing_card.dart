@@ -44,6 +44,11 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   bool _isStarting = false;
   List<dynamic>? _fetchedChapters;
   Map<String, dynamic>? _fetchedEbookFile;
+  // Server-change tick last acted on, so a same-id item_updated (e.g. an ebook
+  // file added to this book) re-runs the full-item fetch. The card is kept
+  // alive with a stable key, so without this it never picks up a server change.
+  int? _lastSeenUpdatedAt;
+  bool _refetchingItem = false;
   StreamSubscription<Duration>? _chapterTrackSub;
   int _lastChapterIdx = -1;
   ui.Image? _blurredCover; // Precached blurred background
@@ -147,6 +152,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   @override
   void initState() {
     super.initState();
+    // Baseline the server-change tick so only a CHANGE after mount re-fetches
+    // (the initial fill is handled by _fetchChaptersIfNeeded below).
+    _lastSeenUpdatedAt = context.read<LibraryProvider>().itemUpdatedAt(_itemId);
     _fetchChaptersIfNeeded();
     _startChapterTracking();
     ChromecastService().addListener(_onCastChanged);
@@ -252,6 +260,28 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     } catch (_) {}
   }
 
+  /// Re-fetch the full item when the server reports this book changed (socket
+  /// item_updated bumps the provider's per-item tick). Targets the case where
+  /// an ebook file is added while the app is open: the card's minified entity
+  /// never carries ebookFile and the one-time initState fetch found none, so
+  /// the "Read" action would stay disabled until a restart. Only fires while
+  /// the ebook is still missing, so ordinary cover/metadata updates don't
+  /// trigger needless fetches.
+  void _maybeRefetchOnServerChange(LibraryProvider lib) {
+    final ts = lib.itemUpdatedAt(_itemId);
+    if (ts == _lastSeenUpdatedAt) return;
+    _lastSeenUpdatedAt = ts;
+    if (_ebookFile != null || _refetchingItem) return;
+    _refetchingItem = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await _fetchChaptersIfNeeded();
+      } finally {
+        _refetchingItem = false;
+      }
+    });
+  }
+
   void _startChapterTracking() {
     _chapterTrackSub?.cancel();
 
@@ -335,6 +365,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       _fetchedChapters = null;
       _fetchedEbookFile = null;
       _lastChapterIdx = -1;
+      _lastSeenUpdatedAt = context.read<LibraryProvider>().itemUpdatedAt(_itemId);
       _fetchChaptersIfNeeded();
     }
     if (oldWidget.player != widget.player) _startChapterTracking();
@@ -448,6 +479,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     final l = AppLocalizations.of(context)!;
 
     final lib = context.watch<LibraryProvider>();
+    _maybeRefetchOnServerChange(lib);
     // For podcast episodes, look up progress by compound key (itemId-episodeId)
     final progress = (_episodeId != null)
         ? lib.getEpisodeProgress(_itemId, _episodeId!)

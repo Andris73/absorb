@@ -253,7 +253,18 @@ mixin _StateMixin on ChangeNotifier {
     _seriesTabCache[key] = {'items': items, 'total': total};
   }
 
-  void registerUpdatedAt(String id, int ts) => _itemUpdatedAt[id] = ts;
+  // Monotonic: only ever advances. A slow/stale personalized load that carries
+  // a pre-change snapshot must not write an older timestamp over a newer one, or
+  // it would mask a server change (e.g. an ebook file just added) from widgets
+  // watching the tick.
+  void registerUpdatedAt(String id, int ts) {
+    final cur = _itemUpdatedAt[id];
+    if (cur == null || ts > cur) _itemUpdatedAt[id] = ts;
+  }
+  /// Per-item "last changed on the server" tick, bumped on every socket
+  /// item_updated. Widgets watch this to re-fetch when an item changes (e.g. an
+  /// ebook file added to a book) without an app restart.
+  int? itemUpdatedAt(String id) => _itemUpdatedAt[id];
 
   void registerHasCover(String id, bool hasCover) {
     if (hasCover) {
