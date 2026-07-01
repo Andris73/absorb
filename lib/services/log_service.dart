@@ -56,7 +56,7 @@ class LogService {
       // Start fresh - write device/server info header
       final header = StringBuffer()
         ..writeln('=== Absorb Log ===')
-        ..writeln('App Version: ${ApiService.appVersion}')
+        ..writeln('App Version: ${ApiService.appVersionFull}')
         ..writeln('Device: ${ApiService.deviceManufacturer} ${ApiService.deviceModel}')
         ..writeln('OS: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}')
         ..writeln('Created: ${DateTime.now().toIso8601String()}')
@@ -146,7 +146,7 @@ class LogService {
       // still have device info (don't wait for next init/restart).
       final header = StringBuffer()
         ..writeln('=== Absorb Log ===')
-        ..writeln('App Version: ${ApiService.appVersion}')
+        ..writeln('App Version: ${ApiService.appVersionFull}')
         ..writeln('Device: ${ApiService.deviceManufacturer} ${ApiService.deviceModel}')
         ..writeln('OS: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}')
         ..writeln('Created: ${DateTime.now().toIso8601String()}')
@@ -166,7 +166,7 @@ class LogService {
   /// Build device info string used by both email methods.
   String _deviceInfo({String? serverVersion}) {
     final buf = StringBuffer()
-      ..writeln('App Version: ${ApiService.appVersion}')
+      ..writeln('App Version: ${ApiService.appVersionFull}')
       ..writeln('Device: ${ApiService.deviceManufacturer} ${ApiService.deviceModel}')
       ..writeln('Device ID: ${ApiService.deviceId}');
     if (serverVersion != null) {

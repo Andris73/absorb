@@ -755,7 +755,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _deviceAvailableBytes = deviceStorage['availableBytes']!;
       }
       _autoSleepSettings = autoSleep;
-      _appVersion = pkgInfo.version;
+      _appVersion = pkgInfo.buildNumber.isEmpty
+          ? pkgInfo.version
+          : '${pkgInfo.version}+${pkgInfo.buildNumber}';
       _streamingCacheSizeMb = cacheSizeMb;
       _localServerEnabled = localEnabled;
       _localServerUrl = localUrl;

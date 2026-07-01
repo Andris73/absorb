@@ -16,6 +16,12 @@ class LocalSessionResult {
 
 class ApiService {
   static String appVersion = '1.3.0'; // fallback; overwritten by initVersion()
+  static String appBuild = ''; // build number; set by initVersion()
+
+  /// Version plus build (e.g. "1.9.1+198") for logs. `appVersion` stays clean
+  /// because it's also sent to the server as clientVersion.
+  static String get appVersionFull =>
+      appBuild.isEmpty ? appVersion : '$appVersion+$appBuild';
 
   /// Audible region code derived from device locale.
   static String get _region {
@@ -33,6 +39,7 @@ class ApiService {
     try {
       final info = await PackageInfo.fromPlatform();
       appVersion = info.version;
+      appBuild = info.buildNumber;
     } catch (_) {}
   }
 
