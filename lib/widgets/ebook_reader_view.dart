@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' show min;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_epub_viewer/flutter_epub_viewer.dart';
@@ -57,12 +58,16 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   bool _loading = true;
   String? _error;
   File? _cachedFile;
-  // Swiping to the recents/app-switcher resizes the WebView, which makes epub.js
-  // re-paginate and re-anchor a page back (and fire a stray relocate that would
-  // save that wrong page). Remember the real page while backgrounded, ignore
-  // relocations that arrive while away, and restore the page on return.
+  // Swiping to the recents/app-switcher un-hides the system bars. The frozen
+  // safe-area padding (see _buildViewerArea) keeps that from resizing the
+  // WebView, but if a resize still gets through (some OEMs resize the window
+  // itself), epub.js re-paginates and re-anchors a page back, firing a stray
+  // relocate that would save that wrong page. Remember the real page while
+  // backgrounded, ignore relocations that arrive while away, and restore the
+  // page on return if one actually drifted us.
   bool _readerActive = true;
   String? _bgCfi;
+  bool _bgDrifted = false;
   String? _initialCfi;
   bool _showControls = false;
   List<EpubChapter> _chapters = [];
@@ -167,12 +172,16 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     if (state == AppLifecycleState.resumed) {
       _readerActive = true;
       // Restore the page we were on before the recents/background resize drifted
-      // it. Delay so the window has settled back to full size and epub.js has
-      // re-paginated, otherwise the re-display would round against the wrong
-      // (still-resizing) layout.
+      // it - only if a stray relocation actually fired while away, so the common
+      // no-resize round trip doesn't get a redundant re-display. Delay so the
+      // window has settled back to full size and epub.js has re-paginated,
+      // otherwise the re-display would round against the wrong (still-resizing)
+      // layout.
       final cfi = _bgCfi;
+      final drifted = _bgDrifted;
       _bgCfi = null;
-      if (cfi != null && cfi.isNotEmpty) {
+      _bgDrifted = false;
+      if (drifted && cfi != null && cfi.isNotEmpty) {
         Future.delayed(const Duration(milliseconds: 350), () {
           if (mounted && _readerActive) _epubController?.display(cfi: cfi);
         });
@@ -1640,12 +1649,39 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     );
   }
 
-  /// Wrapped in SafeArea so the page never slides under the camera cutout.
-  /// Side margins are applied here (horizontal padding shrinks the WebView so
-  /// epub.js paginates into the narrower box) - epub.js's column layout ignores
-  /// horizontal body padding, so CSS only handles the vertical margins.
+  // The viewer's safe-area padding, frozen at the smallest value seen for the
+  // current window size. Swiping to recents un-hides the system bars, which
+  // grows MediaQuery padding for a moment - a live SafeArea would shrink the
+  // WebView and epub.js would visibly rescale the page mid-gesture. Once
+  // immersive mode settles, the only real padding left is the camera cutout,
+  // which only changes when the window size does (rotation, split-screen), so
+  // padding growth at a constant size is transient chrome and is ignored.
+  EdgeInsets? _viewerPadding;
+  Size? _viewerPaddingSize;
+
+  /// Padded with the frozen safe-area padding above so the page never slides
+  /// under the camera cutout but also never resizes when the system bars flash
+  /// back in. Side margins are applied here (horizontal padding shrinks the
+  /// WebView so epub.js paginates into the narrower box) - epub.js's column
+  /// layout ignores horizontal body padding, so CSS only handles the vertical
+  /// margins.
   Widget _buildViewerArea(Widget viewer) {
-    return SafeArea(
+    final size = MediaQuery.sizeOf(context);
+    final pad = MediaQuery.paddingOf(context);
+    final prev = _viewerPadding;
+    if (prev == null || _viewerPaddingSize != size) {
+      _viewerPadding = pad;
+      _viewerPaddingSize = size;
+    } else {
+      _viewerPadding = EdgeInsets.only(
+        left: min(prev.left, pad.left),
+        top: min(prev.top, pad.top),
+        right: min(prev.right, pad.right),
+        bottom: min(prev.bottom, pad.bottom),
+      );
+    }
+    return Padding(
+      padding: _viewerPadding!,
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: _marginH.toDouble()),
         child: LayoutBuilder(
@@ -1879,7 +1915,11 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                 if (!mounted) return;
                 // Ignore relocations while backgrounded: the recents/resize
                 // re-paginate fires a stray one that would save the wrong page.
-                if (!_readerActive) return;
+                // Note it so the resume path knows the page needs restoring.
+                if (!_readerActive) {
+                  _bgDrifted = true;
+                  return;
+                }
                 _currentCfi = value.startCfi;
                 _updateBookmarkState();
                 if (_locationsReady) {
