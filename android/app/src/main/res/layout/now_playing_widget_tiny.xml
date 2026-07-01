@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tiny 1x1 now-playing widget: cover art, tap anywhere toggles play/pause -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:clipToOutline="true">
+
+    <ImageView
+        android:id="@+id/widget_cover"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:src="@mipmap/ic_launcher"
+        android:contentDescription="Cover art" />
+
+    <!-- Subtle centered play/pause indicator (reflects state; whole tile is tappable) -->
+    <ImageView
+        android:id="@+id/widget_play_pause"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="center"
+        android:padding="9dp"
+        android:src="@drawable/ic_widget_play_dark"
+        android:background="@drawable/widget_play_btn_bg"
+        android:scaleType="centerInside"
+        android:contentDescription="Play or pause" />
+
+</FrameLayout>

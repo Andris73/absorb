@@ -17,6 +17,7 @@ import 'wear_player_service.dart';
 
 const String _androidWidgetName = 'NowPlayingWidget';
 const String _androidWidgetCompactName = 'NowPlayingWidgetCompact';
+const String _androidWidgetTinyName = 'NowPlayingWidgetTiny';
 const String _androidWidgetStatsName = 'StatsWidget';
 const String _iOSWidgetName = 'NowPlayingWidget';
 const String _iOSStatsWidgetName = 'StatsWidget';
@@ -633,6 +634,7 @@ class HomeWidgetService {
     if (Platform.isAndroid) {
       await HomeWidget.updateWidget(name: _androidWidgetName);
       await HomeWidget.updateWidget(name: _androidWidgetCompactName);
+      await HomeWidget.updateWidget(name: _androidWidgetTinyName);
       await HomeWidget.updateWidget(name: _androidWidgetStatsName);
     } else if (Platform.isIOS) {
       await HomeWidget.updateWidget(iOSName: _iOSWidgetName);
