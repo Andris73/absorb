@@ -52,11 +52,17 @@ class EbookReaderView extends StatefulWidget {
   State<EbookReaderView> createState() => EbookReaderViewState();
 }
 
-class EbookReaderViewState extends State<EbookReaderView> {
+class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObserver {
   EpubController? _epubController;
   bool _loading = true;
   String? _error;
   File? _cachedFile;
+  // Swiping to the recents/app-switcher resizes the WebView, which makes epub.js
+  // re-paginate and re-anchor a page back (and fire a stray relocate that would
+  // save that wrong page). Remember the real page while backgrounded, ignore
+  // relocations that arrive while away, and restore the page on return.
+  bool _readerActive = true;
+  String? _bgCfi;
   String? _initialCfi;
   bool _showControls = false;
   List<EpubChapter> _chapters = [];
@@ -79,6 +85,8 @@ class EbookReaderViewState extends State<EbookReaderView> {
   List<EpubSearchResult> _searchResults = [];
   List<String?> _resultChapters = []; // parallel to _searchResults
   String _lastSearchedQuery = '';
+  // cfi -> which occurrence of the query within its section (for exact re-anchor)
+  final Map<String, int> _resultOccByCfi = {};
 
   // Selection state for highlight menu
   String? _selectionText;
@@ -140,6 +148,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _epubController = EpubController();
     _loadInitialLocation();
     _loadSettings().then((_) => _downloadAndOpen());
@@ -147,6 +156,30 @@ class EbookReaderViewState extends State<EbookReaderView> {
     PlayerSettings.settingsChanged.addListener(_loadSkipSettings);
     _loadSkipSettings();
     _loadAudioMeta();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      _readerActive = true;
+      // Restore the page we were on before the recents/background resize drifted
+      // it. Delay so the window has settled back to full size and epub.js has
+      // re-paginated, otherwise the re-display would round against the wrong
+      // (still-resizing) layout.
+      final cfi = _bgCfi;
+      _bgCfi = null;
+      if (cfi != null && cfi.isNotEmpty) {
+        Future.delayed(const Duration(milliseconds: 350), () {
+          if (mounted && _readerActive) _epubController?.display(cfi: cfi);
+        });
+      }
+    } else {
+      // Leaving the foreground: snapshot the real page and stop trusting
+      // relocations until we're back (they'll be resize artifacts).
+      if (_readerActive) _bgCfi = _currentCfi;
+      _readerActive = false;
+    }
   }
 
   Future<void> _loadAudioMeta() async {
@@ -322,8 +355,11 @@ class EbookReaderViewState extends State<EbookReaderView> {
     // full theme from load survives and no post-load re-apply is needed.
     final font = _font;
     final body = <String, String>{
-      'color': p.fg,
-      'background': p.bg,
+      // !important so a book's own stylesheet can't override the reader theme
+      // (some books set their own body colors, which left the page white with
+      // black text regardless of the chosen theme).
+      'color': '${p.fg} !important',
+      'background': '${p.bg} !important',
       'line-height': '$_lineHeight',
       'padding': '${_marginV}px 0 !important',
       'margin': '0px !important',
@@ -342,6 +378,9 @@ class EbookReaderViewState extends State<EbookReaderView> {
     return EpubTheme.custom(
       backgroundDecoration: BoxDecoration(color: p.bgColor),
       customCss: {
+        // Theme the root too: some books put a background on html (or leave body
+        // narrower than the page), which would otherwise show through white.
+        'html': {'background': '${p.bg} !important'},
         'body': body,
         'p, div, span, h1, h2, h3, h4, h5, h6, li, td, th, a, em, strong, blockquote': textRule,
       },
@@ -380,6 +419,7 @@ class EbookReaderViewState extends State<EbookReaderView> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _routeAnim?.removeStatusListener(_onRouteAnim);
     PlayerSettings.settingsChanged.removeListener(_loadSkipSettings);
     // Restore system UI when leaving
@@ -1218,8 +1258,21 @@ class EbookReaderViewState extends State<EbookReaderView> {
     if (wc == null) return _SearchPayload(query: q, results: const [], chapters: const []);
     final res = await wc.callAsyncJavaScript(
       functionBody: '''
+        // Search a SEPARATE epub.js Book that shares the live book's packaging
+        // and loader but owns its own spine sections. The old version loaded and
+        // unloaded every section of the LIVE book, tearing state out from under
+        // the rendition and wedging its shared next/prev/display queue — which
+        // froze page turns after a search-jump. Result CFIs are identical because
+        // cfiBase is derived from the same packaging. Cached per webview (one
+        // book per reader), so re-searches reuse it.
+        var sb = window.__absorbSearchBook;
+        if (!sb) {
+          sb = ePub();
+          sb.spine.unpack(book.packaging, book.resolve.bind(book), book.canonical.bind(book));
+          window.__absorbSearchBook = sb;
+        }
         var out = [];
-        var items = (book && book.spine && book.spine.spineItems) ? book.spine.spineItems : [];
+        var items = (sb.spine && sb.spine.spineItems) ? sb.spine.spineItems : [];
         for (var i = 0; i < items.length; i++) {
           var item = items[i];
           try {
@@ -1227,7 +1280,10 @@ class EbookReaderViewState extends State<EbookReaderView> {
             var found = (typeof item.search === 'function') ? item.search(query) : item.find(query);
             found = found || [];
             for (var j = 0; j < found.length; j++) {
-              out.push({ cfi: found[j].cfi, excerpt: found[j].excerpt || '', href: item.href || '' });
+              // occ = which occurrence of the query this is WITHIN its section
+              // (0-based, document order). Used at jump time to re-find the exact
+              // same hit in the live rendered DOM.
+              out.push({ cfi: found[j].cfi, excerpt: found[j].excerpt || '', href: item.href || '', occ: j });
             }
           } catch (e) {
           } finally {
@@ -1250,27 +1306,129 @@ class EbookReaderViewState extends State<EbookReaderView> {
     }
     final results = <EpubSearchResult>[];
     final chapters = <String?>[];
+    _resultOccByCfi.clear();
     for (final entry in list) {
       final m = entry as Map<String, dynamic>;
       final cfi = m['cfi'] as String? ?? '';
       if (cfi.isEmpty) continue;
       results.add(EpubSearchResult(cfi: cfi, excerpt: (m['excerpt'] as String? ?? '').trim()));
       chapters.add(_chapterForHref(m['href'] as String? ?? ''));
+      _resultOccByCfi[cfi] = (m['occ'] as num?)?.toInt() ?? 0;
     }
     return _SearchPayload(query: q, results: results, chapters: chapters);
   }
 
   void _jumpToSearchResult(EpubSearchResult result) {
-    _epubController?.display(cfi: result.cfi);
-    // Brief highlight so the user can spot the match on the page.
-    _epubController?.addHighlight(
-      cfi: result.cfi,
-      color: const Color(0xFFFFEB3B),
-      opacity: 0.55,
-    );
-    Future.delayed(const Duration(seconds: 3), () {
+    final wc = _epubController?.webViewController;
+    final query = _lastSearchedQuery;
+    final occ = _resultOccByCfi[result.cfi] ?? 0;
+    debugPrint('[Search] jump query="$query" occ=$occ cfi=${result.cfi}');
+    if (wc == null || query.isEmpty) {
+      _jumpToRawCfi(result.cfi);
+      return;
+    }
+    // The search-result CFI was generated against the section parsed as XML
+    // (book.load), but the reader renders the chapter as HTML in an iframe. The
+    // two DOM trees differ structurally, so that CFI can resolve to the wrong
+    // spot. Navigate to the section with the rough CFI, then re-find the exact
+    // hit in the LIVE rendered document and rebuild the CFI there. Uses the
+    // section's whole concatenated text (so a match split across formatting
+    // spans still resolves) and the occurrence index (so a repeated word lands
+    // on the one the user tapped, not the first).
+    wc.callAsyncJavaScript(
+      functionBody: '''
+        var dbg = { matched: false };
+        try {
+          await rendition.display(cfi);
+          var target = null;
+          try { target = book.spine.get(cfi); } catch (e) {}
+          var si = target ? target.index : -1;
+          dbg.si = si;
+          var contents = (typeof rendition.getContents === 'function') ? rendition.getContents() : [];
+          dbg.nContents = contents.length;
+          dbg.secIdx = contents.map(function(x){ return x.sectionIndex; });
+          var c = null;
+          for (var i = 0; i < contents.length; i++) {
+            if (si < 0 || contents[i].sectionIndex === si) { c = contents[i]; break; }
+          }
+          if (!c) c = contents[0];
+          var doc = c && c.document;
+          if (doc) {
+            var tw = doc.createTreeWalker(doc.body || doc, NodeFilter.SHOW_TEXT, null, false);
+            var nodes = [], text = '', node;
+            while (node = tw.nextNode()) {
+              nodes.push({ node: node, start: text.length, len: node.textContent.length });
+              text += node.textContent;
+            }
+            dbg.textLen = text.length;
+            var hay = text.toLowerCase();
+            var needle = (query || '').toLowerCase();
+            dbg.total = 0;
+            { var t = hay.indexOf(needle); while (needle && t !== -1) { dbg.total++; t = hay.indexOf(needle, t + 1); } }
+            if (needle && nodes.length) {
+              var pos = hay.indexOf(needle);
+              for (var n = 0; n < (occ || 0) && pos !== -1; n++) {
+                var np = hay.indexOf(needle, pos + 1);
+                if (np === -1) break;
+                pos = np;
+              }
+              dbg.pos = pos;
+              if (pos !== -1) {
+                var locate = function (off) {
+                  for (var k = 0; k < nodes.length; k++) {
+                    var e = nodes[k];
+                    if (off < e.start + e.len) return { node: e.node, offset: off - e.start };
+                  }
+                  var last = nodes[nodes.length - 1];
+                  return { node: last.node, offset: last.len };
+                };
+                var s = locate(pos), en = locate(pos + needle.length);
+                var r = doc.createRange();
+                r.setStart(s.node, s.offset);
+                r.setEnd(en.node, en.offset);
+                var liveCfi = c.cfiFromRange(r);
+                if (liveCfi) { dbg.matched = true; dbg.liveCfi = liveCfi; await rendition.display(liveCfi); }
+              }
+            }
+          }
+        } catch (e) { dbg.err = String(e); }
+        return JSON.stringify(dbg);
+      ''',
+      arguments: {'cfi': result.cfi, 'query': query, 'occ': occ},
+    ).then((res) {
       if (!mounted) return;
-      _epubController?.removeHighlight(cfi: result.cfi);
+      final raw = res?.value;
+      debugPrint('[Search] anchor $raw');
+      var liveCfi = result.cfi;
+      if (raw is String) {
+        try {
+          final d = jsonDecode(raw) as Map<String, dynamic>;
+          if (d['matched'] == true && d['liveCfi'] is String) {
+            liveCfi = d['liveCfi'] as String;
+          }
+        } catch (_) {}
+      }
+      _highlightSearchHit(liveCfi);
+    });
+  }
+
+  void _jumpToRawCfi(String cfi) {
+    _epubController?.display(cfi: cfi);
+    _highlightSearchHit(cfi);
+  }
+
+  void _highlightSearchHit(String cfi) {
+    // Brief highlight so the user can spot the match on the page. Strong opacity
+    // and a vivid amber so it stays visible across light, sepia, and dark themes
+    // (the highlight blends with the page, so a faint tint washes out on some).
+    _epubController?.addHighlight(
+      cfi: cfi,
+      color: const Color(0xFFFFC400),
+      opacity: 0.9,
+    );
+    Future.delayed(const Duration(seconds: 4), () {
+      if (!mounted) return;
+      _epubController?.removeHighlight(cfi: cfi);
     });
   }
 
@@ -1712,6 +1870,9 @@ class EbookReaderViewState extends State<EbookReaderView> {
               },
               onRelocated: (value) {
                 if (!mounted) return;
+                // Ignore relocations while backgrounded: the recents/resize
+                // re-paginate fires a stray one that would save the wrong page.
+                if (!_readerActive) return;
                 _currentCfi = value.startCfi;
                 _updateBookmarkState();
                 if (_locationsReady) {

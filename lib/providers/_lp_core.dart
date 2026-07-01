@@ -683,6 +683,20 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
             localFinished[_lastFinishedItemId!] =
                 _progressMap[_lastFinishedItemId!]!;
           }
+          // Snapshot local ebook positions: the just-read page is saved locally
+          // (applyLocalEbookProgress) but its server PATCH may not have landed,
+          // and this rebuild would otherwise replace it with the server's older
+          // location - resuming the reader a page behind. Re-applied below when
+          // still at/ahead of the server.
+          final localEbook = <String, Map<String, dynamic>>{};
+          for (final e in _progressMap.entries) {
+            if (e.value['ebookLocation'] != null) {
+              localEbook[e.key] = {
+                'ebookLocation': e.value['ebookLocation'],
+                'ebookProgress': e.value['ebookProgress'],
+              };
+            }
+          }
           _progressMap = {};
           for (final mp in progressList) {
             if (mp is Map<String, dynamic>) {
@@ -699,6 +713,20 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
             final serverHasFinished = serverEntry?['isFinished'] == true;
             if (serverEntry == null || !serverHasFinished) {
               _progressMap[entry.key] = {...?serverEntry, ...entry.value};
+            }
+          }
+          // Keep the furthest-read ebook position (local vs server), so a stale
+          // server pull can't rewind the reader's saved page.
+          for (final entry in localEbook.entries) {
+            final serverProg =
+                (_progressMap[entry.key]?['ebookProgress'] as num?)?.toDouble() ?? -1;
+            final localProg = (entry.value['ebookProgress'] as num?)?.toDouble() ?? 0;
+            if (localProg >= serverProg) {
+              _progressMap[entry.key] = {
+                ...?_progressMap[entry.key],
+                'ebookLocation': entry.value['ebookLocation'],
+                'ebookProgress': entry.value['ebookProgress'],
+              };
             }
           }
           if (_locallyFinishedItems.isNotEmpty) {
@@ -1123,7 +1151,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     final id = data['id'] as String?;
     final ts = data['updatedAt'] as num?;
     if (id != null && ts != null) {
-      _itemUpdatedAt[id] = ts.toInt();
+      registerUpdatedAt(id, ts.toInt());
       // Mirror into AA/CarPlay so the next browse-tree refresh hands out a
       // ts-suffixed cover URI and the native cover cache can invalidate.
       AndroidAutoService.notifyItemUpdated(id, ts.toInt());
@@ -1260,7 +1288,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           if (e is Map<String, dynamic>) {
             final id = e['id'] as String?;
             final ts = e['updatedAt'] as num?;
-            if (id != null && ts != null) _itemUpdatedAt[id] = ts.toInt();
+            if (id != null && ts != null) registerUpdatedAt(id, ts.toInt());
             if (id != null) {
               final coverPath = (e['media'] as Map<String, dynamic>?)?['coverPath'] as String?;
               registerHasCover(id, coverPath != null && coverPath.isNotEmpty);
