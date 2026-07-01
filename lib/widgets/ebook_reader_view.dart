@@ -152,7 +152,10 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _epubController = EpubController();
     _loadInitialLocation();
     _loadSettings().then((_) => _downloadAndOpen());
-    _setFullscreen(true);
+    // Fullscreen is toggled once the open transition completes (see _onRouteAnim
+    // / didChangeDependencies), not here: hiding the system bars mid-transition
+    // forces a full relayout while the busy home screen is still compositing
+    // behind the sliding-in reader, which makes opening from a home card janky.
     PlayerSettings.settingsChanged.addListener(_loadSkipSettings);
     _loadSkipSettings();
     _loadAudioMeta();
@@ -237,6 +240,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _routeAnim = ModalRoute.of(context)?.animation;
     if (_routeAnim == null || _routeAnim!.isCompleted) {
       _entered = true;
+      _setFullscreen(true); // no transition to wait for
     } else {
       _routeAnim!.addStatusListener(_onRouteAnim);
     }
@@ -245,6 +249,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   void _onRouteAnim(AnimationStatus status) {
     if (status == AnimationStatus.completed && mounted) {
       _routeAnim?.removeStatusListener(_onRouteAnim);
+      // Defer the immersive relayout until the reader fully covers the screen, so
+      // it doesn't jank the open animation over the busy home screen.
+      _setFullscreen(true);
       setState(() => _entered = true);
     }
   }
