@@ -72,11 +72,15 @@ class _CarModeScreenState extends State<CarModeScreen>
     ]);
   }
 
+  String? _lastLibraryId;
+
   void _loadSkipSettings() {
-    PlayerSettings.getBackSkip().then((v) {
+    final libraryId = widget.player.currentLibraryId;
+    _lastLibraryId = libraryId;
+    PlayerSettings.getEffectiveBackSkip(libraryId: libraryId).then((v) {
       if (mounted && v != _backSkip) setState(() => _backSkip = v);
     });
-    PlayerSettings.getForwardSkip().then((v) {
+    PlayerSettings.getEffectiveForwardSkip(libraryId: libraryId).then((v) {
       if (mounted && v != _forwardSkip) setState(() => _forwardSkip = v);
     });
     PlayerSettings.getNotificationChapterProgress().then((v) {
@@ -85,6 +89,8 @@ class _CarModeScreenState extends State<CarModeScreen>
   }
 
   void _onPlayerChanged() {
+    // Reload skips when the playing item's library changes.
+    if (widget.player.currentLibraryId != _lastLibraryId) _loadSkipSettings();
     if (mounted) setState(() {});
   }
 
@@ -124,6 +130,7 @@ class _CarModeScreenState extends State<CarModeScreen>
       chapters: widget.fallbackChapters,
       episodeId: widget.episodeId,
       episodeTitle: widget.episodeTitle,
+      libraryId: context.read<LibraryProvider>().selectedLibraryId,
     );
     if (mounted) setState(() => _isStarting = false);
   }

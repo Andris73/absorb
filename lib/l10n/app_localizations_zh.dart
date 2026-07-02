@@ -1207,6 +1207,40 @@ class AppLocalizationsZh extends AppLocalizations {
   String get longSkipForward => 'Long skip forward';
 
   @override
+  String get coverShapeDefault => 'Default';
+
+  @override
+  String get coverShapeSquare => 'Square';
+
+  @override
+  String get coverShapeRectangle => 'Rectangle';
+
+  @override
+  String get coverShapeLabel => 'Cover shape';
+
+  @override
+  String currentLibrarySettingsTitle(String name) {
+    return 'Current library: $name';
+  }
+
+  @override
+  String get currentLibrarySkipOverride => 'Custom skip amounts';
+
+  @override
+  String get currentLibrarySkipOverrideOnSubtitle =>
+      'On - this library uses its own skip amounts';
+
+  @override
+  String get currentLibrarySkipOverrideOffSubtitle =>
+      'Off - this library uses the global skip amounts';
+
+  @override
+  String get currentLibrarySkipBack => 'Skip back';
+
+  @override
+  String get currentLibrarySkipForward => 'Skip forward';
+
+  @override
   String get chapterProgressInNotification => '通知中显示章节进度';
 
   @override

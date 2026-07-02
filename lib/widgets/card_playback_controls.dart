@@ -14,7 +14,8 @@ class CardPlaybackControls extends StatefulWidget {
   final String? itemId;
   final bool showPlayButton;
   final double playButtonSize;
-  const CardPlaybackControls({super.key, required this.player, required this.accent, required this.isActive, required this.isStarting, required this.onStart, this.itemId, this.showPlayButton = false, this.playButtonSize = 65});
+  final String? libraryId;
+  const CardPlaybackControls({super.key, required this.player, required this.accent, required this.isActive, required this.isStarting, required this.onStart, this.itemId, this.showPlayButton = false, this.playButtonSize = 65, this.libraryId});
   @override State<CardPlaybackControls> createState() => _CardPlaybackControlsState();
 }
 
@@ -32,11 +33,16 @@ class _CardPlaybackControlsState extends State<CardPlaybackControls> {
   }
 
   void _loadSkipSettings() {
-    PlayerSettings.getBackSkip().then((v) { if (mounted && v != _backSkip) setState(() => _backSkip = v); });
-    PlayerSettings.getForwardSkip().then((v) { if (mounted && v != _forwardSkip) setState(() => _forwardSkip = v); });
+    PlayerSettings.getEffectiveBackSkip(libraryId: widget.libraryId).then((v) { if (mounted && v != _backSkip) setState(() => _backSkip = v); });
+    PlayerSettings.getEffectiveForwardSkip(libraryId: widget.libraryId).then((v) { if (mounted && v != _forwardSkip) setState(() => _forwardSkip = v); });
     PlayerSettings.getLongSkipButtons().then((v) { if (mounted && v != _longSkip) setState(() => _longSkip = v); });
     PlayerSettings.getLongBackSkip().then((v) { if (mounted && v != _longBackSkip) setState(() => _longBackSkip = v); });
     PlayerSettings.getLongForwardSkip().then((v) { if (mounted && v != _longForwardSkip) setState(() => _longForwardSkip = v); });
+  }
+
+  @override void didUpdateWidget(CardPlaybackControls old) {
+    super.didUpdateWidget(old);
+    if (old.libraryId != widget.libraryId) _loadSkipSettings();
   }
 
   @override void dispose() {

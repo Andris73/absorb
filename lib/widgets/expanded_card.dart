@@ -200,6 +200,27 @@ class _ExpandedCardState extends State<ExpandedCard> {
     setState(() {});
   }
 
+  /// Which library the live [_item] belongs to, for the per-library cover
+  /// shape. [_item] can be a synthetic fallback without a libraryId, so fall
+  /// back to the cached absorbing entry and then the player.
+  String? _resolveLibraryId() {
+    final direct = _item['libraryId'] as String?;
+    if (direct != null && direct.isNotEmpty) return direct;
+    final lib = context.read<LibraryProvider>();
+    final epId = _episodeId;
+    final key = epId != null ? '$_itemId-$epId' : _itemId;
+    final cached = lib.absorbingItemCache[key]?['libraryId'] as String?;
+    if (cached != null && cached.isNotEmpty) return cached;
+    if (_itemId == widget.player.currentItemId) return widget.player.currentLibraryId;
+    return null;
+  }
+
+  void _reloadCoverShape() {
+    PlayerSettings.getRectangleCoversFor(_resolveLibraryId()).then((v) {
+      if (mounted && v != _rectangleCovers) setState(() => _rectangleCovers = v);
+    });
+  }
+
   void _reloadButtonOrder() {
     PlayerSettings.getCardButtonOrder().then((o) {
       if (mounted && o.join(',') != _buttonOrder.join(',')) setState(() => _buttonOrder = o);
@@ -224,9 +245,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
         });
       }
     });
-    PlayerSettings.getRectangleCovers().then((v) {
-      if (mounted && v != _rectangleCovers) setState(() => _rectangleCovers = v);
-    });
+    _reloadCoverShape();
     PlayerSettings.getCoverPlayButton().then((v) {
       if (mounted && v != _coverPlayButton) setState(() => _coverPlayButton = v);
     });
@@ -325,6 +344,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
     final fallbackTitle = mounted ? AppLocalizations.of(context)!.unknown : 'Unknown';
     newItem ??= {
       'id': newItemId,
+      'libraryId': widget.player.currentLibraryId,
       'media': {
         'metadata': {
           'title': widget.player.currentTitle ?? fallbackTitle,
@@ -357,6 +377,8 @@ class _ExpandedCardState extends State<ExpandedCard> {
     _generateBlur();
     _fetchChaptersIfNeeded();
     _startChapterTracking();
+    // The new item may belong to a different library (per-library cover shape).
+    _reloadCoverShape();
   }
 
   void _startChapterTracking() {
@@ -858,6 +880,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                       itemId: _itemId,
                                       showPlayButton: !_coverPlayButton,
                                       playButtonSize: 70,
+                                      libraryId: _resolveLibraryId(),
                                     ),
                                     SizedBox(height: compact ? 8 : 24),
                                     ..._buildButtonGrid(accent, tt),
@@ -1067,6 +1090,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
       coverUrl: _coverUrl, totalDuration: _effectiveDuration, chapters: _chapters,
       episodeId: _episodeId,
       episodeTitle: _recentEpisode?['title'] as String?,
+      libraryId: _item['libraryId'] as String?,
     );
     if (mounted) {
       if (error != null) showErrorSnackBar(context, error);

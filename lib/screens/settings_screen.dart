@@ -117,6 +117,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _snappyTransitions = false;
   bool _classicWording = false;
   bool _rectangleCovers = false;
+  // Per-library overrides shown in the Library section, scoped to whichever
+  // library is currently selected (scales to accounts with many libraries -
+  // no giant list, just "whatever you're browsing right now").
+  String? _curLibId;
+  String _curLibCoverShape = 'default'; // 'default' | 'square' | 'rect'
+  bool _curLibSkipOverride = false;
+  int _curLibSkipForward = 30;
+  int _curLibSkipBack = 10;
   bool _coverPlayButton = false;
   String _cardBackground = 'blurred';
   double _progressTextScale = 1.0;
@@ -797,6 +805,92 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       _loaded = true;
     });
+    final libId = mounted ? context.read<LibraryProvider>().selectedLibraryId : null;
+    if (libId != null) _loadCurrentLibraryOverrides(libId);
+  }
+
+  /// (Re)loads the cover-shape + skip overrides for whichever library is
+  /// currently selected. Called on load and again whenever the user picks a
+  /// different library from the list in this same section.
+  Future<void> _loadCurrentLibraryOverrides(String libraryId) async {
+    final shape = await PlayerSettings.getRectangleCoversOverride(libraryId);
+    final skip = await PlayerSettings.getSkipOverride(libraryId);
+    if (mounted) setState(() {
+      _curLibId = libraryId;
+      _curLibCoverShape = shape ?? 'default';
+      _curLibSkipOverride = skip != null;
+      _curLibSkipForward = skip?.forward ?? 30;
+      _curLibSkipBack = skip?.back ?? 10;
+    });
+  }
+
+  String _coverShapeValueLabel(AppLocalizations l, String value) {
+    switch (value) {
+      case 'rect': return l.coverShapeRectangle;
+      case 'square': return l.coverShapeSquare;
+      default: return l.coverShapeDefault;
+    }
+  }
+
+  /// Default/Square/Rectangle picker for the currently selected library,
+  /// same bottom-sheet pattern as the language picker.
+  Future<void> _pickCurrentLibraryCoverShape() async {
+    final libId = _curLibId;
+    if (libId == null) return;
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
+
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: cs.surfaceContainerLow,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: cs.onSurface.withValues(alpha: 0.24),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(l.coverShapeLabel, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            RadioListTile<String>(
+              value: 'default',
+              groupValue: _curLibCoverShape,
+              onChanged: (v) => Navigator.pop(ctx, v),
+              title: Text(l.coverShapeDefault),
+              subtitle: Text(_rectangleCovers ? l.coverShapeRectangle : l.coverShapeSquare),
+            ),
+            RadioListTile<String>(
+              value: 'square',
+              groupValue: _curLibCoverShape,
+              onChanged: (v) => Navigator.pop(ctx, v),
+              title: Text(l.coverShapeSquare),
+            ),
+            RadioListTile<String>(
+              value: 'rect',
+              groupValue: _curLibCoverShape,
+              onChanged: (v) => Navigator.pop(ctx, v),
+              title: Text(l.coverShapeRectangle),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || picked == _curLibCoverShape) return;
+    setState(() => _curLibCoverShape = picked);
+    await PlayerSettings.setRectangleCoversOverride(libId, picked == 'default' ? null : picked);
   }
 
   static const _shakeSensitivityKeys = ['veryLow', 'low', 'medium', 'high', 'veryHigh'];
@@ -954,6 +1048,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final auth = context.watch<AuthProvider>();
     final lib = context.watch<LibraryProvider>();
     final l = AppLocalizations.of(context)!;
+    if (lib.selectedLibraryId != null && lib.selectedLibraryId != _curLibId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadCurrentLibraryOverrides(lib.selectedLibraryId!);
+      });
+    }
 
     return Scaffold(
       body: Container(
@@ -2821,6 +2920,91 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           onTap: () { if (!isSelected) lib.selectLibrary(id); },
                         );
                       }),
+                    ],
+                    if (_curLibId != null) ...[
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
+                        child: Text(
+                          l.currentLibrarySettingsTitle(lib.selectedLibrary?['name'] as String? ?? l.libraryFallback),
+                          style: tt.titleSmall,
+                        ),
+                      ),
+                      InkWell(
+                        onTap: _loaded ? () => _pickCurrentLibraryCoverShape() : null,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                          child: Row(children: [
+                            Expanded(child: Text(l.coverShapeLabel)),
+                            Text(_coverShapeValueLabel(l, _curLibCoverShape),
+                                style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                            Icon(Icons.chevron_right_rounded,
+                                color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                          ]),
+                        ),
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      SwitchListTile(
+                        title: Text(l.currentLibrarySkipOverride),
+                        subtitle: Text(
+                          _curLibSkipOverride
+                              ? l.currentLibrarySkipOverrideOnSubtitle
+                              : l.currentLibrarySkipOverrideOffSubtitle,
+                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                        value: _curLibSkipOverride,
+                        onChanged: _loaded ? (v) {
+                          setState(() => _curLibSkipOverride = v);
+                          if (v) {
+                            PlayerSettings.setSkipOverride(_curLibId!,
+                                forward: _curLibSkipForward, back: _curLibSkipBack);
+                          } else {
+                            PlayerSettings.setSkipOverride(_curLibId!, forward: null, back: null);
+                          }
+                        } : null,
+                      ),
+                      if (_curLibSkipOverride) ...[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(l.currentLibrarySkipBack, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                              Text(l.secondsValue(_curLibSkipBack.toString()), style: tt.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600, color: cs.primary)),
+                            ],
+                          ),
+                        ),
+                        AbsorbSlider(
+                          value: _curLibSkipBack.toDouble(),
+                          min: 5, max: 60, divisions: 11,
+                          onChanged: _loaded ? (v) {
+                            setState(() => _curLibSkipBack = v.round());
+                            PlayerSettings.setSkipOverride(_curLibId!,
+                                forward: _curLibSkipForward, back: v.round());
+                          } : null,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(l.currentLibrarySkipForward, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                              Text(l.secondsValue(_curLibSkipForward.toString()), style: tt.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600, color: cs.primary)),
+                            ],
+                          ),
+                        ),
+                        AbsorbSlider(
+                          value: _curLibSkipForward.toDouble(),
+                          min: 5, max: 60, divisions: 11,
+                          onChanged: _loaded ? (v) {
+                            setState(() => _curLibSkipForward = v.round());
+                            PlayerSettings.setSkipOverride(_curLibId!,
+                                forward: v.round(), back: _curLibSkipBack);
+                          } : null,
+                        ),
+                      ],
                     ],
                   ],
                 ),

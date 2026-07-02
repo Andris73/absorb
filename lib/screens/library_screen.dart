@@ -307,6 +307,10 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
     if (lib.selectedLibraryId != _lastLibraryId && lib.selectedLibraryId != null) {
       _lastLibraryId = lib.selectedLibraryId;
       _loadGeneration++;
+      // Cover shape can differ per library.
+      PlayerSettings.getRectangleCoversFor(lib.selectedLibraryId).then((v) {
+        if (mounted && v != _rectangleCovers) setState(() => _rectangleCovers = v);
+      });
 
       // Rebuild tab controller if library type changed
       final needsTabs = !lib.isPodcastLibrary;
@@ -370,7 +374,7 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
     PlayerSettings.getCollapseSeries().then((v) {
       if (mounted) setState(() => _collapseSeries = v);
     });
-    PlayerSettings.getRectangleCovers().then((v) {
+    PlayerSettings.getRectangleCoversFor(lib.selectedLibraryId).then((v) {
       if (mounted) setState(() => _rectangleCovers = v);
     });
     _restoreSortFilter().then((_) {
@@ -518,7 +522,8 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
     Future.wait([
       PlayerSettings.getHideEbookOnly(),
       PlayerSettings.getCollapseSeries(),
-      PlayerSettings.getRectangleCovers(),
+      PlayerSettings.getRectangleCoversFor(
+          context.read<LibraryProvider>().selectedLibraryId),
     ]).then((values) {
       final newHideEbook = values[0];
       final newCollapse = values[1];

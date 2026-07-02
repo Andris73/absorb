@@ -229,6 +229,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       coverUrl: _audioCoverUrl,
       totalDuration: _audioDuration,
       chapters: _audioChapters,
+      libraryId: lib.selectedLibraryId,
     );
     if (mounted) setState(() => _startingAudio = false);
   }

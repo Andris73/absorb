@@ -1667,6 +1667,7 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
               chapters: const [],
               episodeId: epId,
               episodeTitle: epTitle,
+              libraryId: book['libraryId'] as String? ?? widget.lib.selectedLibraryId,
             );
           } else {
             AudioPlayerService().playItem(
@@ -1677,6 +1678,7 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
               coverUrl: widget.lib.getCoverUrl(key),
               totalDuration: (media['duration'] as num?)?.toDouble() ?? 0,
               chapters: media['chapters'] as List<dynamic>? ?? const [],
+              libraryId: book['libraryId'] as String? ?? widget.lib.selectedLibraryId,
             );
           }
         },

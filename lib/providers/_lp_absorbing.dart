@@ -185,6 +185,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
           coverUrl: getCoverUrl(actualNextKey),
           totalDuration: duration,
           chapters: chapters,
+          libraryId: cached['libraryId'] as String?,
         );
       });
     }
@@ -611,6 +612,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
           chapters: [],
           episodeId: nextEpId,
           episodeTitle: nextEp['title'] as String?,
+          libraryId: fullItem['libraryId'] as String?,
           startTime: startTime,
         );
       }
@@ -698,6 +700,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
           chapters: [],
           episodeId: epId,
           episodeTitle: ep?['title'] as String?,
+          libraryId: cached['libraryId'] as String?,
         );
       } else {
         final duration = (media['duration'] as num?)?.toDouble() ?? 0;
@@ -710,6 +713,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
           coverUrl: getCoverUrl(key),
           totalDuration: duration,
           chapters: chapters,
+          libraryId: cached['libraryId'] as String?,
         );
       }
       debugPrint('[AutoAdvance] Manual queue: starting next item $key');
@@ -835,6 +839,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
       coverUrl: getCoverUrl(nextKey),
       totalDuration: (media['duration'] as num?)?.toDouble() ?? 0,
       chapters: media['chapters'] as List<dynamic>? ?? [],
+      libraryId: nextData['libraryId'] as String?,
     );
   }
 
@@ -901,6 +906,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
         coverUrl: getCoverUrl(nextKey),
         totalDuration: (nextMedia['duration'] as num?)?.toDouble() ?? 0,
         chapters: nextMedia['chapters'] as List<dynamic>? ?? [],
+        libraryId: nextData['libraryId'] as String?,
       );
     });
   }
@@ -972,6 +978,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
         chapters: [],
         episodeId: nextEpId,
         episodeTitle: ep['title'] as String?,
+        libraryId: nextData['libraryId'] as String?,
       );
     });
   }
@@ -1047,6 +1054,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
         chapters: const [],
         episodeId: episodeId,
         episodeTitle: episode?['title'] as String?,
+        libraryId: libraryItem['libraryId'] as String?,
       );
     } else {
       final duration = (media['duration'] as num?)?.toDouble() ?? 0;
@@ -1059,6 +1067,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
         coverUrl: getCoverUrl(libraryItemId),
         totalDuration: duration,
         chapters: chapters,
+        libraryId: libraryItem['libraryId'] as String?,
       );
     }
     return true;
@@ -1358,6 +1367,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
       return {
         'itemId': itemIdRaw,
         'episodeId': episodeIdRaw,
+        'libraryId': cached['libraryId'] as String?,
         'title': title,
         'author': author,
         'coverUrl': getCoverUrl(itemIdRaw),

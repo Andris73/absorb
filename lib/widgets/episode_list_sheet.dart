@@ -295,6 +295,7 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
       chapters: chapters,
       episodeId: episodeId,
       episodeTitle: episodeTitle,
+      libraryId: context.read<LibraryProvider>().selectedLibraryId,
     );
     if (mounted) {
       if (error != null) showErrorSnackBar(context, error);

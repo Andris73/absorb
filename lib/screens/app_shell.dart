@@ -459,6 +459,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     // Fallback: synthesize from player data
     item ??= {
       'id': itemId,
+      'libraryId': _player.currentLibraryId,
       'media': {
         'metadata': {
           'title': _player.currentTitle ?? 'Unknown',

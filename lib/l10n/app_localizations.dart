@@ -2344,6 +2344,66 @@ abstract class AppLocalizations {
   /// **'Long skip forward'**
   String get longSkipForward;
 
+  /// No description provided for @coverShapeDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get coverShapeDefault;
+
+  /// No description provided for @coverShapeSquare.
+  ///
+  /// In en, this message translates to:
+  /// **'Square'**
+  String get coverShapeSquare;
+
+  /// No description provided for @coverShapeRectangle.
+  ///
+  /// In en, this message translates to:
+  /// **'Rectangle'**
+  String get coverShapeRectangle;
+
+  /// No description provided for @coverShapeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cover shape'**
+  String get coverShapeLabel;
+
+  /// No description provided for @currentLibrarySettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Current library: {name}'**
+  String currentLibrarySettingsTitle(String name);
+
+  /// No description provided for @currentLibrarySkipOverride.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom skip amounts'**
+  String get currentLibrarySkipOverride;
+
+  /// No description provided for @currentLibrarySkipOverrideOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'On - this library uses its own skip amounts'**
+  String get currentLibrarySkipOverrideOnSubtitle;
+
+  /// No description provided for @currentLibrarySkipOverrideOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Off - this library uses the global skip amounts'**
+  String get currentLibrarySkipOverrideOffSubtitle;
+
+  /// No description provided for @currentLibrarySkipBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip back'**
+  String get currentLibrarySkipBack;
+
+  /// No description provided for @currentLibrarySkipForward.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip forward'**
+  String get currentLibrarySkipForward;
+
   /// No description provided for @chapterProgressInNotification.
   ///
   /// In en, this message translates to:

@@ -350,6 +350,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
       chapters: chapters,
       startTime: position,
       forceStartTime: true,
+      libraryId: fullItem['libraryId'] as String?,
     );
     if (error != null && mounted) showErrorSnackBar(context, error);
 

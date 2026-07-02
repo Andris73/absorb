@@ -134,6 +134,7 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
       coverUrl: api.getCoverUrl(_itemId), totalDuration: _duration, chapters: _chapters,
       episodeId: _episodeId,
       episodeTitle: _episodeTitle,
+      libraryId: context.read<LibraryProvider>().selectedLibraryId,
     );
     debugPrint('[PodcastPlay] playItem returned in ${DateTime.now().difference(t0).inMilliseconds}ms (error=${error ?? 'none'})');
     if (error != null && rootContext.mounted) {

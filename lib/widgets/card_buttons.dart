@@ -966,6 +966,7 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
       title: title, author: author, coverUrl: coverUrl,
       totalDuration: duration, chapters: chapters,
       startTime: positionSeconds, forceStartTime: true,
+      libraryId: fullItem['libraryId'] as String?,
     );
     AppShell.goToAbsorbingGlobal();
   }

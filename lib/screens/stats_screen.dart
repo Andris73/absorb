@@ -2028,6 +2028,7 @@ class SessionDetailsSheetState extends State<SessionDetailsSheet> {
       forceStartTime: true,
       episodeId: episodeId,
       episodeTitle: episodeTitle,
+      libraryId: sessionLibraryId ?? fullItem['libraryId'] as String?,
     );
 
     if (!mounted) return;

@@ -355,6 +355,44 @@ class PlayerSettings {
   static Future<bool> getSkipChapterBarrier() => _get('skipChapterBarrier', true);
   static Future<void> setSkipChapterBarrier(bool value) => _set('skipChapterBarrier', value);
 
+  /// Per-library skip override: a library (podcast or book) can use its own
+  /// forward/back amounts instead of the global ones. Both are set together;
+  /// null = no override for that library.
+  static Future<({int forward, int back})?> getSkipOverride(String libraryId) async {
+    final fwd = await ScopedPrefs.getInt('skipOverrideForward_$libraryId');
+    final back = await ScopedPrefs.getInt('skipOverrideBack_$libraryId');
+    if (fwd == null || back == null) return null;
+    return (forward: fwd, back: back);
+  }
+
+  static Future<void> setSkipOverride(String libraryId, {int? forward, int? back}) async {
+    if (forward == null || back == null) {
+      await ScopedPrefs.remove('skipOverrideForward_$libraryId');
+      await ScopedPrefs.remove('skipOverrideBack_$libraryId');
+    } else {
+      await ScopedPrefs.setInt('skipOverrideForward_$libraryId', forward);
+      await ScopedPrefs.setInt('skipOverrideBack_$libraryId', back);
+    }
+    _notify();
+  }
+
+  /// Skip amounts that respect a library's override, if it has one.
+  static Future<int> getEffectiveForwardSkip({String? libraryId}) async {
+    if (libraryId != null) {
+      final o = await getSkipOverride(libraryId);
+      if (o != null) return o.forward;
+    }
+    return getForwardSkip();
+  }
+
+  static Future<int> getEffectiveBackSkip({String? libraryId}) async {
+    if (libraryId != null) {
+      final o = await getSkipOverride(libraryId);
+      if (o != null) return o.back;
+    }
+    return getBackSkip();
+  }
+
   // Optional second, bigger skip pair on the player card (GH #242).
   static Future<bool> getLongSkipButtons() => _get('longSkipButtons', false);
   static Future<void> setLongSkipButtons(bool value) => _set('longSkipButtons', value, notify: true);
@@ -549,6 +587,32 @@ class PlayerSettings {
 
   static Future<bool> getRectangleCovers() => _get('rectangleCovers', false);
   static Future<void> setRectangleCovers(bool value) => _set('rectangleCovers', value, notify: true);
+
+  /// Per-library cover-shape override: 'rect', 'square', or null (= follow
+  /// the global toggle). Lets an ebook library run tall covers while the
+  /// audiobook libraries stay square.
+  static Future<String?> getRectangleCoversOverride(String libraryId) async {
+    final v = await ScopedPrefs.getString('rectangleCovers_$libraryId');
+    return (v == 'rect' || v == 'square') ? v : null;
+  }
+
+  static Future<void> setRectangleCoversOverride(String libraryId, String? value) async {
+    if (value == null) {
+      await ScopedPrefs.remove('rectangleCovers_$libraryId');
+    } else {
+      await ScopedPrefs.setString('rectangleCovers_$libraryId', value);
+    }
+    _notify();
+  }
+
+  /// Cover shape for a library: its override if set, else the global toggle.
+  static Future<bool> getRectangleCoversFor(String? libraryId) async {
+    if (libraryId != null) {
+      final v = await getRectangleCoversOverride(libraryId);
+      if (v != null) return v == 'rect';
+    }
+    return getRectangleCovers();
+  }
 
   static Future<bool> getSectionGridView() => _get('sectionGridView', false);
   static Future<void> setSectionGridView(bool value) => _set('sectionGridView', value);

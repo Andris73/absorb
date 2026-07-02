@@ -1815,7 +1815,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     rootNav.popUntil((route) => route.isFirst);
     AppShell.goToAbsorbingGlobal();
 
-    final error = await player.playItem(api: api, itemId: widget.itemId, title: title, author: author, coverUrl: coverUrl, totalDuration: duration, chapters: chapters);
+    final error = await player.playItem(api: api, itemId: widget.itemId, title: title, author: author, coverUrl: coverUrl, totalDuration: duration, chapters: chapters, libraryId: _item?['libraryId'] as String?);
     if (error != null) {
       final ctx = rootNavigatorKey.currentContext;
       if (ctx != null) showErrorSnackBar(ctx, error);

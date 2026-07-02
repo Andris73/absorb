@@ -165,6 +165,29 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
 
   void _onSpeedMaybeChanged() => _loadSavedSpeed();
 
+  /// Which library this card's item belongs to, for the per-library cover
+  /// shape. The absorbing shelf item can be a lean/synthetic map without a
+  /// libraryId (especially with merge on, where podcast items are pulled from
+  /// other libraries), so fall back to the cached absorbing entry and then to
+  /// the player when this is the item currently playing.
+  String? _resolveLibraryId() {
+    final direct = widget.item['libraryId'] as String?;
+    if (direct != null && direct.isNotEmpty) return direct;
+    final lib = context.read<LibraryProvider>();
+    final epId = _episodeId;
+    final key = epId != null ? '$_itemId-$epId' : _itemId;
+    final cached = lib.absorbingItemCache[key]?['libraryId'] as String?;
+    if (cached != null && cached.isNotEmpty) return cached;
+    if (_itemId == widget.player.currentItemId) return widget.player.currentLibraryId;
+    return null;
+  }
+
+  void _reloadCoverShape() {
+    PlayerSettings.getRectangleCoversFor(_resolveLibraryId()).then((v) {
+      if (mounted && v != _rectangleCovers) setState(() => _rectangleCovers = v);
+    });
+  }
+
   Future<void> _loadSavedSpeed() async {
     final bookSpeed = await PlayerSettings.getBookSpeed(_itemId);
     final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
@@ -195,9 +218,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
         });
       }
     });
-    PlayerSettings.getRectangleCovers().then((v) {
-      if (mounted && v != _rectangleCovers) setState(() => _rectangleCovers = v);
-    });
+    _reloadCoverShape();
     PlayerSettings.getCoverPlayButton().then((v) {
       if (mounted && v != _coverPlayButton) setState(() => _coverPlayButton = v);
     });
@@ -368,6 +389,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       _lastSeenUpdatedAt = context.read<LibraryProvider>().itemUpdatedAt(_itemId);
       _fetchChaptersIfNeeded();
     }
+    // Re-resolve the cover shape: the item (or its libraryId) may have changed,
+    // or the player may now know the library for the item that just started.
+    _reloadCoverShape();
     if (oldWidget.player != widget.player) _startChapterTracking();
   }
 
@@ -894,6 +918,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                     onStart: _startPlayback,
                     itemId: _itemId,
                     showPlayButton: !_coverPlayButton,
+                    libraryId: _resolveLibraryId(),
                   ),
                 );
 
@@ -1099,6 +1124,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       coverUrl: _coverUrl, totalDuration: _effectiveDuration, chapters: _chapters,
       episodeId: _episodeId,
       episodeTitle: _recentEpisode?['title'] as String?,
+      libraryId: widget.item['libraryId'] as String?,
     );
     if (mounted) {
       if (error != null) showErrorSnackBar(context, error);

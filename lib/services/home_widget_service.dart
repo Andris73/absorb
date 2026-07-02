@@ -297,6 +297,7 @@ class HomeWidgetService {
           chapters: const [],
           episodeId: episodeId,
           episodeTitle: epTitle,
+          libraryId: fullItem['libraryId'] as String?,
         );
       } else {
         await player.playItem(
@@ -307,6 +308,7 @@ class HomeWidgetService {
           coverUrl: coverUrl,
           totalDuration: duration,
           chapters: chapters,
+          libraryId: fullItem['libraryId'] as String?,
         );
       }
     } catch (e) {
@@ -405,6 +407,7 @@ class HomeWidgetService {
           chapters: [],
           episodeId: episodeId,
           episodeTitle: epTitle,
+          libraryId: fullItem['libraryId'] as String?,
         );
       } else {
         await player.playItem(
@@ -415,6 +418,7 @@ class HomeWidgetService {
           coverUrl: coverUrl,
           totalDuration: duration,
           chapters: chapters,
+          libraryId: fullItem['libraryId'] as String?,
         );
       }
     } catch (e) {
@@ -462,8 +466,8 @@ class HomeWidgetService {
     await HomeWidget.saveWidgetData<bool>('widget_has_book', hasBook);
 
     // Push user's skip durations so the widget shows them on the buttons.
-    final skipBack = await PlayerSettings.getBackSkip();
-    final skipForward = await PlayerSettings.getForwardSkip();
+    final skipBack = await PlayerSettings.getEffectiveBackSkip(libraryId: player.currentLibraryId);
+    final skipForward = await PlayerSettings.getEffectiveForwardSkip(libraryId: player.currentLibraryId);
     await HomeWidget.saveWidgetData<int>('widget_skip_back', skipBack);
     await HomeWidget.saveWidgetData<int>('widget_skip_forward', skipForward);
 

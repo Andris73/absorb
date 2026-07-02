@@ -82,10 +82,16 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     });
   }
 
+  // Which library the cover shape was resolved for; re-resolved when the
+  // selected library changes (see build) or settings change.
+  String? _coversLibraryId;
+
   Future<void> _loadSettings() async {
+    final libId = mounted ? context.read<LibraryProvider>().selectedLibraryId : null;
+    _coversLibraryId = libId;
     final results = await Future.wait([
       PlayerSettings.getHideEbookOnly(),
-      PlayerSettings.getRectangleCovers(),
+      PlayerSettings.getRectangleCoversFor(libId),
     ]);
     if (mounted) setState(() {
       _hideEbookOnly = results[0];
@@ -292,6 +298,13 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     final lib = context.watch<LibraryProvider>();
     final allLibraries = lib.libraries;
     final libraryName = lib.selectedLibrary?['name'] as String? ?? l.libraryFallback;
+    // Cover shape can differ per library; re-resolve after a library switch.
+    if (lib.selectedLibraryId != _coversLibraryId) {
+      _coversLibraryId = lib.selectedLibraryId;
+      PlayerSettings.getRectangleCoversFor(_coversLibraryId).then((v) {
+        if (mounted && v != _rectangleCovers) setState(() => _rectangleCovers = v);
+      });
+    }
     if (lib.isLoading) {
       // Reset cache so stale data isn't shown after a user switch
       // (where the new user may have the same number of sections).
@@ -1042,6 +1055,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
         chapters: [],
         episodeId: episodeId,
         episodeTitle: episodeTitle,
+        libraryId: widget.item['libraryId'] as String?,
       );
       if (mounted) {
         if (error != null) showErrorSnackBar(context, error);
@@ -1076,6 +1090,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       coverUrl: coverUrl,
       totalDuration: duration,
       chapters: chapters,
+      libraryId: fullItem['libraryId'] as String?,
     );
     if (error != null && mounted) showErrorSnackBar(context, error);
 

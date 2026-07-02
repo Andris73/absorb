@@ -459,11 +459,11 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> fastForward() async {
     debugPrint('[Handler] fastForward() - seeking forward');
+    final skipAmount = await PlayerSettings.getEffectiveForwardSkip(
+        libraryId: _service?.currentLibraryId);
     if (_service != null) {
-      final skipAmount = await PlayerSettings.getForwardSkip();
       await _service!.skipForward(skipAmount);
     } else {
-      final skipAmount = await PlayerSettings.getForwardSkip();
       final adjusted = (skipAmount * _player.speed).round();
       await _player.seek(_player.position + Duration(seconds: adjusted));
     }
@@ -472,11 +472,11 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> rewind() async {
     debugPrint('[Handler] rewind() - seeking back');
+    final skipAmount = await PlayerSettings.getEffectiveBackSkip(
+        libraryId: _service?.currentLibraryId);
     if (_service != null) {
-      final skipAmount = await PlayerSettings.getBackSkip();
       await _service!.skipBackward(skipAmount);
     } else {
-      final skipAmount = await PlayerSettings.getBackSkip();
       final adjusted = (skipAmount * _player.speed).round();
       var pos = _player.position - Duration(seconds: adjusted);
       if (pos < Duration.zero) pos = Duration.zero;
@@ -926,6 +926,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
           chapters: chapters,
           episodeId: episodeId,
           showId: showId,
+          libraryId: dl.libraryId,
         );
       }
     }
@@ -956,6 +957,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
                 chapters: ep['chapters'] as List<dynamic>? ?? [],
                 episodeId: episodeId,
                 showId: showId,
+                libraryId: response['libraryId'] as String?,
               );
             }
           } else {
@@ -966,6 +968,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
               duration: (media?['duration'] as num?)?.toDouble() ?? 0,
               coverUrl: AndroidAutoService.localCoverUri(absId),
               chapters: media?['chapters'] as List<dynamic>? ?? [],
+              libraryId: response['libraryId'] as String?,
             );
           }
         }
@@ -997,6 +1000,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       startTime: entry.currentTime ?? 0,
       episodeId: entry.episodeId,
       episodeTitle: entry.episodeId != null ? entry.title : null,
+      libraryId: entry.libraryId,
     );
   }
 }
@@ -1232,18 +1236,7 @@ class AudioPlayerService extends ChangeNotifier {
       }
     });
     // Update cached skip amounts so notification icons stay in sync
-    PlayerSettings.getForwardSkip().then((v) {
-      if (_handler != null && v != _handler!._cachedForwardSkip) {
-        _handler!._cachedForwardSkip = v;
-        _handler!.refreshPlaybackState();
-      }
-    });
-    PlayerSettings.getBackSkip().then((v) {
-      if (_handler != null && v != _handler!._cachedBackSkip) {
-        _handler!._cachedBackSkip = v;
-        _handler!.refreshPlaybackState();
-      }
-    });
+    _syncNotifSkipCache();
     PlayerSettings.getMediaControlsSpeedBookmark().then((v) {
       if (_handler != null && v != _handler!._cachedNotifSpeedBookmark) {
         _handler!._cachedNotifSpeedBookmark = v;
@@ -1253,6 +1246,25 @@ class AudioPlayerService extends ChangeNotifier {
     PlayerSettings.getLockSeekBar().then((v) {
       if (_handler != null && v != _handler!._cachedLockSeekBar) {
         _handler!._cachedLockSeekBar = v;
+        _handler!.refreshPlaybackState();
+      }
+    });
+  }
+
+  /// Refresh the notification's cached skip labels with the amounts for the
+  /// current library. Called on settings changes and whenever the loaded
+  /// item changes.
+  void _syncNotifSkipCache() {
+    final libId = _currentLibraryId;
+    PlayerSettings.getEffectiveForwardSkip(libraryId: libId).then((v) {
+      if (_handler != null && v != _handler!._cachedForwardSkip) {
+        _handler!._cachedForwardSkip = v;
+        _handler!.refreshPlaybackState();
+      }
+    });
+    PlayerSettings.getEffectiveBackSkip(libraryId: libId).then((v) {
+      if (_handler != null && v != _handler!._cachedBackSkip) {
+        _handler!._cachedBackSkip = v;
         _handler!.refreshPlaybackState();
       }
     });
@@ -1558,6 +1570,8 @@ class AudioPlayerService extends ChangeNotifier {
     // Promote next book's metadata to current state
     _currentItemId = next['itemId'] as String?;
     _currentEpisodeId = next['episodeId'] as String?;
+    _currentLibraryId = next['libraryId'] as String?;
+    _syncNotifSkipCache();
     _currentTitle = next['title'] as String?;
     _currentAuthor = next['author'] as String?;
     _currentCoverUrl = next['coverUrl'] as String?;
@@ -1668,6 +1682,7 @@ class AudioPlayerService extends ChangeNotifier {
         startTime: startS,
         forceStartTime: true,
         episodeId: _currentEpisodeId,
+        libraryId: _currentLibraryId,
       );
     } catch (e) {
       debugPrint('[QueueAdvance] resync playItem failed: $e');
@@ -2346,6 +2361,13 @@ class AudioPlayerService extends ChangeNotifier {
   String? _currentEpisodeId;
   String? get currentEpisodeId => _currentEpisodeId;
 
+  // Which ABS library the currently-loaded item belongs to, so per-library
+  // skip overrides (see PlayerSettings.getSkipOverride) can resolve. Set
+  // wherever _currentItemId/_currentEpisodeId are (playItem + queue advance);
+  // null when the caller didn't have it available (falls back to global skip).
+  String? _currentLibraryId;
+  String? get currentLibraryId => _currentLibraryId;
+
   /// MediaSession / AA item id. Podcast episodes use the compound
   /// `parentId-episodeId` key so AA doesn't treat them as a separate item
   /// from the initial load. Books use the plain itemId.
@@ -2368,6 +2390,7 @@ class AudioPlayerService extends ChangeNotifier {
     bool forceStartTime = false,
     String? episodeId,
     String? episodeTitle,
+    String? libraryId,
   }) async {
     if (_handler == null) {
       debugPrint('[Player] Handler not yet initialized, waiting…');
@@ -2413,6 +2436,8 @@ class AudioPlayerService extends ChangeNotifier {
     _api = api;
     _currentItemId = itemId;
     _currentEpisodeId = episodeId;
+    _currentLibraryId = libraryId;
+    _syncNotifSkipCache();
     // Reset local-session mode for every new play; _playFromLocal re-enables it
     // for downloaded items. Without this it leaks from a prior downloaded play
     // into a following streaming play and misroutes the listening time.
@@ -3553,6 +3578,7 @@ class AudioPlayerService extends ChangeNotifier {
   void _clearState() {
     _currentItemId = null;
     _currentEpisodeId = null;
+    _currentLibraryId = null;
     _currentEpisodeTitle = null;
     _currentTitle = null;
     _currentAuthor = null;
@@ -3623,6 +3649,7 @@ class AudioPlayerService extends ChangeNotifier {
     final chapters = List<dynamic>.from(_chapters);
     final episodeId = _currentEpisodeId;
     final episodeTitle = _currentEpisodeTitle;
+    final libraryId = _currentLibraryId;
     final api = _api!;
     final retryPos = _lastKnownPositionSec;
 
@@ -3643,6 +3670,7 @@ class AudioPlayerService extends ChangeNotifier {
       startTime: retryPos,
       episodeId: episodeId,
       episodeTitle: episodeTitle,
+      libraryId: libraryId,
     );
 
     _retryInProgress = false;
@@ -4579,6 +4607,7 @@ class AudioPlayerService extends ChangeNotifier {
         chapters: _chapters,
         episodeId: _currentEpisodeId,
         episodeTitle: _currentEpisodeTitle,
+        libraryId: _currentLibraryId,
       );
       return;
     }

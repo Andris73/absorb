@@ -126,6 +126,7 @@ void showChaptersSheet({
                       title: title, author: author, coverUrl: coverUrl,
                       totalDuration: dur, chapters: chs,
                       startTime: start, forceStartTime: true,
+                      libraryId: fullItem['libraryId'] as String?,
                     );
                     AppShell.goToAbsorbingGlobal();
                   }
