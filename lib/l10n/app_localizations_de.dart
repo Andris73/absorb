@@ -1222,6 +1222,23 @@ class AppLocalizationsDe extends AppLocalizations {
   String get skipForward => 'Vorspulen';
 
   @override
+  String get longSkipButtons => 'Long skip buttons';
+
+  @override
+  String get longSkipButtonsOnSubtitle =>
+      'On - the player shows a second, bigger skip pair';
+
+  @override
+  String get longSkipButtonsOffSubtitle =>
+      'Off - just the regular skip buttons';
+
+  @override
+  String get longSkipBack => 'Long skip back';
+
+  @override
+  String get longSkipForward => 'Long skip forward';
+
+  @override
   String get chapterProgressInNotification =>
       'Kapitelfortschritt in der Benachrichtigung';
 

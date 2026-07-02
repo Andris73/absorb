@@ -27,6 +27,9 @@ class BackupService {
       'speedAdjustedTime': await PlayerSettings.getSpeedAdjustedTime(),
       'forwardSkip': await PlayerSettings.getForwardSkip(),
       'backSkip': await PlayerSettings.getBackSkip(),
+      'longSkipButtons': await PlayerSettings.getLongSkipButtons(),
+      'longForwardSkip': await PlayerSettings.getLongForwardSkip(),
+      'longBackSkip': await PlayerSettings.getLongBackSkip(),
       'shakeMode': await PlayerSettings.getShakeMode(),
       'shakeAddMinutes': await PlayerSettings.getShakeAddMinutes(),
       'shakeSensitivity': await PlayerSettings.getShakeSensitivity(),
@@ -440,6 +443,9 @@ class BackupService {
     if (s['sheetGridView'] != null) PlayerSettings.setSheetGridView(s['sheetGridView'] as bool);
     if (s['sheetCollapseSeries'] != null) PlayerSettings.setSheetCollapseSeries(s['sheetCollapseSeries'] as bool);
     if (s['skipChapterBarrier'] != null) PlayerSettings.setSkipChapterBarrier(s['skipChapterBarrier'] as bool);
+    if (s['longSkipButtons'] != null) PlayerSettings.setLongSkipButtons(s['longSkipButtons'] as bool);
+    if (s['longForwardSkip'] != null) PlayerSettings.setLongForwardSkip(s['longForwardSkip'] as int);
+    if (s['longBackSkip'] != null) PlayerSettings.setLongBackSkip(s['longBackSkip'] as int);
     if (s['audibleRegion'] != null) await PlayerSettings.setAudibleRegion(s['audibleRegion'] as String);
     if (s['upcomingReleasesSortByDate'] != null) await PlayerSettings.setUpcomingReleasesSortByDate(s['upcomingReleasesSortByDate'] as bool);
     if (s['libraryTagFilter'] != null) await PlayerSettings.setLibraryTagFilter(s['libraryTagFilter'] as String);

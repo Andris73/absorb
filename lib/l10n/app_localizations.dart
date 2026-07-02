@@ -2314,6 +2314,36 @@ abstract class AppLocalizations {
   /// **'Skip forward'**
   String get skipForward;
 
+  /// No description provided for @longSkipButtons.
+  ///
+  /// In en, this message translates to:
+  /// **'Long skip buttons'**
+  String get longSkipButtons;
+
+  /// No description provided for @longSkipButtonsOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'On - the player shows a second, bigger skip pair'**
+  String get longSkipButtonsOnSubtitle;
+
+  /// No description provided for @longSkipButtonsOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Off - just the regular skip buttons'**
+  String get longSkipButtonsOffSubtitle;
+
+  /// No description provided for @longSkipBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Long skip back'**
+  String get longSkipBack;
+
+  /// No description provided for @longSkipForward.
+  ///
+  /// In en, this message translates to:
+  /// **'Long skip forward'**
+  String get longSkipForward;
+
   /// No description provided for @chapterProgressInNotification.
   ///
   /// In en, this message translates to:

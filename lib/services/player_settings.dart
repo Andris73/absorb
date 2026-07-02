@@ -355,6 +355,14 @@ class PlayerSettings {
   static Future<bool> getSkipChapterBarrier() => _get('skipChapterBarrier', true);
   static Future<void> setSkipChapterBarrier(bool value) => _set('skipChapterBarrier', value);
 
+  // Optional second, bigger skip pair on the player card (GH #242).
+  static Future<bool> getLongSkipButtons() => _get('longSkipButtons', false);
+  static Future<void> setLongSkipButtons(bool value) => _set('longSkipButtons', value, notify: true);
+  static Future<int> getLongForwardSkip() => _get('longForwardSkip', 60);
+  static Future<void> setLongForwardSkip(int seconds) => _set('longForwardSkip', seconds, notify: true);
+  static Future<int> getLongBackSkip() => _get('longBackSkip', 60);
+  static Future<void> setLongBackSkip(int seconds) => _set('longBackSkip', seconds, notify: true);
+
   /// Cached value for synchronous access in widget build methods.
   static bool showExplicitBadge = true;
   static Future<bool> getShowExplicitBadge() => _get('showExplicitBadge', true);

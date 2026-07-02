@@ -74,6 +74,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _forwardSkip = 30;
   int _backSkip = 10;
   bool _skipChapterBarrier = true;
+  bool _longSkipButtons = false;
+  int _longForwardSkip = 60;
+  int _longBackSkip = 60;
   String _shakeMode = 'addTime';
   int _sleepRewindSeconds = 0;
   static const _maxRewindMinutes = 120;
@@ -707,6 +710,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final sleepRewind = await PlayerSettings.getSleepRewindSeconds();
     final lockPortrait = await PlayerSettings.getLockPortrait();
     final autoSeriesDownload = await PlayerSettings.getAutoSeriesDownloadDefault();
+    final longSkipButtons = await PlayerSettings.getLongSkipButtons();
+    final longFwd = await PlayerSettings.getLongForwardSkip();
+    final longBack = await PlayerSettings.getLongBackSkip();
     if (mounted) setState(() {
       _sleepRewindSeconds = sleepRewind;
       _lockPortrait = lockPortrait;
@@ -769,6 +775,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _cardBackground = cardBg;
       _progressTextScale = progressScale;
       _skipChapterBarrier = skipBarrier;
+      _longSkipButtons = longSkipButtons;
+      _longForwardSkip = longFwd;
+      _longBackSkip = longBack;
       _trustAllCerts = trustCerts;
       _showExplicitBadge = showExplicit;
       _includePreReleases = preReleases;
@@ -1932,6 +1941,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         PlayerSettings.setSkipChapterBarrier(v);
                       } : null,
                     ),
+                    // Long skip pair (GH #242)
+                    SwitchListTile(
+                      title: Text(l.longSkipButtons),
+                      subtitle: Text(
+                        _longSkipButtons ? l.longSkipButtonsOnSubtitle : l.longSkipButtonsOffSubtitle,
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                      ),
+                      value: _longSkipButtons,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _longSkipButtons = v);
+                        PlayerSettings.setLongSkipButtons(v);
+                      } : null,
+                    ),
+                    if (_longSkipButtons) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(l.longSkipBack, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                            Text(l.minutesValue(_longBackSkip ~/ 60), style: tt.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600, color: cs.primary)),
+                          ],
+                        ),
+                      ),
+                      AbsorbSlider(
+                        value: (_longBackSkip ~/ 60).toDouble(),
+                        min: 1, max: 10, divisions: 9,
+                        onChanged: _loaded ? (v) {
+                          setState(() => _longBackSkip = v.round() * 60);
+                          PlayerSettings.setLongBackSkip(v.round() * 60);
+                        } : null,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(l.longSkipForward, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                            Text(l.minutesValue(_longForwardSkip ~/ 60), style: tt.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600, color: cs.primary)),
+                          ],
+                        ),
+                      ),
+                      AbsorbSlider(
+                        value: (_longForwardSkip ~/ 60).toDouble(),
+                        min: 1, max: 10, divisions: 9,
+                        onChanged: _loaded ? (v) {
+                          setState(() => _longForwardSkip = v.round() * 60);
+                          PlayerSettings.setLongForwardSkip(v.round() * 60);
+                        } : null,
+                      ),
+                    ],
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     // ── Auto-Rewind ──
                     SwitchListTile(

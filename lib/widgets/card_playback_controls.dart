@@ -21,6 +21,9 @@ class CardPlaybackControls extends StatefulWidget {
 class _CardPlaybackControlsState extends State<CardPlaybackControls> {
   int _backSkip = 10;
   int _forwardSkip = 30;
+  bool _longSkip = false;
+  int _longBackSkip = 60;
+  int _longForwardSkip = 60;
 
   @override void initState() {
     super.initState();
@@ -31,6 +34,9 @@ class _CardPlaybackControlsState extends State<CardPlaybackControls> {
   void _loadSkipSettings() {
     PlayerSettings.getBackSkip().then((v) { if (mounted && v != _backSkip) setState(() => _backSkip = v); });
     PlayerSettings.getForwardSkip().then((v) { if (mounted && v != _forwardSkip) setState(() => _forwardSkip = v); });
+    PlayerSettings.getLongSkipButtons().then((v) { if (mounted && v != _longSkip) setState(() => _longSkip = v); });
+    PlayerSettings.getLongBackSkip().then((v) { if (mounted && v != _longBackSkip) setState(() => _longBackSkip = v); });
+    PlayerSettings.getLongForwardSkip().then((v) { if (mounted && v != _longForwardSkip) setState(() => _longForwardSkip = v); });
   }
 
   @override void dispose() {
@@ -38,18 +44,35 @@ class _CardPlaybackControlsState extends State<CardPlaybackControls> {
     super.dispose();
   }
 
-  Widget _skipIcon(int seconds, bool isForward, {bool active = true}) {
+  Widget _skipIcon(int seconds, bool isForward, {bool active = true, double size = 42}) {
     final cs = Theme.of(context).colorScheme;
     final hasBuiltIn = [5, 10, 30].contains(seconds);
     if (hasBuiltIn) {
       IconData icon;
       if (isForward) { icon = seconds == 5 ? Icons.forward_5_rounded : seconds == 10 ? Icons.forward_10_rounded : Icons.forward_30_rounded; }
       else { icon = seconds == 5 ? Icons.replay_5_rounded : seconds == 10 ? Icons.replay_10_rounded : Icons.replay_30_rounded; }
-      return Icon(icon, size: 42, color: active ? cs.onSurface.withValues(alpha: 0.7) : cs.onSurface.withValues(alpha: 0.24));
+      return Icon(icon, size: size, color: active ? cs.onSurface.withValues(alpha: 0.7) : cs.onSurface.withValues(alpha: 0.24));
     }
     return Stack(alignment: Alignment.center, children: [
-      Icon(isForward ? Icons.rotate_right_rounded : Icons.rotate_left_rounded, size: 42, color: active ? cs.onSurface.withValues(alpha: 0.7) : cs.onSurface.withValues(alpha: 0.24)),
+      Icon(isForward ? Icons.rotate_right_rounded : Icons.rotate_left_rounded, size: size, color: active ? cs.onSurface.withValues(alpha: 0.7) : cs.onSurface.withValues(alpha: 0.24)),
       Padding(padding: const EdgeInsets.only(top: 2), child: Text('$seconds', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: active ? cs.onSurface : cs.onSurface.withValues(alpha: 0.24)))),
+    ]);
+  }
+
+  // With the play circle plus the long pair the row holds seven controls, so
+  // everything steps down a notch to keep it airy. The six-control cover-play
+  // row keeps the regular sizes.
+  bool get _sevenControls => _longSkip && widget.showPlayButton;
+
+  /// The optional bigger jump (GH #242): same rotate glyph as the custom
+  /// short-skip fallback but smaller, with a minutes label so the two pairs
+  /// read differently at a glance.
+  Widget _longSkipIcon(int seconds, bool isForward, {bool active = true}) {
+    final cs = Theme.of(context).colorScheme;
+    final label = seconds % 60 == 0 ? '${seconds ~/ 60}m' : '$seconds';
+    return Stack(alignment: Alignment.center, children: [
+      Icon(isForward ? Icons.rotate_right_rounded : Icons.rotate_left_rounded, size: 34, color: active ? cs.onSurface.withValues(alpha: 0.55) : cs.onSurface.withValues(alpha: 0.24)),
+      Padding(padding: const EdgeInsets.only(top: 2), child: Text(label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: active ? cs.onSurface.withValues(alpha: 0.8) : cs.onSurface.withValues(alpha: 0.24)))),
     ]);
   }
 
@@ -74,7 +97,7 @@ class _CardPlaybackControlsState extends State<CardPlaybackControls> {
   }
 
   Widget _playPauseButton(ColorScheme cs, {required bool playing, required bool loading, required VoidCallback? onTap}) {
-    final s = widget.playButtonSize;
+    final s = _sevenControls ? 56.0 : widget.playButtonSize;
     final iconSize = s * 0.49;
     final spinnerSize = s * 0.4;
     return Pressable(
@@ -96,30 +119,44 @@ class _CardPlaybackControlsState extends State<CardPlaybackControls> {
   /// Controls that route to ChromecastService
   Widget _buildCastControls(ChromecastService cast) {
     final cs = Theme.of(context).colorScheme;
+    final chIcon = _sevenControls ? 30.0 : 34.0;
+    final chBox = _sevenControls ? 46.0 : 52.0;
+    final skIcon = _sevenControls ? 38.0 : 42.0;
+    final skBox = _sevenControls ? 54.0 : 60.0;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Flexible(child: Pressable(
           onTap: cast.skipToPreviousChapter,
-          child: SizedBox(width: 52, height: 52, child: Center(
-            child: Icon(Icons.skip_previous_rounded, size: 34, color: cs.onSurfaceVariant),
+          child: SizedBox(width: chBox, height: chBox, child: Center(
+            child: Icon(Icons.skip_previous_rounded, size: chIcon, color: cs.onSurfaceVariant),
           )),
         )),
+        if (_longSkip)
+          Flexible(child: Pressable(
+            onTap: () => cast.skipBackward(_longBackSkip),
+            child: SizedBox(width: 48, height: skBox, child: Center(child: _longSkipIcon(_longBackSkip, false))),
+          )),
         Flexible(child: Pressable(
           onTap: () => cast.skipBackward(_backSkip),
-          child: SizedBox(width: 60, height: 60, child: Center(child: _skipIcon(_backSkip, false))),
+          child: SizedBox(width: skBox, height: skBox, child: Center(child: _skipIcon(_backSkip, false, size: skIcon))),
         )),
         if (widget.showPlayButton)
           Flexible(child: _playPauseButton(cs, playing: cast.isPlaying, loading: false, onTap: cast.togglePlayPause)),
         Flexible(child: Pressable(
           onTap: () => cast.skipForward(_forwardSkip),
-          child: SizedBox(width: 60, height: 60, child: Center(child: _skipIcon(_forwardSkip, true))),
+          child: SizedBox(width: skBox, height: skBox, child: Center(child: _skipIcon(_forwardSkip, true, size: skIcon))),
         )),
+        if (_longSkip)
+          Flexible(child: Pressable(
+            onTap: () => cast.skipForward(_longForwardSkip),
+            child: SizedBox(width: 48, height: skBox, child: Center(child: _longSkipIcon(_longForwardSkip, true))),
+          )),
         Flexible(child: Pressable(
           onTap: cast.skipToNextChapter,
-          child: SizedBox(width: 52, height: 52, child: Center(
-            child: Icon(Icons.skip_next_rounded, size: 34, color: cs.onSurfaceVariant),
+          child: SizedBox(width: chBox, height: chBox, child: Center(
+            child: Icon(Icons.skip_next_rounded, size: chIcon, color: cs.onSurfaceVariant),
           )),
         )),
       ],
@@ -130,30 +167,45 @@ class _CardPlaybackControlsState extends State<CardPlaybackControls> {
   Widget _buildLocalControls() {
     final cs = Theme.of(context).colorScheme;
     final loading = widget.isStarting || (widget.isActive && widget.player.isLoadingOrBuffering && !widget.player.isPlaying);
+    final chIcon = _sevenControls ? 30.0 : 34.0;
+    final chBox = _sevenControls ? 46.0 : 52.0;
+    final skIcon = _sevenControls ? 38.0 : 42.0;
+    final skBox = _sevenControls ? 54.0 : 60.0;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Flexible(child: Pressable(
           onTap: widget.isActive ? widget.player.skipToPreviousChapter : null,
-          child: SizedBox(width: 52, height: 52, child: Center(
-            child: Icon(Icons.skip_previous_rounded, size: 34, color: widget.isActive ? cs.onSurfaceVariant : cs.onSurface.withValues(alpha: 0.12)),
+          child: SizedBox(width: chBox, height: chBox, child: Center(
+            child: Icon(Icons.skip_previous_rounded, size: chIcon, color: widget.isActive ? cs.onSurfaceVariant : cs.onSurface.withValues(alpha: 0.12)),
           )),
         )),
+        if (_longSkip)
+          Flexible(child: Pressable(
+            onTap: widget.isActive ? () => widget.player.skipBackward(_longBackSkip) : null,
+            child: SizedBox(width: 48, height: skBox, child: Center(child: _longSkipIcon(_longBackSkip, false, active: widget.isActive))),
+          )),
         Flexible(child: Pressable(
           onTap: widget.isActive ? () => widget.player.skipBackward(_backSkip) : null,
-          child: SizedBox(width: 60, height: 60, child: Center(child: _skipIcon(_backSkip, false, active: widget.isActive))),
+          child: SizedBox(width: skBox, height: skBox, child: Center(child: _skipIcon(_backSkip, false, active: widget.isActive, size: skIcon))),
         )),
         if (widget.showPlayButton)
           Flexible(child: _playPauseButton(cs, playing: widget.isActive && widget.player.isPlaying, loading: loading,
             onTap: widget.isActive ? widget.player.togglePlayPause : widget.onStart)),
         Flexible(child: Pressable(
           onTap: widget.isActive ? () => widget.player.skipForward(_forwardSkip) : null,
-          child: SizedBox(width: 60, height: 60, child: Center(child: _skipIcon(_forwardSkip, true, active: widget.isActive))),
+          child: SizedBox(width: skBox, height: skBox, child: Center(child: _skipIcon(_forwardSkip, true, active: widget.isActive, size: skIcon))),
         )),
+        if (_longSkip)
+          Flexible(child: Pressable(
+            onTap: widget.isActive ? () => widget.player.skipForward(_longForwardSkip) : null,
+            child: SizedBox(width: 48, height: skBox, child: Center(child: _longSkipIcon(_longForwardSkip, true, active: widget.isActive))),
+          )),
         Flexible(child: Pressable(
           onTap: widget.isActive ? widget.player.skipToNextChapter : null,
-          child: SizedBox(width: 52, height: 52, child: Center(
-            child: Icon(Icons.skip_next_rounded, size: 34, color: widget.isActive ? cs.onSurfaceVariant : cs.onSurface.withValues(alpha: 0.12)),
+          child: SizedBox(width: chBox, height: chBox, child: Center(
+            child: Icon(Icons.skip_next_rounded, size: chIcon, color: widget.isActive ? cs.onSurfaceVariant : cs.onSurface.withValues(alpha: 0.12)),
           )),
         )),
       ],
