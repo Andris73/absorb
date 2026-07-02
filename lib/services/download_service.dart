@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:background_downloader/background_downloader.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../l10n/app_localizations.dart';
 import '../main.dart' show rootNavigatorKey;
 import 'api_service.dart';
@@ -164,6 +165,10 @@ class _PendingBook {
   final Map<int, double> trackProgress = {};
   final Map<int, TaskStatus> trackStatus = {};
   DateTime lastUi = DateTime.fromMillisecondsSinceEpoch(0);
+  /// Throttle state for the byte-accurate notification overlay.
+  int notifPct = -1;
+  int notifDone = -1;
+  DateTime notifPost = DateTime.fromMillisecondsSinceEpoch(0);
   /// Last time any track update arrived, so the slot-leak reconciler can spot a
   /// book whose terminal updates were missed.
   DateTime lastUpdate = DateTime.fromMillisecondsSinceEpoch(0);
@@ -290,8 +295,9 @@ class DownloadService extends ChangeNotifier {
   /// listed for the user to re-download rather than silently deleted.
   final Set<String> _legacyExternalIds = {};
 
-  /// All `background_downloader` tasks share this group, so a single grouped
-  /// progress notification covers every active download.
+  /// All `background_downloader` tasks share this group for update routing.
+  /// Notifications are configured per task at enqueue time (one notification
+  /// per book); the group-level config is only a fallback.
   static const String _dlGroup = 'absorb_downloads';
 
   /// In-flight books keyed by itemId. Holds everything needed to aggregate
@@ -681,10 +687,12 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
-  /// Configure the single grouped download notification (replaces the old
-  /// per-slot notifications + hand-rolled Android foreground service). The
-  /// package runs a background URLSession on iOS and a foreground service on
-  /// Android, so downloads continue when backgrounded, locked, or killed.
+  /// Configure the downloader transport plus a fallback notification config
+  /// for the shared group. The real notifications are configured per task in
+  /// [_executeDownload] (one per book); this fallback only catches a task that
+  /// somehow missed its per-task config. The package runs a background
+  /// URLSession on iOS and a foreground service on Android, so downloads
+  /// continue when backgrounded, locked, or killed.
   Future<void> _configureDownloader() async {
     if (_downloaderConfigured) return;
     // Always run downloads in the Android foreground service. Without this,
@@ -1403,6 +1411,28 @@ class DownloadService extends ChangeNotifier {
       _pending[itemId] = pending;
       await _persistPending();
 
+      // One notification per book instead of one per file task. Multi-file
+      // books group their tasks under a per-book group notification (the
+      // package's group progress is finished-files / total, so the bar steps
+      // per file); single-file books keep the byte-accurate per-task progress.
+      // The title is baked into the strings because task tokens aren't
+      // substituted in group notifications.
+      final l = _l();
+      final multiFile = files.length > 1;
+      final runningNotif = Platform.isIOS
+          // Static text on iOS: iOS can't update a notification in place, so
+          // dynamic tokens would re-issue it on every change.
+          ? TaskNotification(title, l?.downloadNotifDownloadingTitle ?? 'Downloading')
+          : TaskNotification(title, multiFile ? '{numFinished} / {numTotal}' : '{progress}');
+      final completeNotif = TaskNotification(
+        l?.downloadNotifCompleteTitle ?? 'Download Complete',
+        l?.downloadNotifCompleteBody(title) ?? '$title is ready to listen offline',
+      );
+      final errorNotif = TaskNotification(
+        l?.downloadNotifFailedTitle ?? 'Download Failed',
+        title,
+      );
+
       for (int i = 0; i < files.length; i++) {
         final meta = jsonEncode({'itemId': itemId, 'i': i, 'n': files.length});
         final Task task;
@@ -1437,6 +1467,16 @@ class DownloadService extends ChangeNotifier {
             allowPause: true,
           );
         }
+        // Must be registered before enqueue - the config is serialized into
+        // the native task, so it survives app kills along with the task.
+        FileDownloader().configureNotificationForTask(
+          task,
+          running: runningNotif,
+          complete: completeNotif,
+          error: errorNotif,
+          progressBar: true,
+          groupNotificationId: multiFile ? itemId : '',
+        );
         final ok = await FileDownloader().enqueue(task);
         debugPrint('[Download] enqueue ${i + 1}/${files.length} ok=$ok file=${files[i].filename}');
         if (!ok) throw Exception('Failed to enqueue track ${i + 1}');
@@ -1591,6 +1631,7 @@ class DownloadService extends ChangeNotifier {
     final now = DateTime.now();
     if (now.difference(p.lastUi).inMilliseconds < 250) return;
     p.lastUi = now;
+    unawaited(_updateBookNotification(itemId, p, now));
     _downloads[itemId] = DownloadInfo(
       itemId: itemId,
       status: DownloadStatus.downloading,
@@ -1735,6 +1776,12 @@ class DownloadService extends ChangeNotifier {
     final dir = bookDirRef ?? p?.bookDir;
 
     if (p != null) await _cancelSiblings(itemId, p, force: true);
+    // Stall/zombie fails have no errored task, so the canceled siblings end
+    // the group notification as "complete" - dismiss it. When a task really
+    // failed the group correctly shows the error notification; leave that.
+    if (p != null && !p.failing && p.trackCount > 1) {
+      _dismissGroupNotification(itemId);
+    }
     await _cleanupBookDir(dir);
 
     final msg = _mapError(cause, taskException, responseCode);
@@ -1757,6 +1804,11 @@ class DownloadService extends ChangeNotifier {
 
   Future<void> _handleCanceled(String itemId) async {
     final p = _pending[itemId];
+    // A canceled book still ends its group notification as "complete" (the
+    // package counts canceled tasks as finished, not failed), which would
+    // leave a lingering "Download Complete" for a book the user just
+    // canceled - dismiss it.
+    if ((p?.trackCount ?? 0) > 1) _dismissGroupNotification(itemId);
     await _cleanupBookDir(p?.bookDir);
     _downloads.remove(itemId);
     _activeDownloadIds.remove(itemId);
@@ -1767,6 +1819,86 @@ class DownloadService extends ChangeNotifier {
     debugPrint('[Download] Cancelled: ${p?.title ?? itemId}');
     notifyListeners();
     unawaited(_processQueue());
+  }
+
+  /// Dismiss a book's group download notification. The package posts the
+  /// terminal group notification from native workers slightly after the last
+  /// task ends, so sweep twice. Android only: on iOS the package posts under
+  /// string identifiers flutter_local_notifications can't target, and there a
+  /// stray "complete" only sits silently in the notification center.
+  void _dismissGroupNotification(String itemId) {
+    if (!Platform.isAndroid) return;
+    final id = _groupNotifId(itemId);
+    for (final delay in const [Duration(seconds: 1), Duration(seconds: 4)]) {
+      Future.delayed(delay, () async {
+        try {
+          await FlutterLocalNotificationsPlugin().cancel(id);
+        } catch (e) {
+          debugPrint('[Download] dismiss group notification failed: $e');
+        }
+      });
+    }
+  }
+
+  /// The package derives its group notification id on the Kotlin side as
+  /// "groupNotification$name".hashCode() - reproduce Java's string hash so we
+  /// can address the same notification.
+  int _groupNotifId(String itemId) {
+    var h = 0;
+    for (final u in 'groupNotification$itemId'.codeUnits) {
+      h = (h * 31 + u) & 0xFFFFFFFF;
+    }
+    return h >= 0x80000000 ? h - 0x100000000 : h;
+  }
+
+  /// Byte-accurate progress for a multi-file book's notification (Android).
+  /// The package's group notification only counts finished files, so with
+  /// parallel per-file tasks the bar sits at 0 until files start completing
+  /// (a half-downloaded book reads "0 / 5"). We already aggregate the real
+  /// byte progress for the in-app UI, so post it onto the same notification
+  /// id the package uses. The package only re-posts on task state changes
+  /// (enqueue/start/finish), so between those moments this owns the
+  /// notification, and the package's terminal complete/error post still
+  /// lands last.
+  Future<void> _updateBookNotification(String itemId, _PendingBook p, DateTime now) async {
+    if (!Platform.isAndroid || p.trackCount <= 1) return;
+    if (p.finalizing || p.cancelled) return;
+    final done = p.trackStatus.values.where((s) => s == TaskStatus.complete).length;
+    if (done >= p.trackCount) return; // the terminal post owns it from here
+    final pct = (p.overallProgress * 100).clamp(0.0, 100.0).round();
+    if (pct == p.notifPct && done == p.notifDone) return;
+    if (now.difference(p.notifPost).inMilliseconds < 1000) return;
+    p.notifPct = pct;
+    p.notifDone = done;
+    p.notifPost = now;
+    try {
+      await FlutterLocalNotificationsPlugin().show(
+        _groupNotifId(itemId),
+        p.title,
+        '$done / ${p.trackCount}',
+        NotificationDetails(
+          // Same channel the package posts on, so no second channel shows up
+          // in the app's notification settings.
+          android: AndroidNotificationDetails(
+            'background_downloader',
+            'Downloads',
+            importance: Importance.low,
+            priority: Priority.low,
+            ongoing: true,
+            autoCancel: false,
+            onlyAlertOnce: true,
+            showProgress: true,
+            maxProgress: 100,
+            progress: pct,
+            // The package's own download icon (kept alive by its Kotlin R
+            // reference), so the icon doesn't flick when the package posts.
+            icon: 'outline_file_download_24',
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('[Download] progress notification failed: $e');
+    }
   }
 
   Future<void> _cancelSiblings(String itemId, _PendingBook p, {bool force = false}) async {
