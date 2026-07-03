@@ -201,6 +201,15 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
     if (seekTarget != null && (seekTarget - _lastKnownPos).abs() > 2.0) {
       return seekTarget;
     }
+    // Paused while active: trust the engine's real position. The position
+    // stream only ticks during playback, so a stale seed / last-known value
+    // could otherwise leave the bar sitting ahead of the actual position until
+    // the next play (TestFlight: bar appears further than it is, snaps back on
+    // play).
+    if (widget.isActive && !_isPlaying) {
+      final realPos = widget.player.position.inMilliseconds / 1000.0;
+      if (realPos > 0) return realPos;
+    }
     if (!widget.isActive || !_isPlaying) return _lastKnownPos;
     // Use the player's real position as the baseline instead of interpolating
     // from a potentially stale stream event. This prevents overshoot when the

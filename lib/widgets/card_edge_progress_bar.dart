@@ -197,6 +197,13 @@ class _CardEdgeProgressBarState extends State<CardEdgeProgressBar>
     if (seekTarget != null && (seekTarget - _lastKnownPos).abs() > 2.0) {
       return seekTarget;
     }
+    // Paused while active: trust the engine's real position (the position
+    // stream only ticks during playback, so a stale seed could leave the bar
+    // ahead of reality until the next play).
+    if (widget.isActive && !_isPlaying) {
+      final realPos = widget.player.position.inMilliseconds / 1000.0;
+      if (realPos > 0) return realPos;
+    }
     if (!widget.isActive || !_isPlaying) return _lastKnownPos;
     final elapsed = DateTime.now().difference(_lastPosTime).inMilliseconds / 1000.0;
     return _lastKnownPos + elapsed * _currentSpeed;
