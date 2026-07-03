@@ -329,13 +329,9 @@ mixin _StateMixin on ChangeNotifier {
     return cached;
   }
 
-  void _showRollingSnackBar(String message) {
-    scaffoldMessengerKey.currentState
-      ?..clearSnackBars()
-      ..showSnackBar(SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 3),
-      ));
+  void _showRollingSnackBar(String message, {IconData? icon}) {
+    final ctx = rootNavigatorKey.currentContext;
+    if (ctx != null) showOverlayToast(ctx, message, icon: icon);
   }
 
   /// Look up [AppLocalizations] via the root navigator. Returns null if no

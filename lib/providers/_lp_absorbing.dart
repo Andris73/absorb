@@ -470,7 +470,8 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
       PlayerSettings.getRollingDownloadDeleteFinished().then((delete) {
         if (!delete) return;
         DownloadService().deleteDownload(itemId, skipStopCheck: true);
-        _showRollingSnackBar(_l()?.lpDeletedFinishedDownload ?? 'Deleted finished download');
+        _showRollingSnackBar(_l()?.lpDeletedFinishedDownload ?? 'Deleted finished download',
+            icon: Icons.delete_outline_rounded);
       });
     }
 
