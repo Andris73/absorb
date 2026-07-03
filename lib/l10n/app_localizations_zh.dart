@@ -841,6 +841,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get statsTimeSavedLabel => 'Saved by speed';
 
   @override
+  String statsTimeSavedSince(String date) {
+    return 'since $date';
+  }
+
+  @override
+  String get statsTimeSavedReset => 'Reset time saved';
+
+  @override
+  String get statsTimeSavedResetConfirm =>
+      'Time saved will start counting again from today.';
+
+  @override
+  String get statsTimeSavedResetDone => 'Time saved reset';
+
+  @override
   String statsOnPaceFor(int count) {
     return 'On pace for $count books';
   }

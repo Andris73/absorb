@@ -45,6 +45,7 @@ class _StatsScreenState extends State<StatsScreen>
   String? _selectedSection;
   double _selectedDaySeconds = 0;
   double _timeSavedSeconds = 0;
+  DateTime? _timeSavedSince;
   int _yirYear = DateTime.now().year;
   Map<String, dynamic>? _yirData;
   bool _yirLoading = false;
@@ -130,6 +131,7 @@ class _StatsScreenState extends State<StatsScreen>
     final order = await PlayerSettings.getStatsSectionOrder();
     final hidden = await PlayerSettings.getStatsHiddenSections();
     final timeSaved = await PlayerSettings.getStatsTimeSaved();
+    final timeSavedSince = await PlayerSettings.getStatsTimeSavedSince();
     if (!mounted) return;
     setState(() {
       if (chartStyle != _chartStyle || chartRange != _chartRange) {
@@ -144,6 +146,7 @@ class _StatsScreenState extends State<StatsScreen>
       _statsOrder = order;
       _statsHidden = hidden.toSet();
       _timeSavedSeconds = timeSaved;
+      _timeSavedSince = timeSavedSince;
     });
   }
 
@@ -259,8 +262,12 @@ class _StatsScreenState extends State<StatsScreen>
     // The saved-by-speed counter banks while listening, so re-read it on
     // every load (incl. pull-to-refresh), not just at screen creation.
     final timeSaved = await PlayerSettings.getStatsTimeSaved();
-    if (mounted && timeSaved != _timeSavedSeconds) {
-      setState(() => _timeSavedSeconds = timeSaved);
+    final timeSavedSince = await PlayerSettings.getStatsTimeSavedSince();
+    if (mounted && (timeSaved != _timeSavedSeconds || timeSavedSince != _timeSavedSince)) {
+      setState(() {
+        _timeSavedSeconds = timeSaved;
+        _timeSavedSince = timeSavedSince;
+      });
     }
 
     // Load cached data first so the page renders immediately even offline.
@@ -513,7 +520,17 @@ class _StatsScreenState extends State<StatsScreen>
             Expanded(
                 child: _accentStatCard(tt, cs, Icons.fast_forward_rounded,
                     Colors.cyan, _formatDuration(_timeSavedSeconds),
-                    l.statsTimeSavedLabel)),
+                    l.statsTimeSavedLabel,
+                    subtitle: _timeSavedSince != null
+                        ? l.statsTimeSavedSince(
+                            MaterialLocalizations.of(context).formatMediumDate(_timeSavedSince!))
+                        : null,
+                    trailing: IconButton(
+                      icon: Icon(Icons.restart_alt_rounded,
+                          size: 20, color: cs.onSurfaceVariant),
+                      tooltip: l.statsTimeSavedReset,
+                      onPressed: _confirmResetTimeSaved,
+                    ))),
           ]),
         ],
         const SizedBox(height: 28),
@@ -1139,9 +1156,32 @@ class _StatsScreenState extends State<StatsScreen>
 
   // --- ACCENT STAT CARD ---
 
+  Future<void> _confirmResetTimeSaved() async {
+    final l = AppLocalizations.of(context)!;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.statsTimeSavedReset),
+        content: Text(l.statsTimeSavedResetConfirm),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.reset)),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await PlayerSettings.resetStatsTimeSaved();
+    if (!mounted) return;
+    setState(() {
+      _timeSavedSeconds = 0;
+      _timeSavedSince = null;
+    });
+    showOverlayToast(context, l.statsTimeSavedResetDone, icon: Icons.restart_alt_rounded);
+  }
+
   Widget _accentStatCard(TextTheme tt, ColorScheme cs, IconData icon,
       Color accent, String value, String label,
-      {VoidCallback? onTap}) {
+      {VoidCallback? onTap, String? subtitle, Widget? trailing}) {
     final isTappable = onTap != null;
     final card = Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
@@ -1176,7 +1216,14 @@ class _StatsScreenState extends State<StatsScreen>
           Text(label,
               style: tt.labelSmall?.copyWith(
                   color: cs.onSurface.withValues(alpha: 0.35), fontSize: 11)),
+          if (subtitle != null) ...[
+            const SizedBox(height: 2),
+            Text(subtitle,
+                style: tt.labelSmall?.copyWith(
+                    color: accent.withValues(alpha: 0.7), fontSize: 11)),
+          ],
         ])),
+        if (trailing != null) trailing,
         if (isTappable)
           Icon(Icons.chevron_right_rounded,
               size: 20, color: accent.withValues(alpha: 0.7)),
@@ -1303,6 +1350,31 @@ class _StatsScreenState extends State<StatsScreen>
   // --- TOP ITEMS ---
 
   List<_TopItem> _topItems() {
+    // Prefer the server's all-time per-item totals from /me/listening-stats,
+    // which sum every session. The _sessions list below is only the paginated
+    // recently-loaded page, so aggregating it under-counts older books and
+    // makes "Most listened" look wrong.
+    final serverItems = _stats?['items'];
+    if (serverItems is Map && serverItems.isNotEmpty) {
+      final items = <_TopItem>[];
+      for (final v in serverItems.values) {
+        if (v is! Map) continue;
+        final meta = v['mediaMetadata'] as Map<String, dynamic>?;
+        final title = meta?['title'] as String? ?? '';
+        if (title.isEmpty) continue;
+        items.add(_TopItem(
+          title: title,
+          author: meta?['authorName'] as String? ?? '',
+          totalSeconds: _safeNum(v['timeListening']),
+          sessionCount: 0, // server totals don't carry a session count
+        ));
+      }
+      items.sort((a, b) => b.totalSeconds.compareTo(a.totalSeconds));
+      return items.take(5).toList();
+    }
+
+    // Fallback (no stats loaded yet / offline): aggregate whatever sessions
+    // are currently loaded.
     final Map<String, _TopItem> byTitle = {};
     for (final s in _sessions) {
       if (s is! Map<String, dynamic>) continue;
@@ -1369,12 +1441,13 @@ class _StatsScreenState extends State<StatsScreen>
                 style: tt.labelSmall?.copyWith(
                     color: cs.onSurface.withValues(alpha: 0.5),
                     fontWeight: FontWeight.w700)),
-            Text(
-                item.sessionCount == 1
-                    ? l.statsScreenSessionCountOne(item.sessionCount)
-                    : l.statsScreenSessionCountOther(item.sessionCount),
-                style: TextStyle(
-                    color: cs.onSurface.withValues(alpha: 0.2), fontSize: 9)),
+            if (item.sessionCount > 0)
+              Text(
+                  item.sessionCount == 1
+                      ? l.statsScreenSessionCountOne(item.sessionCount)
+                      : l.statsScreenSessionCountOther(item.sessionCount),
+                  style: TextStyle(
+                      color: cs.onSurface.withValues(alpha: 0.2), fontSize: 9)),
           ]),
         ]),
       ),

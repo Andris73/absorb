@@ -1648,6 +1648,30 @@ abstract class AppLocalizations {
   /// **'Saved by speed'**
   String get statsTimeSavedLabel;
 
+  /// No description provided for @statsTimeSavedSince.
+  ///
+  /// In en, this message translates to:
+  /// **'since {date}'**
+  String statsTimeSavedSince(String date);
+
+  /// No description provided for @statsTimeSavedReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset time saved'**
+  String get statsTimeSavedReset;
+
+  /// No description provided for @statsTimeSavedResetConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Time saved will start counting again from today.'**
+  String get statsTimeSavedResetConfirm;
+
+  /// No description provided for @statsTimeSavedResetDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Time saved reset'**
+  String get statsTimeSavedResetDone;
+
   /// No description provided for @statsOnPaceFor.
   ///
   /// In en, this message translates to:

@@ -176,6 +176,21 @@ class PlayerSettings {
   /// player as listening time accrues; read-only here.
   static Future<double> getStatsTimeSaved() => _get('stats_time_saved', 0.0);
 
+  /// When the time-saved counter started accruing (null until the first
+  /// banked second). Set once in progress_sync_service.addTimeSaved.
+  static Future<DateTime?> getStatsTimeSavedSince() async {
+    final ms = await ScopedPrefs.getInt('stats_time_saved_since');
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  /// Clear the time-saved total and its start date so it counts fresh from
+  /// the next second listened above 1x.
+  static Future<void> resetStatsTimeSaved() async {
+    await ScopedPrefs.remove('stats_time_saved');
+    await ScopedPrefs.remove('stats_time_saved_since');
+    _notify();
+  }
+
   /// Listening chart style on the stats page: 'bar' | 'line'.
   /// 'heatmap' used to be a chart style; it's now its own stats section, so a
   /// saved 'heatmap' value is coerced back to 'bar'.

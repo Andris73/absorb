@@ -444,6 +444,13 @@
   "statsHeatmapMore": "More",
   "statsDayOfWeek": "Average by day of week",
   "statsTimeSavedLabel": "Saved by speed",
+  "statsTimeSavedSince": "since {date}",
+  "@statsTimeSavedSince": {
+    "placeholders": { "date": { "type": "String" } }
+  },
+  "statsTimeSavedReset": "Reset time saved",
+  "statsTimeSavedResetConfirm": "Time saved will start counting again from today.",
+  "statsTimeSavedResetDone": "Time saved reset",
   "statsOnPaceFor": "On pace for {count} books",
   "@statsOnPaceFor": {
     "placeholders": { "count": { "type": "int" } }
