@@ -1218,6 +1218,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         relPath: rel,
         isEbookOnly: isEbookOnly,
         isAdmin: auth.isAdmin,
+        libraryId: _item!['libraryId'] as String?,
       ),
     ));
   }

@@ -25,6 +25,7 @@ class MetadataEditView extends StatefulWidget {
   final String relPath;
   final bool isEbookOnly;
   final bool isAdmin;
+  final String? libraryId;
 
   const MetadataEditView({
     super.key,
@@ -36,6 +37,7 @@ class MetadataEditView extends StatefulWidget {
     this.relPath = '',
     this.isEbookOnly = false,
     this.isAdmin = false,
+    this.libraryId,
   });
 
   @override
@@ -95,6 +97,12 @@ class _MetadataEditViewState extends State<MetadataEditView>
   String _coverProvider = 'best';
   bool _saving = false;
 
+  // Existing library values for the series/genres/tags typeahead. Fetched once
+  // from the library's filterdata so a value can be picked instead of retyped.
+  List<String> _allSeries = [];
+  List<String> _allGenres = [];
+  List<String> _allTags = [];
+
   // Encode tab
   String _encodeCodec = 'aac';
   String _encodeBitrate = '128k';
@@ -125,6 +133,7 @@ class _MetadataEditViewState extends State<MetadataEditView>
       ..addTaskStartedListener(_onTaskStarted)
       ..addTaskProgressListener(_onTaskProgress)
       ..addTaskFinishedListener(_onTaskFinished);
+    _loadFilterSuggestions();
     final m = widget.metadata;
     _titleCtrl = TextEditingController(text: m['title'] as String? ?? '');
     _subtitleCtrl = TextEditingController(text: m['subtitle'] as String? ?? '');
@@ -1189,7 +1198,7 @@ class _MetadataEditViewState extends State<MetadataEditView>
             _field(l.subtitleLabel, _subtitleCtrl, tt),
             _field(l.authorLabel, _authorCtrl, tt),
             _field(l.narratorLabel, _narratorCtrl, tt),
-            for (int i = 0; i < _seriesRows.length; i++)
+            for (int i = 0; i < _seriesRows.length; i++) ...[
               Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Expanded(child: _field(l.seriesLabel, _seriesRows[i].name, tt)),
                 const SizedBox(width: 12),
@@ -1213,6 +1222,8 @@ class _MetadataEditViewState extends State<MetadataEditView>
                   constraints: const BoxConstraints(),
                 ),
               ]),
+              _suggestionChips(_seriesRows[i].name, _allSeries, multi: false),
+            ],
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Align(
@@ -1234,7 +1245,9 @@ class _MetadataEditViewState extends State<MetadataEditView>
               Expanded(child: _field(l.languageLabel, _languageCtrl, tt)),
             ]),
             _field(l.genresLabel, _genresCtrl, tt, hint: l.commaSeparated),
+            _suggestionChips(_genresCtrl, _allGenres, multi: true),
             _field(l.tagsLabel, _tagsCtrl, tt, hint: l.commaSeparated),
+            _suggestionChips(_tagsCtrl, _allTags, multi: true),
             Row(children: [
               Expanded(child: _field(l.asinLabel, _asinCtrl, tt)),
               const SizedBox(width: 12),
@@ -1581,6 +1594,87 @@ class _MetadataEditViewState extends State<MetadataEditView>
         ),
         style: tt.bodyMedium,
       ),
+    );
+  }
+
+  Future<void> _loadFilterSuggestions() async {
+    final api = context.read<AuthProvider>().apiService;
+    final libId = widget.libraryId ?? context.read<LibraryProvider>().selectedLibraryId;
+    if (api == null || libId == null) return;
+    final data = await api.getLibraryFilterData(libId);
+    if (data == null || !mounted) return;
+    List<String> names(String key) {
+      final raw = data[key] as List<dynamic>? ?? [];
+      return raw
+          .map((e) => e is Map ? (e['name'] as String? ?? '') : e.toString())
+          .where((s) => s.isNotEmpty)
+          .toList()
+        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    }
+    setState(() {
+      _allSeries = names('series');
+      _allGenres = names('genres');
+      _allTags = names('tags');
+    });
+  }
+
+  /// Inline typeahead under a field: as the user types, shows up to 6 existing
+  /// library values that match, tapping one fills it in. For [multi] fields
+  /// (comma-separated genres/tags) it completes the word after the last comma
+  /// and leaves a trailing ", " ready for the next one.
+  Widget _suggestionChips(TextEditingController ctrl, List<String> source, {required bool multi}) {
+    if (source.isEmpty) return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: ctrl,
+      builder: (context, value, _) {
+        final full = value.text;
+        final existing = (multi ? full.split(',') : [full])
+            .map((s) => s.trim().toLowerCase())
+            .where((s) => s.isNotEmpty)
+            .toSet();
+        final token = (multi ? full.split(',').last : full).trim();
+        if (token.isEmpty) return const SizedBox.shrink();
+        final tl = token.toLowerCase();
+        final matches = source.where((s) {
+          final sl = s.toLowerCase();
+          return sl.contains(tl) && sl != tl && !existing.contains(sl);
+        }).toList()
+          ..sort((a, b) {
+            final ar = a.toLowerCase().startsWith(tl) ? 0 : 1;
+            final br = b.toLowerCase().startsWith(tl) ? 0 : 1;
+            return ar != br ? ar - br : a.length - b.length;
+          });
+        if (matches.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Wrap(
+            spacing: 6, runSpacing: 6,
+            children: matches.take(6).map((name) => ActionChip(
+              label: Text(name, style: tt.bodySmall),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              backgroundColor: cs.primary.withValues(alpha: 0.10),
+              side: BorderSide(color: cs.primary.withValues(alpha: 0.25)),
+              onPressed: () {
+                final String next;
+                if (multi) {
+                  final parts = full.split(',').map((s) => s.trim()).toList();
+                  parts[parts.length - 1] = name;
+                  next = '${parts.join(', ')}, ';
+                } else {
+                  next = name;
+                }
+                ctrl.value = TextEditingValue(
+                  text: next,
+                  selection: TextSelection.collapsed(offset: next.length),
+                );
+              },
+            )).toList(),
+          ),
+        );
+      },
     );
   }
 }
