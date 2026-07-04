@@ -54,6 +54,7 @@ class ExpandedCard extends StatefulWidget {
   final ColorScheme? initialCoverScheme;
   final ui.Image? initialBlurredCover;
   final List<dynamic>? initialChapters;
+  final Map<String, dynamic>? initialEbookFile;
   final String initialCardBackground;
 
   const ExpandedCard({
@@ -63,6 +64,7 @@ class ExpandedCard extends StatefulWidget {
     this.initialCoverScheme,
     this.initialBlurredCover,
     this.initialChapters,
+    this.initialEbookFile,
     this.initialCardBackground = 'blurred',
   });
 
@@ -84,6 +86,10 @@ class _ExpandedCardState extends State<ExpandedCard> {
   ImageProvider? _coverProvider;
   ui.Image? _blurredCover;
   List<dynamic>? _fetchedChapters;
+  // The item passed to the full-screen player is often a lean/synthetic map
+  // without media.ebookFile, so the "Read" action fell back to "no ebook".
+  // Filled by the full-item fetch below, same as the small card does.
+  Map<String, dynamic>? _fetchedEbookFile;
   bool _isStarting = false;
   StreamSubscription<Duration>? _chapterTrackSub;
   int _lastChapterIdx = -1;
@@ -179,6 +185,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
     _rawCoverScheme = widget.initialCoverScheme;
     _cardBackground = widget.initialCardBackground;
     _fetchedChapters = widget.initialChapters;
+    _fetchedEbookFile = widget.initialEbookFile;
     _currentItemId = widget.player.currentItemId;
     _currentEpisodeId = widget.player.currentEpisodeId;
     _wasPlaying = widget.player.hasBook && _isActive;
@@ -368,6 +375,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
       _coverBrightness = null;
       _coverProvider = null;
       _fetchedChapters = null;
+      _fetchedEbookFile = null;
       _lastChapterIdx = -1;
     });
 
@@ -438,7 +446,10 @@ class _ExpandedCardState extends State<ExpandedCard> {
   }
 
   Future<void> _fetchChaptersIfNeeded() async {
-    if (_chapters.isNotEmpty) return;
+    // Fetch the full item when either chapters OR the ebook file is missing
+    // from the (often minified) inline item, so the "Read" action works.
+    final inlineEbook = _media['ebookFile'] as Map<String, dynamic>?;
+    if (_chapters.isNotEmpty && inlineEbook != null) return;
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) return;
@@ -446,6 +457,10 @@ class _ExpandedCardState extends State<ExpandedCard> {
       final fullItem = await api.getLibraryItem(_itemId);
       if (fullItem != null && mounted) {
         final media = fullItem['media'] as Map<String, dynamic>? ?? {};
+        if (inlineEbook == null) {
+          final ef = media['ebookFile'] as Map<String, dynamic>?;
+          if (ef != null) setState(() => _fetchedEbookFile = ef);
+        }
         // Books: chapters at media level
         var chapters = media['chapters'] as List<dynamic>? ?? [];
         // Podcasts: chapters on the specific episode
@@ -1147,7 +1162,8 @@ class _ExpandedCardState extends State<ExpandedCard> {
     onEbookTap: _openReader,
   );
 
-  Map<String, dynamic>? get _ebookFile => _media['ebookFile'] as Map<String, dynamic>?;
+  Map<String, dynamic>? get _ebookFile =>
+      (_media['ebookFile'] as Map<String, dynamic>?) ?? _fetchedEbookFile;
   String? get _ebookExt {
     final ef = _ebookFile;
     if (ef == null) return null;

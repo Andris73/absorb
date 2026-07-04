@@ -1104,6 +1104,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
           initialCoverScheme: _coverScheme,
           initialBlurredCover: _blurredCover,
           initialChapters: _fetchedChapters,
+          initialEbookFile: _ebookFile,
           initialCardBackground: _cardBackground,
         ),
       ),
