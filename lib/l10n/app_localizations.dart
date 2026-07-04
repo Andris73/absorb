@@ -11685,6 +11685,36 @@ abstract class AppLocalizations {
   /// **'Font'**
   String get readerFont;
 
+  /// No description provided for @readerVolumeNav.
+  ///
+  /// In en, this message translates to:
+  /// **'Volume keys turn pages'**
+  String get readerVolumeNav;
+
+  /// No description provided for @readerVolumeNavOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get readerVolumeNavOff;
+
+  /// No description provided for @readerVolumeNavNormal.
+  ///
+  /// In en, this message translates to:
+  /// **'Normal'**
+  String get readerVolumeNavNormal;
+
+  /// No description provided for @readerVolumeNavMirrored.
+  ///
+  /// In en, this message translates to:
+  /// **'Mirrored'**
+  String get readerVolumeNavMirrored;
+
+  /// No description provided for @readerVolumeNavWhilePlaying.
+  ///
+  /// In en, this message translates to:
+  /// **'Even while audio is playing'**
+  String get readerVolumeNavWhilePlaying;
+
   /// No description provided for @readerMoreFonts.
   ///
   /// In en, this message translates to:

@@ -14,6 +14,7 @@ import '../services/ebook_annotation_service.dart';
 import '../services/ebook_cache.dart';
 import '../services/reader_font_service.dart';
 import '../services/scoped_prefs.dart';
+import '../services/volume_key_service.dart';
 import 'overlay_toast.dart';
 import 'card_buttons.dart' show CardSpeedSheet;
 
@@ -115,6 +116,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   int _fontSize = 16;
   double _lineHeight = 1.4;
   int _marginH = 16; // left + right
+  String _volumeNavMode = 'off';
+  bool _volumeNavWhilePlaying = false;
   int _marginV = 16; // top + bottom
   // Page layout: auto shows two pages on wide screens (tablets), single forces
   // one page, two forces a spread. Stored as index 0=auto/1=single/2=two.
@@ -164,7 +167,13 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     PlayerSettings.settingsChanged.addListener(_loadSkipSettings);
     _loadSkipSettings();
     _loadAudioMeta();
+    _volumeNav.attach();
   }
+
+  late final EreaderVolumeNav _volumeNav = EreaderVolumeNav(
+    onPrev: () => _epubController?.prev(),
+    onNext: () => _epubController?.next(),
+  );
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -276,6 +285,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _spread = _spreadModes[si];
     _themeId = await ScopedPrefs.getString(_kTheme) ?? '';
     _fontId = await ScopedPrefs.getString(_kFont) ?? 'original';
+    _volumeNavMode = await PlayerSettings.getEreaderVolumeNav();
+    _volumeNavWhilePlaying = await PlayerSettings.getEreaderVolumeNavWhilePlaying();
     if (mounted) setState(() {});
   }
 
@@ -437,6 +448,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _volumeNav.detach();
     _routeAnim?.removeStatusListener(_onRouteAnim);
     PlayerSettings.settingsChanged.removeListener(_loadSkipSettings);
     // Restore system UI when leaving
@@ -1091,6 +1103,45 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                     ]),
                   ),
                 ),
+                const SizedBox(height: 16),
+
+                // Volume keys turn pages (normal: up = previous, down = next)
+                Row(children: [
+                  Icon(Icons.swap_vert_rounded, size: 20, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(l.readerVolumeNav, style: tt.bodyMedium)),
+                ]),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<String>(
+                    showSelectedIcon: false,
+                    segments: [
+                      ButtonSegment(value: 'off', label: Text(l.readerVolumeNavOff)),
+                      ButtonSegment(value: 'normal', label: Text(l.readerVolumeNavNormal)),
+                      ButtonSegment(value: 'mirrored', label: Text(l.readerVolumeNavMirrored)),
+                    ],
+                    selected: {_volumeNavMode},
+                    onSelectionChanged: (sel) {
+                      final v = sel.first;
+                      setSheetState(() {});
+                      setState(() => _volumeNavMode = v);
+                      PlayerSettings.setEreaderVolumeNav(v);
+                    },
+                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                  ),
+                ),
+                if (_volumeNavMode != 'off')
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(l.readerVolumeNavWhilePlaying, style: tt.bodyMedium),
+                    value: _volumeNavWhilePlaying,
+                    onChanged: (v) {
+                      setSheetState(() {});
+                      setState(() => _volumeNavWhilePlaying = v);
+                      PlayerSettings.setEreaderVolumeNavWhilePlaying(v);
+                    },
+                  ),
               ],
             ),
           ),

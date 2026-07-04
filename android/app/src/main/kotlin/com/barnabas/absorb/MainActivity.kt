@@ -18,6 +18,7 @@ import android.os.Environment
 import android.os.StatFs
 
 import android.util.Log
+import android.view.KeyEvent
 import com.ryanheise.audioservice.AudioServiceActivity
 import com.ryanheise.just_audio.MonoController
 import io.flutter.embedding.engine.FlutterEngine
@@ -27,6 +28,11 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : AudioServiceActivity() {
     private val TAG = "AbsorbEQ"
     private val CHANNEL = "com.absorb.equalizer"
+
+    // Ebook reader: volume keys turn pages while watching is on. The keys are
+    // consumed here so system volume doesn't change.
+    private var volumeKeysChannel: MethodChannel? = null
+    private var watchVolumeKeys = false
 
     private var equalizer: Equalizer? = null
     private var bassBoost: BassBoost? = null
@@ -118,9 +124,44 @@ class MainActivity : AudioServiceActivity() {
                 }
             }
 
+        volumeKeysChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger, "com.absorb.volume_keys")
+        volumeKeysChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "watch" -> { watchVolumeKeys = true; result.success(true) }
+                "clearWatch" -> { watchVolumeKeys = false; result.success(true) }
+                else -> result.notImplemented()
+            }
+        }
+
         // GMS-backed channels (cast foreground service, wear bridges).
         // Resolves to the real impl in github/playstore, no-op in fdroid.
         PlatformIntegration.registerChannels(this, flutterEngine)
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (watchVolumeKeys) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP -> {
+                    volumeKeysChannel?.invokeMethod("volumePressed", "up")
+                    return true
+                }
+                KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                    volumeKeysChannel?.invokeMethod("volumePressed", "down")
+                    return true
+                }
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    // Consume the matching key-up too so the system doesn't act on it.
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if (watchVolumeKeys &&
+            (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)) {
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
     }
 
     // Move downloaded temp files into the user's SAF folder, creating the nested

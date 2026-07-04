@@ -6732,6 +6732,21 @@ class AppLocalizationsDe extends AppLocalizations {
   String get readerFont => 'Font';
 
   @override
+  String get readerVolumeNav => 'Volume keys turn pages';
+
+  @override
+  String get readerVolumeNavOff => 'Off';
+
+  @override
+  String get readerVolumeNavNormal => 'Normal';
+
+  @override
+  String get readerVolumeNavMirrored => 'Mirrored';
+
+  @override
+  String get readerVolumeNavWhilePlaying => 'Even while audio is playing';
+
+  @override
   String get readerMoreFonts => 'Download more fonts';
 
   @override

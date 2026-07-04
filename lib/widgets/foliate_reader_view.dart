@@ -10,6 +10,7 @@ import '../services/api_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/ebook_cache.dart';
 import '../services/foliate_book_server.dart';
+import '../services/volume_key_service.dart';
 
 /// A table-of-contents entry from foliate-js.
 class _TocItem {
@@ -88,10 +89,17 @@ class _FoliateReaderViewState extends State<FoliateReaderView> {
     _lib = context.read<LibraryProvider>();
     _loadInitialCfi();
     _prepare();
+    _volumeNav.attach();
   }
+
+  late final EreaderVolumeNav _volumeNav = EreaderVolumeNav(
+    onPrev: () => _controller?.evaluateJavascript(source: 'window.AbsorbReader.prev();'),
+    onNext: () => _controller?.evaluateJavascript(source: 'window.AbsorbReader.next();'),
+  );
 
   @override
   void dispose() {
+    _volumeNav.detach();
     _setFullscreen(false);
     _flushProgress();
     _server.stop();

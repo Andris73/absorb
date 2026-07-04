@@ -589,6 +589,15 @@ class PlayerSettings {
   static Future<bool> getFullScreenPlayer() => _get('fullScreenPlayer', false);
   static Future<void> setFullScreenPlayer(bool value) => _set('fullScreenPlayer', value);
 
+  // Ebook reader: turn pages with the volume keys. 'off' | 'normal'
+  // (up = previous page, down = next, matching the ABS app) | 'mirrored'.
+  static Future<String> getEreaderVolumeNav() => _get('ereaderVolumeNav', 'off');
+  static Future<void> setEreaderVolumeNav(String value) => _set('ereaderVolumeNav', value, notify: true);
+  // Keep turning pages with the volume keys even while audio is playing
+  // (off = playing audio gives the keys back to system volume).
+  static Future<bool> getEreaderVolumeNavWhilePlaying() => _get('ereaderVolumeNavWhilePlaying', false);
+  static Future<void> setEreaderVolumeNavWhilePlaying(bool value) => _set('ereaderVolumeNavWhilePlaying', value, notify: true);
+
   /// When on, the screen is locked to portrait (rotation disabled). Default off
   /// keeps the current behaviour where all orientations are allowed.
   static Future<bool> getLockPortrait() => _get('lockPortrait', false);

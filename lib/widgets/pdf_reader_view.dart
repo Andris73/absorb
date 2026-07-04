@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/api_service.dart';
 import '../services/ebook_cache.dart';
+import '../services/volume_key_service.dart';
 
 /// Full-screen PDF reader. PDFs are fixed-layout, so this is deliberately
 /// simpler than the EPUB reader (no font/margin/theme reflow): page scrolling,
@@ -56,10 +57,23 @@ class _PdfReaderViewState extends State<PdfReaderView> {
     _lib = context.read<LibraryProvider>();
     _loadInitialPage();
     _open();
+    _volumeNav.attach();
   }
+
+  late final EreaderVolumeNav _volumeNav = EreaderVolumeNav(
+    onPrev: () {
+      if (_page > 1) _controller.goToPage(pageNumber: _page - 1);
+    },
+    onNext: () {
+      if (_pageCount <= 0 || _page < _pageCount) {
+        _controller.goToPage(pageNumber: _page + 1);
+      }
+    },
+  );
 
   @override
   void dispose() {
+    _volumeNav.detach();
     _setFullscreen(false);
     _flushProgress();
     super.dispose();

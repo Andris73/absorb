@@ -12,6 +12,8 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   private var widgetChannel: FlutterMethodChannel?
+  private var volumeKeysChannel: FlutterMethodChannel?
+  private let volumeKeyWatcher = VolumeKeyWatcher()
 
   /// True once this process has become the foreground audio owner. Used to
   /// ignore our own takeover broadcast so we don't stop our own playback (#285).
@@ -349,6 +351,27 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
       }
     }
 
+    // Ebook reader: volume keys turn pages. Watching intercepts presses via
+    // an outputVolume observer and resets the level so volume never moves.
+    let volKeys = FlutterMethodChannel(name: "com.absorb.volume_keys",
+                                       binaryMessenger: messenger)
+    volumeKeysChannel = volKeys
+    volumeKeyWatcher.onPressed = { [weak self] direction in
+      self?.volumeKeysChannel?.invokeMethod("volumePressed", arguments: direction)
+    }
+    volKeys.setMethodCallHandler { [weak self] (call, result) in
+      switch call.method {
+      case "watch":
+        self?.volumeKeyWatcher.start()
+        result(true)
+      case "clearWatch":
+        self?.volumeKeyWatcher.stop()
+        result(true)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     let storageChannel = FlutterMethodChannel(name: "com.absorb.storage",
                                               binaryMessenger: messenger)
     storageChannel.setMethodCallHandler { (call, result) in
@@ -620,5 +643,75 @@ enum AudioClipExporter {
         completion(false, message)
       }
     }
+  }
+}
+
+/// Ebook reader page turns via the physical volume keys. Observes the audio
+/// session's outputVolume; a press away from the baseline fires a direction,
+/// then the level is snapped back through a hidden MPVolumeView slider (whose
+/// presence in the window also suppresses the system volume HUD). The user's
+/// real volume is saved on start and restored on stop.
+private final class VolumeKeyWatcher {
+  private var observation: NSKeyValueObservation?
+  private var volumeView: MPVolumeView?
+  private var baseline: Float = 0.5
+  private var savedVolume: Float?
+
+  var onPressed: ((String) -> Void)?
+
+  func start() {
+    guard observation == nil else { return }
+    let session = AVAudioSession.sharedInstance()
+    try? session.setActive(true)
+
+    let vv = MPVolumeView(frame: CGRect(x: -3000, y: -3000, width: 1, height: 1))
+    vv.clipsToBounds = true
+    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    let host = scenes.flatMap { $0.windows }.first { $0.isKeyWindow }
+      ?? scenes.flatMap { $0.windows }.first
+    host?.addSubview(vv)
+    volumeView = vv
+
+    savedVolume = session.outputVolume
+    // Snap the baseline to iOS's 1/16 volume steps, away from the extremes so
+    // both directions stay detectable at min/max volume.
+    baseline = (min(max(session.outputVolume, 0.25), 0.75) * 16).rounded() / 16
+
+    // Give the volume view a beat to land in the hierarchy before its slider
+    // will accept a value, then normalize to the baseline.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+      guard let self, self.observation != nil else { return }
+      self.setSystemVolume(self.baseline)
+    }
+
+    observation = session.observe(\.outputVolume, options: [.new]) { [weak self] _, change in
+      guard let self, let new = change.newValue else { return }
+      // Our own baseline resets land exactly on the baseline - ignore them.
+      if abs(new - self.baseline) < 0.01 { return }
+      let direction = new > self.baseline ? "up" : "down"
+      DispatchQueue.main.async {
+        self.onPressed?(direction)
+        self.setSystemVolume(self.baseline)
+      }
+    }
+  }
+
+  func stop() {
+    guard observation != nil else { return }
+    observation?.invalidate()
+    observation = nil
+    if let saved = savedVolume { setSystemVolume(saved) }
+    savedVolume = nil
+    let vv = volumeView
+    volumeView = nil
+    // Keep the view alive briefly so the restore above goes through.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+      vv?.removeFromSuperview()
+    }
+  }
+
+  private func setSystemVolume(_ value: Float) {
+    guard let slider = volumeView?.subviews.compactMap({ $0 as? UISlider }).first else { return }
+    slider.value = value
   }
 }
