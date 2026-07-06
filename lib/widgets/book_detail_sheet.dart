@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -28,6 +29,7 @@ import '../services/download_service.dart';
 import '../services/ebook_cache.dart';
 import '../services/progress_sync_service.dart';
 import '../services/metadata_override_service.dart';
+import '../services/socket_service.dart';
 import '../services/scoped_prefs.dart';
 import '../main.dart' show rootNavigatorKey, colorSourceNotifier, useColorEverywhereNotifier, manualSeedNotifier, manualColorScheme;
 import '../screens/app_shell.dart';
@@ -130,12 +132,31 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     }
     _loadItem();
     _loadBookmarks();
+    SocketService().addItemUpdatedListener(_onSocketItemUpdated);
     PlayerSettings.getRectangleCovers().then((v) { if (mounted) setState(() => _squareCovers = !v); });
     PlayerSettings.getShowGoodreadsButton().then((v) { if (mounted) setState(() => _showGoodreads = v); });
     ScopedPrefs.getStringList('saved_ebooks').then((list) {
       if (mounted && list.contains(widget.itemId)) {
         setState(() => _ebookSaved = true);
       }
+    });
+  }
+
+  @override
+  void dispose() {
+    SocketService().removeItemUpdatedListener(_onSocketItemUpdated);
+    _liveRefreshDebounce?.cancel();
+    super.dispose();
+  }
+
+  // Live-refresh when this item changes on the server (web UI edit, scan,
+  // match) so an open sheet shows the new cover/metadata without reopening.
+  Timer? _liveRefreshDebounce;
+  void _onSocketItemUpdated(Map<String, dynamic> data) {
+    if (!mounted || data['id'] != widget.itemId) return;
+    _liveRefreshDebounce?.cancel();
+    _liveRefreshDebounce = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) _loadItem();
     });
   }
 

@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
+import '../services/socket_service.dart';
 import '../widgets/absorb_page_header.dart';
 
 /// Admin cleanup screen: lists the items a library has flagged as "issues" -
@@ -33,12 +35,32 @@ class _AdminMissingItemsScreenState extends State<AdminMissingItemsScreen> {
   void initState() {
     super.initState();
     _load();
+    SocketService().addItemsChangedListener(_onItemsChanged);
+  }
+
+  @override
+  void dispose() {
+    SocketService().removeItemsChangedListener(_onItemsChanged);
+    _liveRefreshDebounce?.cancel();
+    super.dispose();
+  }
+
+  // A running scan can flag or clear items while this list is open.
+  Timer? _liveRefreshDebounce;
+  void _onItemsChanged() {
+    if (!mounted) return;
+    _liveRefreshDebounce?.cancel();
+    _liveRefreshDebounce = Timer(const Duration(seconds: 2), () {
+      if (mounted && _deleting.isEmpty) _load();
+    });
   }
 
   Future<void> _load() async {
     final api = context.read<AuthProvider>().apiService;
     if (api == null) return;
-    setState(() => _loading = true);
+    // Full-screen spinner only before the first result; live refreshes and
+    // pull-to-refresh swap the list in place.
+    if (_items.isEmpty) setState(() => _loading = true);
     final items = await api.getIssueItems(_libraryId);
     if (!mounted) return;
     setState(() {

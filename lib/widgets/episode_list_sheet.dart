@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +13,7 @@ import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import '../services/chromecast_service.dart';
 import '../providers/auth_provider.dart';
+import '../services/socket_service.dart';
 import 'card_buttons.dart';
 import 'html_description.dart';
 import 'stackable_sheet.dart';
@@ -99,6 +101,35 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
     _loadEpisodes();
     _loadAutoDownloadState();
     _loadNewEpisodePosition();
+    SocketService().addItemUpdatedListener(_onSocketItemUpdated);
+  }
+
+  @override
+  void dispose() {
+    SocketService().removeItemUpdatedListener(_onSocketItemUpdated);
+    _liveRefreshDebounce?.cancel();
+    super.dispose();
+  }
+
+  // Live-refresh the episode list when this show changes on the server, e.g.
+  // an episode download finishing or a new episode arriving via auto-download.
+  // Always fetches fresh - _loadEpisodes would early-return on the stale
+  // episode list already embedded in the sheet's item snapshot.
+  Timer? _liveRefreshDebounce;
+  void _onSocketItemUpdated(Map<String, dynamic> data) {
+    if (!mounted || data['id'] != _itemId) return;
+    _liveRefreshDebounce?.cancel();
+    _liveRefreshDebounce = Timer(const Duration(milliseconds: 800), () async {
+      if (!mounted) return;
+      final lib = context.read<LibraryProvider>();
+      final api = context.read<AuthProvider>().apiService;
+      if (api == null || lib.isOffline) return;
+      final fullItem = await api.getLibraryItem(_itemId);
+      if (fullItem == null || !mounted) return;
+      final media = fullItem['media'] as Map<String, dynamic>? ?? {};
+      final episodes = media['episodes'] as List<dynamic>? ?? [];
+      setState(() => _episodes = _sortEpisodes(episodes));
+    });
   }
 
   void _loadNewEpisodePosition() async {

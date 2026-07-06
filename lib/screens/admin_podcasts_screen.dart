@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/socket_service.dart';
 import 'podcast_edit_screen.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/html_description.dart';
@@ -952,6 +954,18 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
     _reloadItem(); // Load full item with episodes
     _loadFeed(); // Pre-load feed so it's ready when user switches tabs
     _pollDownloadQueue(); // Check for any in-progress downloads
+    SocketService().addItemUpdatedListener(_onSocketItemUpdated);
+  }
+
+  // Live-refresh when this show changes on the server (episode downloads
+  // finishing, metadata edits from the web UI).
+  Timer? _liveRefreshDebounce;
+  void _onSocketItemUpdated(Map<String, dynamic> data) {
+    if (!mounted || data['id'] != _podcastId) return;
+    _liveRefreshDebounce?.cancel();
+    _liveRefreshDebounce = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) _reloadItem();
+    });
   }
 
   int _lastTabIndex = 0;
@@ -972,7 +986,14 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
   }
 
   @override
-  void dispose() { _pollingQueue = false; _tabCtrl.removeListener(_onTabChanged); _tabCtrl.dispose(); super.dispose(); }
+  void dispose() {
+    SocketService().removeItemUpdatedListener(_onSocketItemUpdated);
+    _liveRefreshDebounce?.cancel();
+    _pollingQueue = false;
+    _tabCtrl.removeListener(_onTabChanged);
+    _tabCtrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _removeShow() async {
     final l = AppLocalizations.of(context)!;

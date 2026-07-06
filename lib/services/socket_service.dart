@@ -115,6 +115,31 @@ class SocketService {
     }
   }
 
+  // Per-item update fan-out carrying the item JSON, so an open detail view can
+  // live-refresh when its item changes on the server (web UI edits, scans,
+  // finished episode downloads). Bulk events fan out one call per item.
+  final List<void Function(Map<String, dynamic>)> _itemUpdatedListeners = [];
+
+  void addItemUpdatedListener(void Function(Map<String, dynamic>) fn) {
+    if (!_itemUpdatedListeners.contains(fn)) _itemUpdatedListeners.add(fn);
+  }
+  void removeItemUpdatedListener(void Function(Map<String, dynamic>) fn) =>
+      _itemUpdatedListeners.remove(fn);
+
+  void _emitItemUpdated(dynamic data) {
+    if (data is Map<String, dynamic>) {
+      for (final fn in List.of(_itemUpdatedListeners)) {
+        fn(data);
+      }
+    } else if (data is List) {
+      for (final item in data.whereType<Map<String, dynamic>>()) {
+        for (final fn in List.of(_itemUpdatedListeners)) {
+          fn(item);
+        }
+      }
+    }
+  }
+
   /// Called when ereader devices change. Server emits this both for the
   /// per-user update (always) and admin-wide updates (only to admins).
   /// Payload shape: { ereaderDevices: [...] } already filtered for this user.
@@ -169,11 +194,13 @@ class SocketService {
       _socket!.on('item_added', (data) {
         debugPrint('[Socket] Item added');
         if (data is Map<String, dynamic>) onItemUpdated?.call(data);
+        _emitItemUpdated(data);
         _emitItemsChanged();
       });
       _socket!.on('item_updated', (data) {
         debugPrint('[Socket] Item updated');
         if (data is Map<String, dynamic>) onItemUpdated?.call(data);
+        _emitItemUpdated(data);
         _emitItemsChanged();
       });
       _socket!.on('item_removed', (data) {
@@ -182,12 +209,14 @@ class SocketService {
         _emitItemsChanged();
       });
       // Bulk events the scanner emits in chunks while a scan runs
-      _socket!.on('items_updated', (_) {
+      _socket!.on('items_updated', (data) {
         debugPrint('[Socket] Items updated (bulk)');
+        _emitItemUpdated(data);
         _emitItemsChanged();
       });
-      _socket!.on('items_added', (_) {
+      _socket!.on('items_added', (data) {
         debugPrint('[Socket] Items added (bulk)');
+        _emitItemUpdated(data);
         _emitItemsChanged();
       });
 
@@ -352,18 +381,26 @@ class SocketService {
 
       _socket!.on('item_added', (data) {
         if (data is Map<String, dynamic>) onItemUpdated?.call(data);
+        _emitItemUpdated(data);
         _emitItemsChanged();
       });
       _socket!.on('item_updated', (data) {
         if (data is Map<String, dynamic>) onItemUpdated?.call(data);
+        _emitItemUpdated(data);
         _emitItemsChanged();
       });
       _socket!.on('item_removed', (data) {
         if (data is Map<String, dynamic>) onItemRemoved?.call(data);
         _emitItemsChanged();
       });
-      _socket!.on('items_updated', (_) => _emitItemsChanged());
-      _socket!.on('items_added', (_) => _emitItemsChanged());
+      _socket!.on('items_updated', (data) {
+        _emitItemUpdated(data);
+        _emitItemsChanged();
+      });
+      _socket!.on('items_added', (data) {
+        _emitItemUpdated(data);
+        _emitItemsChanged();
+      });
 
       _socket!.on('series_added', (_) => onSeriesUpdated?.call());
       _socket!.on('series_updated', (_) => onSeriesUpdated?.call());
