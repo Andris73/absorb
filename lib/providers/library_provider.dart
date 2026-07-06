@@ -208,8 +208,6 @@ class LibraryProvider extends ChangeNotifier
     } else {
       _lastAuthKey = null;
       _lastUseLocalServer = null;
-      _idleDisconnectTimer?.cancel();
-      _idleDisconnectTimer = null;
       _libraries = [];
       _personalizedSections = [];
       _series = [];

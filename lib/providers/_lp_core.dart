@@ -1030,11 +1030,14 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     if (!AudioPlayerService().isPlaying) {
       _stopLocalProbeTimer();
     }
-    _idleDisconnectTimer?.cancel(); // No timers in background
-    _idleDisconnectTimer = null;
     _softDisconnectSocket(); // Always disconnect, even during playback
   }
 
+  // The socket stays connected the whole time the app is foregrounded: the
+  // screen dominates battery while the app is visible, an idle websocket is
+  // just ping frames, and live updates (progress sync, scan results) are worth
+  // it. The old 5-minute foreground idle disconnect is gone; backgrounding
+  // still tears the socket down.
   void onAppForegrounded() {
     _isBackgrounded = false;
     _softReconnectSocket();
@@ -1044,27 +1047,15 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       _startHealthCheckTimer();
     }
     _startLocalProbeTimer();
-    _restartIdleTimer();
     if (!isOffline && !_manualOffline) {
       (this as LibraryProvider).checkSubscribedPodcasts();
     }
   }
 
-  void _restartIdleTimer() {
-    _idleDisconnectTimer?.cancel();
-    _idleDisconnectTimer = Timer(_StateMixin._idleTimeout, () {
-      if (!AudioPlayerService().isPlaying && !ChromecastService().isPlaying) {
-        _softDisconnectSocket();
-      }
-    });
-  }
-
   void onPlaybackStarted() {
     if (!_isBackgrounded) {
       _softReconnectSocket();
-    } else {
     }
-    _idleDisconnectTimer?.cancel();
     _startLocalProbeTimer();
   }
 
@@ -1072,8 +1063,6 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     if (_isBackgrounded) {
       _softDisconnectSocket();
       _stopLocalProbeTimer();
-    } else {
-      _restartIdleTimer();
     }
   }
 

@@ -82,8 +82,6 @@ mixin _StateMixin on ChangeNotifier {
 
   bool _isBackgrounded = false;
   bool _socketSoftDisconnected = false;
-  Timer? _idleDisconnectTimer;
-  static const _idleTimeout = Duration(minutes: 5);
 
   Map<String, Map<String, dynamic>> _progressMap = {};
   final Map<String, double> _localProgressOverrides = {};
