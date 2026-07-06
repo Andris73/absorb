@@ -15,10 +15,6 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
   private var volumeKeysChannel: FlutterMethodChannel?
   private let volumeKeyWatcher = VolumeKeyWatcher()
 
-  /// True once this process has become the foreground audio owner. Used to
-  /// ignore our own takeover broadcast so we don't stop our own playback (#285).
-  private var didClaimAudioOwnership = false
-
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -244,13 +240,13 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
 
           // A foreground process claimed audio ownership. If that's not us,
           // stop this process's engine so two streams can't overlap (#285).
-          // The owner itself set didClaimAudioOwnership and is .active, so it
-          // ignores its own broadcast.
+          // Ownership is arbitrated by pid: the owner reads its own pid back
+          // and ignores its own broadcast.
           if rawName == "com.barnabas.absorb.host.takeover" {
             DispatchQueue.main.async {
-              if appDelegate.didClaimAudioOwnership { return }
+              if absorbAudioOwnerPid() == Int(getpid()) { return }
               if UIApplication.shared.applicationState == .active { return }
-              NSLog("[WidgetDebug] takeover: foreground app claimed audio, stopping this process's engine")
+              NSLog("[WidgetDebug] takeover: another process claimed audio, stopping this process's engine")
               AbsorbPlayerCore.shared.yieldToForegroundOwner()
             }
             return
@@ -262,6 +258,19 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
           case "com.barnabas.absorb.widget.skipBack":    action = "skipBack"
           case "com.barnabas.absorb.widget.skipForward": action = "skipForward"
           default: return
+          }
+          // Every live process receives this broadcast, so exactly one may
+          // act on it: the audio owner, and only via a Flutter that is
+          // actually responsive. Anything else would actuate in parallel -
+          // a stray background process's headless Flutter toggling next to
+          // the foreground app is how one widget tap produced two streams
+          // of the same book (#285), and a suspended-then-resumed Flutter
+          // replaying the action after the native core already handled it
+          // is how the play state got double-toggled.
+          let myPid = Int(getpid())
+          guard absorbAudioOwnerPid() == myPid, absorbFlutterAlive(pid: myPid) else {
+            NSLog("[WidgetDebug] AppDelegate dropping widget action \(action) (owner=\(absorbAudioOwnerPid()) me=\(myPid)) - the acting process's native core covers it")
+            return
           }
           // Re-activate the audio session as soon as the host app process
           // sees the notification, before the async hop to Flutter. The
@@ -291,8 +300,19 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
   /// engine, so two streams can't overlap (#285). A no-op when this is the only
   /// process. Called from SceneDelegate.sceneDidBecomeActive.
   func claimAudioOwnershipAndNotifyOthers() {
-    didClaimAudioOwnership = true
-    UserDefaults(suiteName: absorbAppGroup)?.set(Int(getpid()), forKey: "audio_owner_pid")
+    let defaults = UserDefaults(suiteName: absorbAppGroup)
+    defaults?.set(Int(getpid()), forKey: "audio_owner_pid")
+    // Sweep heartbeat keys left by long-dead processes - each app launch
+    // writes its own pid-scoped key, so without this they pile up forever.
+    if let dict = defaults?.dictionaryRepresentation() {
+      let nowMs = Int(Date().timeIntervalSince1970 * 1000)
+      let myKey = "flutter_alive_at_\(getpid())"
+      for (key, value) in dict where key.hasPrefix("flutter_alive_at_") && key != myKey {
+        if let ts = value as? Int, nowMs - ts > 3_600_000 {
+          defaults?.removeObject(forKey: key)
+        }
+      }
+    }
     postAbsorbDarwinNotification("com.barnabas.absorb.host.takeover")
   }
 

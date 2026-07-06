@@ -121,9 +121,12 @@ class HomeWidgetService {
     _ensureStatsTimer();
 
     // Phase 1.4 hand-off heartbeat. The iOS native player core checks this
-    // before driving audio: a recent timestamp means Flutter is alive and
-    // owns playback, so the native side bails. Stale or missing means
-    // Flutter is dead and the widget can take over.
+    // before driving audio: a recent timestamp means this process's Flutter
+    // is alive and owns playback, so the native side bails. Stale or missing
+    // means Flutter is dead and the widget can take over. The key is
+    // pid-scoped: a widget intent can launch a second, headless copy of the
+    // app whose Flutter also heartbeats, and on a shared key that made every
+    // process think its own Flutter was alive (#285).
     if (Platform.isIOS) {
       _writeOwnerHeartbeat();
       _heartbeatTimer?.cancel();
@@ -137,7 +140,7 @@ class HomeWidgetService {
   Future<void> _writeOwnerHeartbeat() async {
     try {
       await HomeWidget.saveWidgetData<int>(
-        'audio_owner_alive_at',
+        'flutter_alive_at_$pid',
         DateTime.now().millisecondsSinceEpoch,
       );
     } catch (e) {

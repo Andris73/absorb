@@ -17,6 +17,53 @@ public func postAbsorbDarwinNotification(_ name: String) {
   CFNotificationCenterPostNotification(center, CFNotificationName(name as CFString), nil, nil, true)
 }
 
+// MARK: - Audio ownership (#285)
+//
+// iOS can end up with two processes of the app alive at once: a widget
+// AudioPlaybackIntent can launch a headless background process, and a later
+// foreground launch can be a separate process. Both boot a full Flutter
+// engine, so every shared flag used to be written by both sides and a single
+// widget tap could actuate playback in both processes - two overlapping
+// streams of the same book.
+//
+// The arbitration is now pid-based: `audio_owner_pid` names the one process
+// allowed to act on widget taps, and each process's Flutter proves it is
+// alive via its own pid-scoped `flutter_alive_at_<pid>` heartbeat, so no
+// process can vouch for (or impersonate) another.
+
+/// Pid of the process that currently owns audio, or 0 when never claimed.
+public func absorbAudioOwnerPid() -> Int {
+  return UserDefaults(suiteName: absorbAppGroup)?.integer(forKey: "audio_owner_pid") ?? 0
+}
+
+/// True when `pid`'s Flutter engine wrote its heartbeat within the last 30s.
+/// The key is pid-scoped so a stray background process's heartbeat can't
+/// make another process's Flutter look alive.
+public func absorbFlutterAlive(pid: Int) -> Bool {
+  guard pid > 0,
+        let aliveAt = UserDefaults(suiteName: absorbAppGroup)?
+          .object(forKey: "flutter_alive_at_\(pid)") as? Int
+  else { return false }
+  let ageMs = Int(Date().timeIntervalSince1970 * 1000) - aliveAt
+  return ageMs >= 0 && ageMs < 30_000
+}
+
+/// Claim audio ownership for this process unless the current owner's Flutter
+/// is verifiably alive in another process. Called from each widget intent's
+/// perform(): iOS chose this process to handle a user-initiated audio action,
+/// which is as authoritative as a foreground scene - but only when the
+/// recorded owner is dead (app killed) or has gone quiet (suspended while
+/// paused). A live owner elsewhere keeps ownership and its process actuates
+/// via the Darwin broadcast instead.
+public func absorbClaimOwnershipIfOwnerDead() {
+  let me = Int(getpid())
+  let owner = absorbAudioOwnerPid()
+  if owner == me { return }
+  if absorbFlutterAlive(pid: owner) { return }
+  UserDefaults(suiteName: absorbAppGroup)?.set(me, forKey: "audio_owner_pid")
+  NSLog("[WidgetDebug] intent claimed audio ownership: pid \(me) (previous owner \(owner) not alive)")
+}
+
 /// Activate the system audio session from inside an AudioPlaybackIntent's
 /// perform(). AVAudioSession is system-wide, so flipping it on here keeps
 /// it active by the time the host app's audio engine runs play() a few
@@ -66,6 +113,7 @@ public struct AbsorbSkipBackIntent: AudioPlaybackIntent {
 
   public func perform() async throws -> some IntentResult {
     core.log("[NativeCore] SkipBackIntent.perform fired (host process)")
+    absorbClaimOwnershipIfOwnerDead()
     activateAbsorbAudioSession()
     let seconds = UserDefaults(suiteName: absorbAppGroup)?
       .integer(forKey: "widget_skip_back")
@@ -88,10 +136,13 @@ public struct AbsorbPlayPauseIntent: AudioPlaybackIntent {
 
   public func perform() async throws -> some IntentResult {
     core.log("[NativeCore] PlayPauseIntent.perform fired (host process)")
-    let defaults = UserDefaults(suiteName: absorbAppGroup)
-    let wasPlaying = defaults?.bool(forKey: "widget_is_playing") ?? false
-    defaults?.set(!wasPlaying, forKey: "widget_is_playing")
-    core.log("[NativeCore]   wasPlaying=\(wasPlaying) -> \(!wasPlaying) defaults=\(defaults == nil ? "nil" : "ok")")
+    absorbClaimOwnershipIfOwnerDead()
+    // Instant icon feedback: predict what the toggle will do rather than
+    // blindly inverting the stored flag (which is stale after a force-kill).
+    // Whichever side actually actuates writes the real state right after.
+    let willPlay = core.willPlayAfterToggle()
+    UserDefaults(suiteName: absorbAppGroup)?.set(willPlay, forKey: "widget_is_playing")
+    core.log("[NativeCore]   predicted willPlay=\(willPlay)")
     activateAbsorbAudioSession()
     core.toggle()
     postAbsorbDarwinNotification("com.barnabas.absorb.widget.playPause")
@@ -112,6 +163,7 @@ public struct AbsorbSkipForwardIntent: AudioPlaybackIntent {
 
   public func perform() async throws -> some IntentResult {
     core.log("[NativeCore] SkipForwardIntent.perform fired (host process)")
+    absorbClaimOwnershipIfOwnerDead()
     activateAbsorbAudioSession()
     let seconds = UserDefaults(suiteName: absorbAppGroup)?
       .integer(forKey: "widget_skip_forward")

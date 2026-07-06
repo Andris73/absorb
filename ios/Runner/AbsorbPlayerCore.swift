@@ -3,6 +3,7 @@ import AVFoundation
 import Foundation
 import MediaPlayer
 import UIKit
+import WidgetKit
 
 /// Controller that drives audiobook playback while Flutter is suspended.
 ///
@@ -13,8 +14,11 @@ import UIKit
 /// (two concurrent streams from the same book).
 ///
 /// State source: app group `np_*` keys written by `home_widget_service.dart`.
-/// Hand-off: `audio_owner_alive_at` heartbeat - if recent, Flutter is in
-/// charge and native bails on every entry point.
+/// Hand-off: the pid-scoped `flutter_alive_at_<pid>` heartbeat - if THIS
+/// process's Flutter wrote it recently, Flutter is in charge and native bails
+/// on every entry point. Pid-scoped because a stray background process runs
+/// its own full Flutter engine, and a shared heartbeat let it make every
+/// process think Flutter was alive (#285).
 final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sendable {
   static let shared = AbsorbPlayerCore()
 
@@ -58,6 +62,7 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
       self.emit("[NativeCore] play(): global=\(self.globalPosition())s")
       self.startServerSyncTimer()
       self.updateNowPlayingInfo(rate: Double(self.currentSpeed()))
+      self.syncWidgetState()
     }
   }
 
@@ -74,6 +79,7 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
       self.pushProgressToServer()
       self.stopServerSyncTimer()
       self.updateNowPlayingInfo(rate: 0)
+      self.syncWidgetState()
     }
   }
 
@@ -102,6 +108,7 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
         self.startServerSyncTimer()
         self.updateNowPlayingInfo(rate: Double(self.currentSpeed()))
       }
+      self.syncWidgetState()
     }
   }
 
@@ -158,20 +165,42 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
       }
       self.emit("[NativeCore] yieldToForegroundOwner: stopping at \(self.globalPosition())s so the foreground app can take over")
       self.savePosition()
-      UserDefaults(suiteName: Self.appGroup)?.set(false, forKey: "widget_is_playing")
       self.stopServerSyncTimer()
       AbsorbAudioEngine.shared.stop()
+      self.syncWidgetState()
+      // Relinquish Now Playing so iOS routes lock screen / Control Center
+      // commands to the new owner instead of this stray process. A stale
+      // entry here is what left Control Center greyed out while the other
+      // process's audio kept going.
+      DispatchQueue.main.async {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+      }
     }
   }
 
   private func flutterIsAlive() -> Bool {
-    let defaults = UserDefaults(suiteName: Self.appGroup)
-    guard let aliveAt = defaults?.object(forKey: "audio_owner_alive_at") as? Int else {
-      return false
+    // Only THIS process's Flutter counts - the actions below run in-process,
+    // so another process's live Flutter is irrelevant here.
+    return absorbFlutterAlive(pid: Int(getpid()))
+  }
+
+  /// See AbsorbPlayerCoreProtocol. Runs the prediction on the core queue so
+  /// engine state reads are consistent with any in-flight actuation.
+  func willPlayAfterToggle() -> Bool {
+    return queue.sync {
+      let myPid = Int(getpid())
+      if absorbFlutterAlive(pid: myPid) || absorbFlutterAlive(pid: absorbAudioOwnerPid()) {
+        // A live Flutter (here or in the owning process) will do the toggle,
+        // and it keeps the stored flag accurate - inverting it is safe.
+        let stored = UserDefaults(suiteName: Self.appGroup)?.bool(forKey: "widget_is_playing") ?? false
+        return !stored
+      }
+      if AbsorbAudioEngine.shared.isLoaded {
+        return !AbsorbAudioEngine.shared.isPlaying
+      }
+      // Cold native start: ensureLoaded + play.
+      return true
     }
-    let nowMs = Int(Date().timeIntervalSince1970 * 1000)
-    let ageMs = nowMs - aliveAt
-    return ageMs >= 0 && ageMs < 30_000
   }
 
   // MARK: - State plumbing
@@ -303,6 +332,7 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
       self?.queue.async {
         self?.savePosition()
         self?.updateNowPlayingInfo(rate: Double(AbsorbAudioEngine.shared.isPlaying ? (self?.currentSpeed() ?? 1.0) : 0))
+        self?.syncWidgetState()
         self?.emit("[NativeCore] seekToGlobal done: \(globalSeconds)s")
       }
     }
@@ -324,6 +354,23 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
     let defaults = UserDefaults(suiteName: Self.appGroup)
     defaults?.set(pos, forKey: "np_position_s")
     defaults?.set(AbsorbAudioEngine.shared.isPlaying, forKey: "widget_is_playing")
+  }
+
+  /// Write the engine's real play state (and progress) for the widget, then
+  /// reload its timeline. Flutter does the equivalent whenever it actuates;
+  /// without this the native paths only corrected the flag on pause, so a
+  /// native play from a stale flag left the widget icon inverted until the
+  /// next 5-minute timeline refresh.
+  private func syncWidgetState() {
+    let defaults = UserDefaults(suiteName: Self.appGroup)
+    defaults?.set(AbsorbAudioEngine.shared.isPlaying, forKey: "widget_is_playing")
+    let total = totalDuration()
+    if total > 0 {
+      let permille = Int((globalPosition() / total * 1000).rounded())
+      defaults?.set(min(1000, max(0, permille)), forKey: "widget_progress")
+    }
+    WidgetCenter.shared.reloadTimelines(ofKind: "NowPlayingWidget")
+    WidgetCenter.shared.reloadTimelines(ofKind: "NowPlayingArtWidget")
   }
 
   // MARK: - Server sync

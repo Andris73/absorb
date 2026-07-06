@@ -15,6 +15,14 @@ public protocol AbsorbPlayerCoreProtocol: Sendable {
   func skipForward(seconds: Int)
   func skipBackward(seconds: Int)
 
+  /// What a toggle() issued right now would leave playback doing. The widget
+  /// play/pause intent writes this prediction to `widget_is_playing` for
+  /// instant icon feedback. Unlike blindly inverting the stored flag, this
+  /// stays correct when the flag is stale (e.g. iOS killed the app while it
+  /// was playing, so the flag stuck on true and a cold widget play would
+  /// otherwise show the wrong icon).
+  func willPlayAfterToggle() -> Bool
+
   /// Routes a log line through to the host app's Flutter log sink so it
   /// surfaces in absorb's in-app log viewer. Widget intents running in the
   /// host app process via @Dependency can use this to record progress
