@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -18,6 +19,7 @@ import '../services/user_account_service.dart';
 import '../services/backup_service.dart';
 import '../services/log_service.dart';
 import '../services/scoped_prefs.dart';
+import '../services/socket_service.dart';
 import '../screens/login_screen.dart';
 import '../screens/app_shell.dart';
 import '../services/update_checker_service.dart';
@@ -198,12 +200,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _localServerController = TextEditingController();
     _loadSettings();
     _loadAdminIssueCount();
+    SocketService().addItemsChangedListener(_onServerItemsChanged);
     PlayerSettings.settingsChanged.addListener(_onExternalSettingsChange);
+  }
+
+  // Keep the Server Admin badge current: scans flag items missing/invalid
+  // server-side and stream items_updated events, so re-count after a quiet
+  // moment instead of only once at screen creation (this screen is cached in
+  // the shell, so initState runs a single time per session).
+  Timer? _issueBadgeDebounce;
+  bool _issueCountFetched = false;
+
+  void _onServerItemsChanged() {
+    if (!mounted || !context.read<AuthProvider>().isAdmin) return;
+    _issueBadgeDebounce?.cancel();
+    _issueBadgeDebounce = Timer(const Duration(seconds: 3), _loadAdminIssueCount);
   }
 
   /// Sum missing/invalid item counts across all libraries so the Server Admin
   /// button can show a badge when there's cleanup to do, without opening admin.
   Future<void> _loadAdminIssueCount() async {
+    if (!mounted) return;
     final auth = context.read<AuthProvider>();
     if (!auth.isAdmin) return;
     final api = auth.apiService;
@@ -215,6 +232,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         .where((s) => s.isNotEmpty)
         .toList();
     if (ids.isEmpty) return;
+    _issueCountFetched = true;
     final counts = await Future.wait(ids.map(api.getIssueItemCount));
     if (!mounted) return;
     setState(() => _adminIssueCount = counts.fold<int>(0, (a, b) => a + b));
@@ -222,6 +240,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    SocketService().removeItemsChangedListener(_onServerItemsChanged);
+    _issueBadgeDebounce?.cancel();
     PlayerSettings.settingsChanged.removeListener(_onExternalSettingsChange);
     _localServerController.dispose();
     super.dispose();
@@ -1069,6 +1089,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final auth = context.watch<AuthProvider>();
     final lib = context.watch<LibraryProvider>();
     final l = AppLocalizations.of(context)!;
+    // Libraries may not have loaded yet when initState fetched the admin issue
+    // badge; retry once they arrive.
+    if (!_issueCountFetched && auth.isAdmin && lib.libraries.isNotEmpty) {
+      _issueCountFetched = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadAdminIssueCount();
+      });
+    }
     if (lib.selectedLibraryId != null && lib.selectedLibraryId != _curLibId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _loadCurrentLibraryOverrides(lib.selectedLibraryId!);

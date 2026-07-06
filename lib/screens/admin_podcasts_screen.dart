@@ -1013,8 +1013,33 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
     if (result != null) {
       final podcast = result['podcast'] as Map<String, dynamic>? ?? result;
       _feedEpisodes = podcast['episodes'] as List? ?? [];
+      if (!_feedNewestFirst) _applyFeedSort();
     }
     if (mounted) setState(() => _loadingFeed = false);
+  }
+
+  bool _feedNewestFirst = true;
+
+  // Sort by publish date when the feed provides one; otherwise fall back to
+  // reversing feed order (feeds are conventionally newest-first). The select
+  // mode tracks episodes by index, so selection is cleared on toggle.
+  void _applyFeedSort() {
+    num? dateOf(dynamic e) => (e as Map)['publishedAt'] as num? ?? e['pubDate'] as num?;
+    if (_feedEpisodes.every((e) => dateOf(e) != null)) {
+      _feedEpisodes.sort((a, b) => _feedNewestFirst
+          ? dateOf(b)!.compareTo(dateOf(a)!)
+          : dateOf(a)!.compareTo(dateOf(b)!));
+    } else {
+      _feedEpisodes = _feedEpisodes.reversed.toList();
+    }
+  }
+
+  void _toggleFeedSort() {
+    setState(() {
+      _feedNewestFirst = !_feedNewestFirst;
+      _selectedFeedIndices.clear();
+      _applyFeedSort();
+    });
   }
 
   Future<void> _pollDownloadQueue() async {
@@ -1100,6 +1125,16 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
           child: Row(children: [
             IconButton(icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface.withValues(alpha: 0.54)), onPressed: () => Navigator.pop(context)),
             const Spacer(),
+            if (_tabCtrl.index == 1 && _feedEpisodes.isNotEmpty)
+              IconButton(
+                icon: Icon(
+                  _feedNewestFirst ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                  color: cs.onSurface.withValues(alpha: 0.3),
+                  size: 20,
+                ),
+                tooltip: _feedNewestFirst ? l.adminPodcastsSortNewestFirst : l.adminPodcastsSortOldestFirst,
+                onPressed: _toggleFeedSort,
+              ),
             if ((_tabCtrl.index == 0 && _episodes.isNotEmpty) || (_tabCtrl.index == 1 && _feedEpisodes.isNotEmpty))
               IconButton(
                 icon: Icon(

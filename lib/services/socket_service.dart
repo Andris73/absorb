@@ -97,6 +97,24 @@ class SocketService {
     }
   }
 
+  // Library-item change fan-out so screens can react to scan/watcher-driven
+  // changes (e.g. items flagged missing) without claiming the single-slot
+  // onItemUpdated callback. Fires for item_added/item_updated/item_removed and
+  // the scanner's bulk items_updated/items_added events.
+  final List<VoidCallback> _itemsChangedListeners = [];
+
+  void addItemsChangedListener(VoidCallback fn) {
+    if (!_itemsChangedListeners.contains(fn)) _itemsChangedListeners.add(fn);
+  }
+  void removeItemsChangedListener(VoidCallback fn) =>
+      _itemsChangedListeners.remove(fn);
+
+  void _emitItemsChanged() {
+    for (final fn in List.of(_itemsChangedListeners)) {
+      fn();
+    }
+  }
+
   /// Called when ereader devices change. Server emits this both for the
   /// per-user update (always) and admin-wide updates (only to admins).
   /// Payload shape: { ereaderDevices: [...] } already filtered for this user.
@@ -151,14 +169,26 @@ class SocketService {
       _socket!.on('item_added', (data) {
         debugPrint('[Socket] Item added');
         if (data is Map<String, dynamic>) onItemUpdated?.call(data);
+        _emitItemsChanged();
       });
       _socket!.on('item_updated', (data) {
         debugPrint('[Socket] Item updated');
         if (data is Map<String, dynamic>) onItemUpdated?.call(data);
+        _emitItemsChanged();
       });
       _socket!.on('item_removed', (data) {
         debugPrint('[Socket] Item removed');
         if (data is Map<String, dynamic>) onItemRemoved?.call(data);
+        _emitItemsChanged();
+      });
+      // Bulk events the scanner emits in chunks while a scan runs
+      _socket!.on('items_updated', (_) {
+        debugPrint('[Socket] Items updated (bulk)');
+        _emitItemsChanged();
+      });
+      _socket!.on('items_added', (_) {
+        debugPrint('[Socket] Items added (bulk)');
+        _emitItemsChanged();
       });
 
       // Series changes
@@ -322,13 +352,18 @@ class SocketService {
 
       _socket!.on('item_added', (data) {
         if (data is Map<String, dynamic>) onItemUpdated?.call(data);
+        _emitItemsChanged();
       });
       _socket!.on('item_updated', (data) {
         if (data is Map<String, dynamic>) onItemUpdated?.call(data);
+        _emitItemsChanged();
       });
       _socket!.on('item_removed', (data) {
         if (data is Map<String, dynamic>) onItemRemoved?.call(data);
+        _emitItemsChanged();
       });
+      _socket!.on('items_updated', (_) => _emitItemsChanged());
+      _socket!.on('items_added', (_) => _emitItemsChanged());
 
       _socket!.on('series_added', (_) => onSeriesUpdated?.call());
       _socket!.on('series_updated', (_) => onSeriesUpdated?.call());

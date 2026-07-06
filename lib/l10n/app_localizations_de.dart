@@ -4339,6 +4339,12 @@ class AppLocalizationsDe extends AppLocalizations {
   String get adminPodcastsSelectAllNew => 'New only';
 
   @override
+  String get adminPodcastsSortNewestFirst => 'Newest first';
+
+  @override
+  String get adminPodcastsSortOldestFirst => 'Oldest first';
+
+  @override
   String get adminPodcastsEditInfo => 'Edit Info';
 
   @override

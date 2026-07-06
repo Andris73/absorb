@@ -7730,6 +7730,18 @@ abstract class AppLocalizations {
   /// **'New only'**
   String get adminPodcastsSelectAllNew;
 
+  /// No description provided for @adminPodcastsSortNewestFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Newest first'**
+  String get adminPodcastsSortNewestFirst;
+
+  /// No description provided for @adminPodcastsSortOldestFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Oldest first'**
+  String get adminPodcastsSortOldestFirst;
+
   /// No description provided for @adminPodcastsEditInfo.
   ///
   /// In en, this message translates to:

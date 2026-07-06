@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/scoped_prefs.dart';
+import '../services/socket_service.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/rmab_config_sheet.dart';
 import '../l10n/app_localizations.dart';
@@ -38,8 +40,41 @@ class _AdminScreenState extends State<AdminScreen> {
   bool _creatingBackup = false;
   bool _purgingCache = false;
 
+  Timer? _issuesDebounce;
+
   @override
-  void initState() { super.initState(); _loadAll(); }
+  void initState() {
+    super.initState();
+    _loadAll();
+    SocketService().addItemsChangedListener(_onItemsChanged);
+  }
+
+  @override
+  void dispose() {
+    SocketService().removeItemsChangedListener(_onItemsChanged);
+    _issuesDebounce?.cancel();
+    super.dispose();
+  }
+
+  // Scans flag items missing/invalid server-side and stream items_updated
+  // events in chunks, so wait for a quiet moment then re-count once.
+  void _onItemsChanged() {
+    if (!mounted) return;
+    _issuesDebounce?.cancel();
+    _issuesDebounce = Timer(const Duration(seconds: 2), _refreshIssueCounts);
+  }
+
+  Future<void> _refreshIssueCounts() async {
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null || !mounted) return;
+    for (final lib in _libraries) {
+      final id = lib['id'] as String? ?? '';
+      if (id.isEmpty) continue;
+      _libraryIssues[id] = await api.getIssueItemCount(id);
+      if (!mounted) return;
+    }
+    setState(() {});
+  }
 
   Future<void> _loadAll() async {
     final api = context.read<AuthProvider>().apiService;

@@ -2388,6 +2388,8 @@
   "adminPodcastsFailedMatch": "Failed to match podcast",
   "adminPodcastsSelectAll": "Select all",
   "adminPodcastsSelectAllNew": "New only",
+  "adminPodcastsSortNewestFirst": "Newest first",
+  "adminPodcastsSortOldestFirst": "Oldest first",
   "adminPodcastsEditInfo": "Edit Info",
   "adminPodcastsEditInfoSubtitle": "Change title, description, cover and more",
   "adminPodcastsEditTitle": "Edit Podcast",
