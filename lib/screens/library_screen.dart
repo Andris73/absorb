@@ -10,6 +10,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/api_service.dart';
 import '../services/book_search_index.dart';
+import '../services/socket_service.dart';
 import '../services/download_service.dart';
 import '../services/audio_player_service.dart';
 import '../widgets/absorb_page_header.dart';
@@ -252,6 +253,28 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
       if (mounted) AppShell.notifyScreenReady(1);
     });
     _loadRmabConfigured();
+    SocketService().addAuthorsChangedListener(_onAuthorsChanged);
+  }
+
+  // Live-refresh the authors tab when authors change on the server (edits,
+  // quick-match, books moving around). Silent swap - no spinner flag - so an
+  // open tab doesn't flash while it updates.
+  Timer? _authorsRefreshDebounce;
+  void _onAuthorsChanged() {
+    if (!mounted || !_authorsLoaded) return;
+    _authorsRefreshDebounce?.cancel();
+    _authorsRefreshDebounce = Timer(const Duration(seconds: 2), () async {
+      if (!mounted || !_authorsLoaded) return;
+      final lib = context.read<LibraryProvider>();
+      final api = context.read<AuthProvider>().apiService;
+      if (api == null || lib.selectedLibraryId == null || lib.isOffline) return;
+      final authors = await api.getLibraryAuthors(lib.selectedLibraryId!);
+      if (!mounted) return;
+      setState(() {
+        _authors = authors;
+        _sortAuthors();
+      });
+    });
   }
 
   Future<void> _loadRmabConfigured() async {
@@ -587,6 +610,8 @@ class LibraryScreenState extends State<LibraryScreen> with TickerProviderStateMi
 
   @override
   void dispose() {
+    SocketService().removeAuthorsChangedListener(_onAuthorsChanged);
+    _authorsRefreshDebounce?.cancel();
     _debounce?.cancel();
     _searchController.dispose();
     _focusNode.dispose();

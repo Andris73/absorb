@@ -46,6 +46,9 @@ class SocketService {
   /// Called when a collection changes.
   void Function()? onCollectionUpdated;
 
+  /// Called when one of the user's playlists changes.
+  void Function()? onPlaylistUpdated;
+
   /// Called when the current user's data changes on the server.
   void Function(Map<String, dynamic> data)? onUserUpdated;
 
@@ -153,6 +156,22 @@ class SocketService {
   void _emitItemRemoved(Map<String, dynamic> data) {
     for (final fn in List.of(_itemRemovedListeners)) {
       fn(data);
+    }
+  }
+
+  // Author change fan-out (added/updated/removed) so the authors tab can
+  // live-refresh after quick-match or edits.
+  final List<VoidCallback> _authorsChangedListeners = [];
+
+  void addAuthorsChangedListener(VoidCallback fn) {
+    if (!_authorsChangedListeners.contains(fn)) _authorsChangedListeners.add(fn);
+  }
+  void removeAuthorsChangedListener(VoidCallback fn) =>
+      _authorsChangedListeners.remove(fn);
+
+  void _emitAuthorsChanged() {
+    for (final fn in List.of(_authorsChangedListeners)) {
+      fn();
     }
   }
 
@@ -267,6 +286,25 @@ class SocketService {
         onCollectionUpdated?.call();
       });
 
+      // Playlist changes (server emits these per-user)
+      _socket!.on('playlist_added', (_) {
+        debugPrint('[Socket] Playlist added');
+        onPlaylistUpdated?.call();
+      });
+      _socket!.on('playlist_updated', (_) {
+        debugPrint('[Socket] Playlist updated');
+        onPlaylistUpdated?.call();
+      });
+      _socket!.on('playlist_removed', (_) {
+        debugPrint('[Socket] Playlist removed');
+        onPlaylistUpdated?.call();
+      });
+
+      // Author changes
+      _socket!.on('author_added', (_) => _emitAuthorsChanged());
+      _socket!.on('author_updated', (_) => _emitAuthorsChanged());
+      _socket!.on('author_removed', (_) => _emitAuthorsChanged());
+
       // Current user updated
       _socket!.on('user_updated', (data) {
         debugPrint('[Socket] User updated');
@@ -337,6 +375,7 @@ class SocketService {
     onItemRemoved = null;
     onSeriesUpdated = null;
     onCollectionUpdated = null;
+    onPlaylistUpdated = null;
     onUserUpdated = null;
     onReconnectFailed = null;
     onEncodeFinished = null;
@@ -431,6 +470,14 @@ class SocketService {
       _socket!.on('collection_added', (_) => onCollectionUpdated?.call());
       _socket!.on('collection_updated', (_) => onCollectionUpdated?.call());
       _socket!.on('collection_removed', (_) => onCollectionUpdated?.call());
+
+      _socket!.on('playlist_added', (_) => onPlaylistUpdated?.call());
+      _socket!.on('playlist_updated', (_) => onPlaylistUpdated?.call());
+      _socket!.on('playlist_removed', (_) => onPlaylistUpdated?.call());
+
+      _socket!.on('author_added', (_) => _emitAuthorsChanged());
+      _socket!.on('author_updated', (_) => _emitAuthorsChanged());
+      _socket!.on('author_removed', (_) => _emitAuthorsChanged());
 
       _socket!.on('user_updated', (data) {
         if (data is Map<String, dynamic>) onUserUpdated?.call(data);

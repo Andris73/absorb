@@ -187,6 +187,7 @@ class LibraryProvider extends ChangeNotifier
           socket.onItemRemoved = _onRemoteItemRemoved;
           socket.onSeriesUpdated = _onRemoteSeriesUpdated;
           socket.onCollectionUpdated = _onRemoteCollectionUpdated;
+          socket.onPlaylistUpdated = _onRemotePlaylistUpdated;
           socket.onUserUpdated = _onRemoteUserUpdated;
           socket.onReconnectFailed = _onSocketReconnectFailed;
           socket.onEncodeFinished = _onEncodeFinished;

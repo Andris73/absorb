@@ -1171,6 +1171,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     loadCollections();
   }
 
+  void _onRemotePlaylistUpdated() {
+    loadPlaylists();
+  }
+
   void _onRemoteUserUpdated(Map<String, dynamic> data) {
     // Sync bookmarks from user_updated event
     final bookmarks = data['bookmarks'] as List<dynamic>?;
