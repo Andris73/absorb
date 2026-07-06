@@ -292,6 +292,11 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     final ts = lib.itemUpdatedAt(_itemId);
     if (ts == _lastSeenUpdatedAt) return;
     _lastSeenUpdatedAt = ts;
+    // The cover may have changed server-side. Drop the cached provider and
+    // accent scheme so they re-derive from the new cache-busted URL (the
+    // blurred background already re-derives itself on URL change in build).
+    _coverProvider = null;
+    _rawCoverScheme = null;
     if (_ebookFile != null || _refetchingItem) return;
     _refetchingItem = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
