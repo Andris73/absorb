@@ -1025,6 +1025,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
   void onAppBackgrounded() {
     _isBackgrounded = true;
+    _backgroundedAt = DateTime.now();
     _stopServerPingTimer();
     _stopHealthCheckTimer();
     if (!AudioPlayerService().isPlaying) {
@@ -1049,7 +1050,49 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     _startLocalProbeTimer();
     if (!isOffline && !_manualOffline) {
       (this as LibraryProvider).checkSubscribedPodcasts();
+      // Item events emitted while backgrounded were missed (the socket was
+      // down) and are never replayed, so anything edited from another device
+      // would stay stale forever. Skip quick app switches - a fresh socket
+      // has nothing to have missed.
+      final away = _backgroundedAt == null
+          ? null
+          : DateTime.now().difference(_backgroundedAt!);
+      if (away != null && away > const Duration(seconds: 30)) {
+        _catchUpAfterBackground();
+      }
     }
+  }
+
+  /// Re-sync what the missed socket events would have delivered: reload the
+  /// home shelves, and sweep the most recently updated items in the current
+  /// library to bump cover cache-busters and patch the search index.
+  Future<void> _catchUpAfterBackground() async {
+    loadPersonalizedView(force: true);
+    final api = _api;
+    final libId = _selectedLibraryId;
+    if (api == null || libId == null) return;
+    try {
+      final data = await api.getLibraryItems(libId,
+          sort: 'updatedAt', desc: 1, limit: 50);
+      final results = data?['results'] as List? ?? const [];
+      var changed = false;
+      for (final r in results) {
+        final item = (r is Map<String, dynamic>)
+            ? (r['libraryItem'] as Map<String, dynamic>? ?? r)
+            : null;
+        if (item == null) continue;
+        final id = item['id'] as String?;
+        final ts = item['updatedAt'] as num?;
+        if (id == null || ts == null) continue;
+        final cur = _itemUpdatedAt[id];
+        if (cur == null || ts.toInt() > cur) {
+          registerUpdatedAt(id, ts.toInt());
+          changed = true;
+        }
+        BookSearchIndex().patchItem(item);
+      }
+      if (changed) notifyListeners();
+    } catch (_) {}
   }
 
   void onPlaybackStarted() {

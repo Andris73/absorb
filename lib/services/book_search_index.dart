@@ -39,12 +39,17 @@ class BookSearchIndex {
   final Map<String, List<_Indexed>> _cache = {};
   final Map<String, Future<void>> _inFlight = {};
 
-  void _onItemUpdated(Map<String, dynamic> item) {
+  void _onItemUpdated(Map<String, dynamic> item) => patchItem(item);
+
+  /// Patch or insert a single item, e.g. from a socket event or the
+  /// foreground catch-up sweep. No-op for libraries that aren't indexed yet -
+  /// those build fresh on demand anyway.
+  void patchItem(Map<String, dynamic> item) {
     final libId = item['libraryId'] as String?;
     final id = item['id'] as String?;
     if (libId == null || id == null) return;
     final idx = _cache[libId];
-    if (idx == null) return; // library not indexed yet - built fresh on demand
+    if (idx == null) return;
     final entry = _indexItem(item);
     final i = idx.indexWhere((e) => e.item['id'] == id);
     if (i >= 0) {

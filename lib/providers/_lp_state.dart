@@ -82,6 +82,7 @@ mixin _StateMixin on ChangeNotifier {
 
   bool _isBackgrounded = false;
   bool _socketSoftDisconnected = false;
+  DateTime? _backgroundedAt;
 
   Map<String, Map<String, dynamic>> _progressMap = {};
   final Map<String, double> _localProgressOverrides = {};

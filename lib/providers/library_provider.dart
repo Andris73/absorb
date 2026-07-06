@@ -18,6 +18,7 @@ import '../services/bookmark_service.dart';
 import '../services/metadata_override_service.dart';
 import '../services/session_cache.dart';
 import '../services/socket_service.dart';
+import '../services/book_search_index.dart';
 import '../services/home_widget_service.dart';
 import '../l10n/app_localizations.dart';
 import '../main.dart' show scaffoldMessengerKey, rootNavigatorKey;
