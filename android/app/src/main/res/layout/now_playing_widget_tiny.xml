@@ -82,21 +82,52 @@
             android:ellipsize="end"
             android:visibility="gone" />
 
-        <!-- Progress is drawn as a bitmap (see drawProgressBar): a static
-             Android-Auto-style squiggle while playing, flat when paused.
-             fitXY fills the panel width exactly, so the played fraction
-             lines up regardless of our width estimate. -->
-        <ImageView
-            android:id="@+id/widget_progress"
+        <!-- Progress row: elapsed / remaining clocks flank the bar on wide
+             widgets. The bar is drawn as a bitmap (see drawProgressBar): a
+             static Android-Auto-style squiggle while playing, flat when
+             paused. fitXY fills the row width exactly, so the played
+             fraction lines up regardless of our width estimate. -->
+        <LinearLayout
+            android:id="@+id/widget_progress_row"
             android:layout_width="match_parent"
-            android:layout_height="12dp"
-            android:layout_marginStart="18dp"
-            android:layout_marginEnd="18dp"
+            android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:layout_marginBottom="2dp"
-            android:scaleType="fitXY"
-            android:contentDescription="Progress"
-            android:visibility="gone" />
+            android:paddingStart="18dp"
+            android:paddingEnd="18dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/widget_time_elapsed"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:textColor="#CCFFFFFF"
+                android:textSize="10sp"
+                android:fontFamily="sans-serif-medium"
+                android:visibility="gone" />
+
+            <ImageView
+                android:id="@+id/widget_progress"
+                android:layout_width="0dp"
+                android:layout_height="12dp"
+                android:layout_weight="1"
+                android:scaleType="fitXY"
+                android:contentDescription="Progress" />
+
+            <TextView
+                android:id="@+id/widget_time_remaining"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:textColor="#CCFFFFFF"
+                android:textSize="10sp"
+                android:fontFamily="sans-serif-medium"
+                android:visibility="gone" />
+
+        </LinearLayout>
 
         <!-- Transport row: skip buttons pushed toward the edges, play/pause
              centered. Weighted so the cluster spreads across the full width. -->

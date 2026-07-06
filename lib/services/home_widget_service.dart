@@ -503,6 +503,21 @@ class HomeWidgetService {
       }
       await HomeWidget.saveWidgetData<int>('widget_progress', progress);
 
+      // Base state for the Android widget's live clock: the native side
+      // extrapolates position from the last pushed position + wall-clock
+      // timestamp + speed, so it can tick every second between these
+      // (throttled) pushes. Chapter bounds come from np_chapters_json.
+      await HomeWidget.saveWidgetData<int>(
+          'widget_pos_abs_ms', player.position.inMilliseconds);
+      await HomeWidget.saveWidgetData<int>(
+          'widget_total_ms', (totalDur * 1000).round());
+      await HomeWidget.saveWidgetData<int>('widget_pos_at_s',
+          DateTime.now().millisecondsSinceEpoch ~/ 1000);
+      await HomeWidget.saveWidgetData<int>(
+          'widget_speed_x100', (player.speed * 100).round());
+      await HomeWidget.saveWidgetData<bool>(
+          'widget_chapter_mode', player.notifChapterMode);
+
       // Persist item/episode ID so the widget can resume after app kill
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('widget_item_id', player.currentItemId!);
