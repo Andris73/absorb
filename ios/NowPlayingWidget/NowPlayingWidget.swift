@@ -30,9 +30,21 @@ struct NowPlayingEntry: TimelineEntry {
     let isPlaying: Bool
     let progress: Double
     let totalS: Double
+    let speed: Double
     let coverImage: UIImage?
     let skipBack: Int
     let skipForward: Int
+
+    /// Copy for a projected future timeline entry - same book state, new
+    /// date and advanced progress.
+    func at(date: Date, progress: Double) -> NowPlayingEntry {
+        NowPlayingEntry(
+            date: date, hasBook: hasBook, title: title, author: author,
+            isPlaying: isPlaying, progress: progress, totalS: totalS,
+            speed: speed, coverImage: coverImage,
+            skipBack: skipBack, skipForward: skipForward
+        )
+    }
 }
 
 /// Decode the cover bounded to `maxDimension` px. The art widgets render the
@@ -59,7 +71,7 @@ struct NowPlayingProvider: TimelineProvider {
         NowPlayingEntry(
             date: .now, hasBook: true, title: "Audiobook Title",
             author: "Author Name", isPlaying: false, progress: 0.35,
-            totalS: 30600, coverImage: nil, skipBack: 10, skipForward: 30
+            totalS: 30600, speed: 1.0, coverImage: nil, skipBack: 10, skipForward: 30
         )
     }
 
@@ -68,8 +80,35 @@ struct NowPlayingProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<NowPlayingEntry>) -> Void) {
-        let refreshDate = Date().addingTimeInterval(300)
-        completion(Timeline(entries: [readEntry()], policy: .after(refreshDate)))
+        let base = readEntry()
+
+        // Paused or no book: nothing moves, one entry is enough.
+        guard base.isPlaying, base.hasBook, base.totalS > 0 else {
+            let refreshDate = Date().addingTimeInterval(300)
+            completion(Timeline(entries: [base], policy: .after(refreshDate)))
+            return
+        }
+
+        // Playing: pre-schedule projected entries so the progress bar and the
+        // large widget's time baselines advance on their own, at playback
+        // speed, without the app running. The live timer labels tick at 1x
+        // wall speed between entries, so when speed isn't 1.0 the step
+        // shrinks to re-snap them before they drift more than ~5 seconds.
+        let drift = abs(base.speed - 1.0)
+        let stepS: TimeInterval = drift > 0.01 ? max(10, 5.0 / drift) : 60
+        let baseElapsed = base.progress * base.totalS
+        var entries: [NowPlayingEntry] = []
+        var t: TimeInterval = 0
+        while t <= 30 * 60 && entries.count < 120 {
+            let elapsed = min(baseElapsed + t * base.speed, base.totalS)
+            entries.append(base.at(
+                date: Date().addingTimeInterval(t),
+                progress: elapsed / base.totalS
+            ))
+            if elapsed >= base.totalS { break }
+            t += stepS
+        }
+        completion(Timeline(entries: entries, policy: .atEnd))
     }
 
     private func readEntry() -> NowPlayingEntry {
@@ -83,6 +122,8 @@ struct NowPlayingProvider: TimelineProvider {
         let isPlaying = d?.bool(forKey: "widget_is_playing") ?? false
         let progress = Double(d?.integer(forKey: "widget_progress") ?? 0) / 1000.0
         let totalS = d?.double(forKey: "np_total_s") ?? 0
+        let rawSpeed = d?.double(forKey: "np_speed") ?? 1.0
+        let speed = rawSpeed > 0 ? rawSpeed : 1.0
         let skipBack = d?.integer(forKey: "widget_skip_back") ?? 0
         let skipForward = d?.integer(forKey: "widget_skip_forward") ?? 0
         let coverPath = d?.string(forKey: "widget_cover_path") ?? ""
@@ -115,6 +156,7 @@ struct NowPlayingProvider: TimelineProvider {
             isPlaying: isPlaying,
             progress: progress,
             totalS: totalS,
+            speed: speed,
             coverImage: cover,
             skipBack: skipBack > 0 ? skipBack : 10,
             skipForward: skipForward > 0 ? skipForward : 30
@@ -506,9 +548,21 @@ private struct ArtLargeView: View {
                 .padding(.top, 8)
             if entry.totalS > 0 {
                 HStack {
-                    Text(formatClock(elapsed))
-                    Spacer()
-                    Text("-" + formatClock(entry.totalS - elapsed))
+                    if entry.isPlaying {
+                        // Live per-second labels - iOS renders these timers
+                        // without waking the app. They tick at 1x wall speed;
+                        // the timeline's projected entries re-baseline them so
+                        // other playback speeds can't drift visibly.
+                        Text(timerInterval: entry.date.addingTimeInterval(-elapsed)...entry.date.addingTimeInterval(entry.totalS - elapsed),
+                             countsDown: false)
+                        Spacer()
+                        Text("-") + Text(timerInterval: entry.date...entry.date.addingTimeInterval(entry.totalS - elapsed),
+                                         countsDown: true)
+                    } else {
+                        Text(formatClock(elapsed))
+                        Spacer()
+                        Text("-" + formatClock(entry.totalS - elapsed))
+                    }
                 }
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.75))
