@@ -69,10 +69,12 @@ class LogService {
     // Rotate on startup if needed
     await _rotateIfNeeded();
 
-    // Session header
+    // Session header - stamps the app version here too, since the file
+    // header above only gets rewritten on clear/24h rollover and can go
+    // stale across an app update in between.
     final now = DateTime.now().toIso8601String();
     await _logFile!.writeAsString(
-      '\n=== Session started $now ===\n',
+      '\n=== Session started $now (App Version: ${ApiService.appVersionFull}) ===\n',
       mode: FileMode.append,
     );
 
