@@ -3,6 +3,7 @@ import AppIntents
 import WidgetKit
 import SwiftUI
 import AVFAudio
+import ImageIO
 
 private let appGroup = "group.com.barnabas.absorb"
 
@@ -28,9 +29,27 @@ struct NowPlayingEntry: TimelineEntry {
     let author: String
     let isPlaying: Bool
     let progress: Double
+    let totalS: Double
     let coverImage: UIImage?
     let skipBack: Int
     let skipForward: Int
+}
+
+/// Decode the cover bounded to `maxDimension` px. The art widgets render the
+/// cover full-bleed, and decoding a full-resolution cover inside the widget
+/// extension's tight memory cap is asking for a jetsam kill.
+private func loadCover(path: String, maxDimension: CGFloat) -> UIImage? {
+    let url = URL(fileURLWithPath: path)
+    let opts: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: maxDimension,
+    ]
+    guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+          let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else {
+        return UIImage(contentsOfFile: path)
+    }
+    return UIImage(cgImage: cg)
 }
 
 // MARK: - Provider
@@ -40,7 +59,7 @@ struct NowPlayingProvider: TimelineProvider {
         NowPlayingEntry(
             date: .now, hasBook: true, title: "Audiobook Title",
             author: "Author Name", isPlaying: false, progress: 0.35,
-            coverImage: nil, skipBack: 10, skipForward: 30
+            totalS: 30600, coverImage: nil, skipBack: 10, skipForward: 30
         )
     }
 
@@ -63,6 +82,7 @@ struct NowPlayingProvider: TimelineProvider {
         let author = d?.string(forKey: "widget_author") ?? ""
         let isPlaying = d?.bool(forKey: "widget_is_playing") ?? false
         let progress = Double(d?.integer(forKey: "widget_progress") ?? 0) / 1000.0
+        let totalS = d?.double(forKey: "np_total_s") ?? 0
         let skipBack = d?.integer(forKey: "widget_skip_back") ?? 0
         let skipForward = d?.integer(forKey: "widget_skip_forward") ?? 0
         let coverPath = d?.string(forKey: "widget_cover_path") ?? ""
@@ -74,7 +94,7 @@ struct NowPlayingProvider: TimelineProvider {
             if !exists {
                 coverStatus = "path_missing"
             } else {
-                cover = UIImage(contentsOfFile: coverPath)
+                cover = loadCover(path: coverPath, maxDimension: 800)
                 coverStatus = cover == nil ? "decode_failed" : "ok"
             }
         }
@@ -94,6 +114,7 @@ struct NowPlayingProvider: TimelineProvider {
             author: author.isEmpty ? (hasBook ? "" : "Not playing") : author,
             isPlaying: isPlaying,
             progress: progress,
+            totalS: totalS,
             coverImage: cover,
             skipBack: skipBack > 0 ? skipBack : 10,
             skipForward: skipForward > 0 ? skipForward : 30
@@ -285,6 +306,257 @@ struct AbsorbWidget: Widget {
     }
 }
 
+// MARK: - Cover Art Widget
+//
+// The iOS take on Android's adaptive tiny widget: the book cover fills the
+// whole widget, controls sit on a scrim gradient at the bottom. Small is
+// controls only, medium adds title/author, large adds a progress bar with
+// elapsed/remaining times.
+
+// SF Symbols ships gobackward.N/goforward.N glyphs only for these values;
+// any other configured skip gets the plain arrow with the number overlaid.
+private let skipSymbolSeconds: Set<Int> = [5, 10, 15, 30, 45, 60, 75, 90]
+
+private struct ArtSkipIcon: View {
+    let forward: Bool
+    let seconds: Int
+    let size: CGFloat
+
+    var body: some View {
+        let base = forward ? "goforward" : "gobackward"
+        if skipSymbolSeconds.contains(seconds) {
+            Image(systemName: "\(base).\(seconds)")
+                .font(.system(size: size, weight: .medium))
+        } else {
+            ZStack {
+                Image(systemName: base)
+                    .font(.system(size: size, weight: .medium))
+                Text("\(seconds)")
+                    .font(.system(size: size * 0.42, weight: .bold))
+                    .offset(y: size * 0.06)
+            }
+        }
+    }
+}
+
+private struct ArtPlayIcon: View {
+    let isPlaying: Bool
+    let diameter: CGFloat
+
+    var body: some View {
+        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+            .font(.system(size: diameter * 0.42, weight: .semibold))
+            .foregroundStyle(.black)
+            .frame(width: diameter, height: diameter)
+            .background(.white, in: Circle())
+    }
+}
+
+private struct ArtControlsRow: View {
+    let entry: NowPlayingEntry
+    let playDiameter: CGFloat
+    let skipSize: CGFloat
+    let spacing: CGFloat
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            Button(intent: AbsorbSkipBackIntent()) {
+                ArtSkipIcon(forward: false, seconds: entry.skipBack, size: skipSize)
+                    .frame(width: playDiameter, height: playDiameter)
+                    .contentShape(Rectangle())
+            }
+            if entry.hasBook {
+                Button(intent: AbsorbPlayPauseIntent()) {
+                    ArtPlayIcon(isPlaying: entry.isPlaying, diameter: playDiameter)
+                        .contentShape(Circle())
+                }
+            } else {
+                // No session loaded - launch the app so it can cold-resume.
+                Link(destination: playPauseURL) {
+                    ArtPlayIcon(isPlaying: false, diameter: playDiameter)
+                        .contentShape(Circle())
+                }
+            }
+            Button(intent: AbsorbSkipForwardIntent()) {
+                ArtSkipIcon(forward: true, seconds: entry.skipForward, size: skipSize)
+                    .frame(width: playDiameter, height: playDiameter)
+                    .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+    }
+}
+
+private struct ArtCoverBackground: View {
+    let entry: NowPlayingEntry
+
+    var body: some View {
+        // GeometryReader pins the filled image to the widget's exact bounds;
+        // a bare scaledToFill can overflow the ZStack and stretch the scrim.
+        GeometryReader { geo in
+            ZStack {
+                if let image = entry.coverImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
+                } else {
+                    LinearGradient(
+                        colors: [Color(white: 0.28), Color(white: 0.10)],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                }
+                LinearGradient(
+                    stops: [
+                        .init(color: .black.opacity(0.0), location: 0.35),
+                        .init(color: .black.opacity(0.65), location: 1.0),
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                )
+            }
+        }
+    }
+}
+
+private struct ArtProgressBar: View {
+    let progress: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.28))
+                Capsule().fill(.white)
+                    .frame(width: max(5, geo.size.width * CGFloat(min(1, max(0, progress)))))
+            }
+        }
+        .frame(height: 5)
+    }
+}
+
+private func formatClock(_ seconds: Double) -> String {
+    let s = max(0, Int(seconds.rounded()))
+    let h = s / 3600
+    let m = (s % 3600) / 60
+    let sec = s % 60
+    return h > 0
+        ? String(format: "%d:%02d:%02d", h, m, sec)
+        : String(format: "%d:%02d", m, sec)
+}
+
+private struct ArtSmallView: View {
+    let entry: NowPlayingEntry
+
+    var body: some View {
+        VStack {
+            Spacer()
+            ArtControlsRow(entry: entry, playDiameter: 34, skipSize: 15, spacing: 14)
+        }
+        .frame(maxWidth: .infinity)
+        .containerBackground(for: .widget) { ArtCoverBackground(entry: entry) }
+    }
+}
+
+private struct ArtMediumView: View {
+    let entry: NowPlayingEntry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Spacer()
+            Text(entry.title)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+            Text(entry.author)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.8))
+                .lineLimit(1)
+                .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+            ArtControlsRow(entry: entry, playDiameter: 38, skipSize: 16, spacing: 30)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 6)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .containerBackground(for: .widget) { ArtCoverBackground(entry: entry) }
+    }
+}
+
+private struct ArtLargeView: View {
+    let entry: NowPlayingEntry
+
+    var body: some View {
+        let elapsed = entry.totalS > 0 ? entry.progress * entry.totalS : 0
+        VStack(alignment: .leading, spacing: 3) {
+            Spacer()
+            Text(entry.title)
+                .font(.headline)
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+            Text(entry.author)
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.8))
+                .lineLimit(1)
+                .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+            ArtProgressBar(progress: entry.progress)
+                .padding(.top, 8)
+            if entry.totalS > 0 {
+                HStack {
+                    Text(formatClock(elapsed))
+                    Spacer()
+                    Text("-" + formatClock(entry.totalS - elapsed))
+                }
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.75))
+                .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+            }
+            ArtControlsRow(entry: entry, playDiameter: 44, skipSize: 19, spacing: 38)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .containerBackground(for: .widget) { ArtCoverBackground(entry: entry) }
+    }
+}
+
+struct ArtNowPlayingWidgetView: View {
+    @Environment(\.widgetFamily) var family
+    let entry: NowPlayingEntry
+
+    var body: some View {
+        Group {
+            switch family {
+            case .systemSmall:
+                ArtSmallView(entry: entry)
+            case .systemLarge:
+                ArtLargeView(entry: entry)
+            default:
+                ArtMediumView(entry: entry)
+            }
+        }
+        // The content always sits on cover art with a dark scrim, so lock the
+        // dark palette regardless of the system theme.
+        .environment(\.colorScheme, .dark)
+    }
+}
+
+struct ArtNowPlayingWidget: Widget {
+    let kind = "NowPlayingArtWidget"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: NowPlayingProvider()) { entry in
+            ArtNowPlayingWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Now Playing Cover")
+        .description("Playback controls over the book cover.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
 // MARK: - Stats Widget
 
 struct StatsEntry: TimelineEntry {
@@ -395,6 +667,7 @@ struct StatsWidget: Widget {
 struct AbsorbWidgetBundle: WidgetBundle {
     var body: some Widget {
         AbsorbWidget()
+        ArtNowPlayingWidget()
         StatsWidget()
     }
 }

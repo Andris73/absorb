@@ -20,6 +20,7 @@ const String _androidWidgetCompactName = 'NowPlayingWidgetCompact';
 const String _androidWidgetTinyName = 'NowPlayingWidgetTiny';
 const String _androidWidgetStatsName = 'StatsWidget';
 const String _iOSWidgetName = 'NowPlayingWidget';
+const String _iOSArtWidgetName = 'NowPlayingArtWidget';
 const String _iOSStatsWidgetName = 'StatsWidget';
 const String _appGroupId = 'group.com.barnabas.absorb';
 const Duration _statsThrottle = Duration(minutes: 15);
@@ -656,6 +657,7 @@ class HomeWidgetService {
       await HomeWidget.updateWidget(name: _androidWidgetStatsName);
     } else if (Platform.isIOS) {
       await HomeWidget.updateWidget(iOSName: _iOSWidgetName);
+      await HomeWidget.updateWidget(iOSName: _iOSArtWidgetName);
       await HomeWidget.updateWidget(iOSName: _iOSStatsWidgetName);
     }
   }
