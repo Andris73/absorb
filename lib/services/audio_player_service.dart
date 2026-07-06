@@ -2838,12 +2838,16 @@ class AudioPlayerService extends ChangeNotifier {
 
       _subscribeTrackIndex();
       final initChapter = _initChapterInfo(startTime);
-      _pushMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: initChapter);
-      await _primeNowPlaying(title: title, artist: author, duration: totalDuration, elapsed: startTime, chapter: initChapter);
+      // Speed must be applied before _pushMediaItem: the pushed duration is
+      // speed-adjusted at push time, and nothing re-pushes it on load - so
+      // pushing at the default 1.0x left the notification/AA/widget bar
+      // lagging (the chapter "ended" at 1/speed) until a foreground re-push.
       final speedKey = _currentItemId ?? itemId;
       final bookSpeed = await PlayerSettings.getBookSpeed(speedKey);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
       await _player!.setSpeed(speed);
+      _pushMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: initChapter);
+      await _primeNowPlaying(title: title, artist: author, duration: totalDuration, elapsed: startTime, chapter: initChapter);
       await EqualizerService().switchItem(speedKey);
       debugPrint('[Player] Starting local playback at ${speed}x');
       _handler?.refreshPlaybackState();
@@ -2958,11 +2962,12 @@ class AudioPlayerService extends ChangeNotifier {
 
       _subscribeTrackIndex();
       final initChapter = _initChapterInfo(startTime);
-      _pushMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: initChapter);
-      await _primeNowPlaying(title: title, artist: author, duration: totalDuration, elapsed: startTime, chapter: initChapter);
+      // Speed before _pushMediaItem - the pushed duration is speed-adjusted.
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
       await _player!.setSpeed(speed);
+      _pushMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: initChapter);
+      await _primeNowPlaying(title: title, artist: author, duration: totalDuration, elapsed: startTime, chapter: initChapter);
       await EqualizerService().switchItem(itemId);
       debugPrint('[Player] Starting cached session playback at ${speed}x');
       _handler?.refreshPlaybackState();
@@ -3222,11 +3227,12 @@ class AudioPlayerService extends ChangeNotifier {
 
       _subscribeTrackIndex();
       final initChapter = _initChapterInfo(startTime);
-      _pushMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: initChapter);
-      await _primeNowPlaying(title: title, artist: author, duration: totalDuration, elapsed: startTime, chapter: initChapter);
+      // Speed before _pushMediaItem - the pushed duration is speed-adjusted.
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
       await _player!.setSpeed(speed);
+      _pushMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: initChapter);
+      await _primeNowPlaying(title: title, artist: author, duration: totalDuration, elapsed: startTime, chapter: initChapter);
       await EqualizerService().switchItem(itemId);
       debugPrint('[Player] Starting stream playback at ${speed}x');
       _handler?.refreshPlaybackState();
@@ -3321,10 +3327,11 @@ class AudioPlayerService extends ChangeNotifier {
               clearSeekTarget();
               _subscribeTrackIndex();
               final initChapter = _initChapterInfo(startTime);
-              _pushMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: initChapter);
+              // Speed before _pushMediaItem - the pushed duration is speed-adjusted.
               final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
               final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
               await _player!.setSpeed(speed);
+              _pushMediaItem(itemId, title, author, coverUrl, totalDuration, chapter: initChapter);
               await EqualizerService().switchItem(itemId);
               debugPrint('[Player] Transcoded playback starting at ${speed}x');
               try { (await AudioSession.instance).setActive(true); } catch (_) {}
@@ -3420,10 +3427,11 @@ class AudioPlayerService extends ChangeNotifier {
       clearSeekTarget();
       _subscribeTrackIndex();
       final initChapter = _initChapterInfo(startTime);
-      _pushMediaItem(itemId, retryTitle, retryAuthor, retryCover, totalDuration, chapter: initChapter);
+      // Speed before _pushMediaItem - the pushed duration is speed-adjusted.
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
       await _player!.setSpeed(speed);
+      _pushMediaItem(itemId, retryTitle, retryAuthor, retryCover, totalDuration, chapter: initChapter);
       await EqualizerService().switchItem(itemId);
       debugPrint('[Player] Transcoded playback starting at ${speed}x');
       try { (await AudioSession.instance).setActive(true); } catch (_) {}
