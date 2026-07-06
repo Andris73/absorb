@@ -140,6 +140,22 @@ class SocketService {
     }
   }
 
+  // Removal fan-out with payload ({id, ...}), alongside the single-slot
+  // onItemRemoved owned by the library provider.
+  final List<void Function(Map<String, dynamic>)> _itemRemovedListeners = [];
+
+  void addItemRemovedListener(void Function(Map<String, dynamic>) fn) {
+    if (!_itemRemovedListeners.contains(fn)) _itemRemovedListeners.add(fn);
+  }
+  void removeItemRemovedListener(void Function(Map<String, dynamic>) fn) =>
+      _itemRemovedListeners.remove(fn);
+
+  void _emitItemRemoved(Map<String, dynamic> data) {
+    for (final fn in List.of(_itemRemovedListeners)) {
+      fn(data);
+    }
+  }
+
   /// Called when ereader devices change. Server emits this both for the
   /// per-user update (always) and admin-wide updates (only to admins).
   /// Payload shape: { ereaderDevices: [...] } already filtered for this user.
@@ -205,7 +221,10 @@ class SocketService {
       });
       _socket!.on('item_removed', (data) {
         debugPrint('[Socket] Item removed');
-        if (data is Map<String, dynamic>) onItemRemoved?.call(data);
+        if (data is Map<String, dynamic>) {
+          onItemRemoved?.call(data);
+          _emitItemRemoved(data);
+        }
         _emitItemsChanged();
       });
       // Bulk events the scanner emits in chunks while a scan runs
@@ -390,7 +409,10 @@ class SocketService {
         _emitItemsChanged();
       });
       _socket!.on('item_removed', (data) {
-        if (data is Map<String, dynamic>) onItemRemoved?.call(data);
+        if (data is Map<String, dynamic>) {
+          onItemRemoved?.call(data);
+          _emitItemRemoved(data);
+        }
         _emitItemsChanged();
       });
       _socket!.on('items_updated', (data) {

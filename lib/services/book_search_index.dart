@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../utils/fuzzy_search.dart';
 import 'api_service.dart';
+import 'socket_service.dart';
 
 /// A scored search result: the raw library item plus whether it matched on the
 /// title (so callers can keep a "Books" section to title hits).
@@ -23,14 +24,43 @@ class _Indexed {
 
 /// In-memory, per-library index of all book items, used for lenient client-side
 /// search (out-of-order words, punctuation, typos) that the strict server
-/// `/search` endpoint can't do. Built once per library per session.
+/// `/search` endpoint can't do. Built once per library per session, then kept
+/// current by patching single entries from socket item events (edits, adds,
+/// removals) - the payloads carry the full item, so no refetch is needed.
 class BookSearchIndex {
-  BookSearchIndex._();
+  BookSearchIndex._() {
+    SocketService()
+      ..addItemUpdatedListener(_onItemUpdated)
+      ..addItemRemovedListener(_onItemRemoved);
+  }
   static final BookSearchIndex instance = BookSearchIndex._();
   factory BookSearchIndex() => instance;
 
   final Map<String, List<_Indexed>> _cache = {};
   final Map<String, Future<void>> _inFlight = {};
+
+  void _onItemUpdated(Map<String, dynamic> item) {
+    final libId = item['libraryId'] as String?;
+    final id = item['id'] as String?;
+    if (libId == null || id == null) return;
+    final idx = _cache[libId];
+    if (idx == null) return; // library not indexed yet - built fresh on demand
+    final entry = _indexItem(item);
+    final i = idx.indexWhere((e) => e.item['id'] == id);
+    if (i >= 0) {
+      idx[i] = entry;
+    } else {
+      idx.add(entry);
+    }
+  }
+
+  void _onItemRemoved(Map<String, dynamic> data) {
+    final id = data['id'] as String?;
+    if (id == null) return;
+    for (final idx in _cache.values) {
+      idx.removeWhere((e) => e.item['id'] == id);
+    }
+  }
 
   bool isReady(String libraryId) => _cache.containsKey(libraryId);
 
