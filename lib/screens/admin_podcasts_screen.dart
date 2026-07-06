@@ -2470,7 +2470,7 @@ class _PodcastMatchSheetState extends State<_PodcastMatchSheet> {
                         ? Center(child: Text(l.adminPodcastsNoResults, style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.24))))
                         : ListView.builder(
                             controller: sc,
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                            padding: EdgeInsets.fromLTRB(16, 8, 16, 32 + MediaQuery.of(context).viewPadding.bottom),
                             itemCount: _results.length,
                             itemBuilder: (_, i) {
                               final pod = _extractPod(_results[i]);
