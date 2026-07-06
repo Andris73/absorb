@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import 'podcast_edit_screen.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/html_description.dart';
 import '../l10n/app_localizations.dart';
@@ -1376,7 +1377,9 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
   bool get _isSelecting => _selectedFeedIndices.isNotEmpty;
 
   void _enterFeedSelectMode() {
-    // Select the first non-downloaded episode to kick off select mode
+    // Prefer the first not-yet-downloaded episode so the common "grab the new
+    // ones" case starts pre-populated; fall back to the first episode so select
+    // mode still engages when everything is already downloaded.
     final dlTitles = _episodes.map((e) => (e['title'] as String? ?? '').toLowerCase()).toSet();
     for (var i = 0; i < _feedEpisodes.length; i++) {
       final ep = _feedEpisodes[i] as Map<String, dynamic>;
@@ -1386,6 +1389,7 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
         return;
       }
     }
+    if (_feedEpisodes.isNotEmpty) setState(() => _selectedFeedIndices.add(0));
   }
 
   void _toggleFeedSelection(int index) {
@@ -1394,6 +1398,26 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
         _selectedFeedIndices.remove(index);
       } else {
         _selectedFeedIndices.add(index);
+      }
+    });
+  }
+
+  void _selectAllFeed() {
+    setState(() {
+      _selectedFeedIndices
+        ..clear()
+        ..addAll(List.generate(_feedEpisodes.length, (i) => i));
+    });
+  }
+
+  void _selectAllNewFeed() {
+    final dlTitles = _episodes.map((e) => (e['title'] as String? ?? '').toLowerCase()).toSet();
+    setState(() {
+      _selectedFeedIndices.clear();
+      for (var i = 0; i < _feedEpisodes.length; i++) {
+        final ep = _feedEpisodes[i] as Map<String, dynamic>;
+        final title = (ep['title'] as String? ?? '').toLowerCase();
+        if (!dlTitles.contains(title)) _selectedFeedIndices.add(i);
       }
     });
   }
@@ -1414,6 +1438,25 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
       if (ok) _pollDownloadQueue();
     }
     widget.onChanged();
+  }
+
+  Widget _feedQuickSelectChip(ColorScheme cs, TextTheme tt, IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 8, offset: const Offset(0, 2))],
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 15, color: cs.primary),
+          const SizedBox(width: 6),
+          Text(label, style: tt.labelSmall?.copyWith(color: cs.onSurface, fontWeight: FontWeight.w600)),
+        ]),
+      ),
+    );
   }
 
   Widget _buildFeedTab(ColorScheme cs, TextTheme tt) {
@@ -1485,37 +1528,46 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
       // Download selected bar
       if (_isSelecting)
         Positioned(left: 16, right: 16, bottom: 16,
-          child: Row(children: [
-            GestureDetector(
-              onTap: () => setState(() => _selectedFeedIndices.clear()),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: cs.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, 4))],
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            // Quick-select helpers
+            Row(children: [
+              _feedQuickSelectChip(cs, tt, Icons.playlist_add_check_rounded, l.adminPodcastsSelectAllNew, _selectAllNewFeed),
+              const SizedBox(width: 8),
+              _feedQuickSelectChip(cs, tt, Icons.done_all_rounded, l.adminPodcastsSelectAll, _selectAllFeed),
+            ]),
+            const SizedBox(height: 10),
+            Row(children: [
+              GestureDetector(
+                onTap: () => setState(() => _selectedFeedIndices.clear()),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: cs.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, 4))],
+                  ),
+                  child: Icon(Icons.close_rounded, size: 20, color: cs.onSurface.withValues(alpha: 0.6)),
                 ),
-                child: Icon(Icons.close_rounded, size: 20, color: cs.onSurface.withValues(alpha: 0.6)),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(child: GestureDetector(
-              onTap: _downloadSelected,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  color: cs.primary,
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [BoxShadow(color: cs.primary.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
+              const SizedBox(width: 10),
+              Expanded(child: GestureDetector(
+                onTap: _downloadSelected,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: cs.primary,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [BoxShadow(color: cs.primary.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
+                  ),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(Icons.download_rounded, size: 18, color: cs.onPrimary),
+                    const SizedBox(width: 8),
+                    Text(l.adminPodcastsDownloadEpisodesCount(_selectedFeedIndices.length),
+                      style: tt.bodySmall?.copyWith(color: cs.onPrimary, fontWeight: FontWeight.w700)),
+                  ]),
                 ),
-                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.download_rounded, size: 18, color: cs.onPrimary),
-                  const SizedBox(width: 8),
-                  Text(l.adminPodcastsDownloadEpisodesCount(_selectedFeedIndices.length),
-                    style: tt.bodySmall?.copyWith(color: cs.onPrimary, fontWeight: FontWeight.w700)),
-                ]),
-              ),
-            )),
+              )),
+            ]),
           ]),
         ),
     ]);
@@ -1645,6 +1697,27 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
           ]),
         );
       }),
+
+      // Edit show info
+      if (context.read<AuthProvider>().isAdmin)
+        GestureDetector(
+          onTap: _openEditInfo,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(color: cs.surfaceContainerHigh, borderRadius: BorderRadius.circular(14)),
+            child: Row(children: [
+              Icon(Icons.edit_note_rounded, size: 20, color: cs.onSurfaceVariant),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(l.adminPodcastsEditInfo, style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
+                const SizedBox(height: 2),
+                Text(l.adminPodcastsEditInfoSubtitle, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+              ])),
+              Icon(Icons.chevron_right_rounded, size: 20, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+            ]),
+          ),
+        ),
 
       // Match podcast metadata
       GestureDetector(
@@ -1844,6 +1917,21 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
           ]),
         ),
     ]);
+  }
+
+  void _openEditInfo() {
+    final tags = (_media['tags'] as List<dynamic>?)?.whereType<String>().toList() ?? <String>[];
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => PodcastEditScreen(
+        itemId: _podcastId,
+        metadata: Map<String, dynamic>.from(_metadata),
+        tags: tags,
+        onSaved: () {
+          _reloadItem();
+          widget.onChanged();
+        },
+      ),
+    ));
   }
 
   void _showMatchSheet(ColorScheme cs, TextTheme tt) {

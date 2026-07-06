@@ -6494,6 +6494,90 @@ abstract class AppLocalizations {
   /// **'duration'**
   String get adminLibraryDuration;
 
+  /// No description provided for @adminLibraryIssues.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 missing or invalid item} other{{count} missing or invalid items}}'**
+  String adminLibraryIssues(int count);
+
+  /// No description provided for @adminLibraryReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get adminLibraryReview;
+
+  /// No description provided for @adminMissingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Missing Items'**
+  String get adminMissingTitle;
+
+  /// No description provided for @adminMissingSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Entries in {library} whose files are missing or unreadable'**
+  String adminMissingSubtitle(String library);
+
+  /// No description provided for @adminMissingNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No missing or invalid items'**
+  String get adminMissingNone;
+
+  /// No description provided for @adminMissingBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Missing'**
+  String get adminMissingBadge;
+
+  /// No description provided for @adminInvalidBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid'**
+  String get adminInvalidBadge;
+
+  /// No description provided for @adminMissingDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove entry'**
+  String get adminMissingDeleteTitle;
+
+  /// No description provided for @adminMissingDeleteOneContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove \"{title}\" from Audiobookshelf? The files on disk are not deleted.'**
+  String adminMissingDeleteOneContent(String title);
+
+  /// No description provided for @adminMissingDeleteManyContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove {count} entries from Audiobookshelf? The files on disk are not deleted.'**
+  String adminMissingDeleteManyContent(int count);
+
+  /// No description provided for @adminMissingDeleteCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {count}'**
+  String adminMissingDeleteCount(int count);
+
+  /// No description provided for @adminMissingRemovedOne.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed {title}'**
+  String adminMissingRemovedOne(String title);
+
+  /// No description provided for @adminMissingRemovedMany.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Removed 1 entry} other{Removed {count} entries}}'**
+  String adminMissingRemovedMany(int count);
+
+  /// No description provided for @adminMissingDeleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to delete entry'**
+  String get adminMissingDeleteFailed;
+
   /// No description provided for @adminMatchAction.
   ///
   /// In en, this message translates to:
@@ -7633,6 +7717,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to match podcast'**
   String get adminPodcastsFailedMatch;
+
+  /// No description provided for @adminPodcastsSelectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Select all'**
+  String get adminPodcastsSelectAll;
+
+  /// No description provided for @adminPodcastsSelectAllNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New only'**
+  String get adminPodcastsSelectAllNew;
+
+  /// No description provided for @adminPodcastsEditInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Info'**
+  String get adminPodcastsEditInfo;
+
+  /// No description provided for @adminPodcastsEditInfoSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Change title, description, cover and more'**
+  String get adminPodcastsEditInfoSubtitle;
+
+  /// No description provided for @adminPodcastsEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Podcast'**
+  String get adminPodcastsEditTitle;
+
+  /// No description provided for @adminPodcastsReleaseDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Release date'**
+  String get adminPodcastsReleaseDate;
+
+  /// No description provided for @adminPodcastsExplicit.
+  ///
+  /// In en, this message translates to:
+  /// **'Explicit'**
+  String get adminPodcastsExplicit;
+
+  /// No description provided for @adminPodcastsExplicitSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark this podcast as explicit'**
+  String get adminPodcastsExplicitSubtitle;
 
   /// No description provided for @episodeListEpisodeFallback.
   ///

@@ -447,6 +447,38 @@ class ApiService {
     return null;
   }
 
+  /// Fetch every library item the server has flagged with an issue - missing
+  /// (files gone from disk) or invalid (present but unparseable). ABS exposes
+  /// both under the plain `filter=issues` param. Each result carries the
+  /// `isMissing` / `isInvalid` booleans so the caller can tell them apart.
+  Future<List<dynamic>> getIssueItems(String libraryId) async {
+    final all = <dynamic>[];
+    var page = 0;
+    while (page < 100) {
+      final data = await getLibraryItems(
+        libraryId,
+        filter: 'issues',
+        page: page,
+        limit: 100,
+        sort: 'media.metadata.title',
+        desc: 0,
+      );
+      final results = data?['results'] as List? ?? const [];
+      all.addAll(results);
+      final total = data?['total'] as int?;
+      page++;
+      if (results.isEmpty || (total != null && all.length >= total)) break;
+    }
+    return all;
+  }
+
+  /// Count of issue items in a library (missing + invalid), fetched cheaply by
+  /// reading `total` from a single-item issues query. Returns 0 on any failure.
+  Future<int> getIssueItemCount(String libraryId) async {
+    final data = await getLibraryItems(libraryId, filter: 'issues', limit: 1);
+    return data?['total'] as int? ?? 0;
+  }
+
   /// Build a cover image URL for a library item.
   String getCoverUrl(String itemId, {int? width = 400, int? updatedAt}) {
     var url = '$_cleanBaseUrl/api/items/$itemId/cover?token=$token';

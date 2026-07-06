@@ -7,6 +7,7 @@ import '../widgets/rmab_config_sheet.dart';
 import '../l10n/app_localizations.dart';
 import 'admin_users_screen.dart';
 import 'admin_podcasts_screen.dart';
+import 'admin_missing_items_screen.dart';
 import 'admin_email_screen.dart';
 import 'admin_api_keys_screen.dart';
 import 'admin_libraries_screen.dart';
@@ -27,6 +28,7 @@ class _AdminScreenState extends State<AdminScreen> {
   List<dynamic> _backups = [];
   List<dynamic> _sessions = [];
   final Map<String, Map<String, dynamic>> _libraryStats = {};
+  final Map<String, int> _libraryIssues = {};
   String? _serverVersion;
   String? _rmabBaseUrl;
   String? _rmabApiToken;
@@ -59,6 +61,7 @@ class _AdminScreenState extends State<AdminScreen> {
       if (id.isNotEmpty) {
         final stats = await api.getLibraryStats(id);
         if (stats != null) _libraryStats[id] = stats;
+        _libraryIssues[id] = await api.getIssueItemCount(id);
       }
     }
     _rmabBaseUrl = await ScopedPrefs.getString(kRmabBaseUrlKey);
@@ -378,7 +381,39 @@ class _AdminScreenState extends State<AdminScreen> {
             const SizedBox(width: 8),
             Expanded(child: _libAct(cs, tt, Icons.auto_fix_high_rounded, isMatching ? l.adminMatching : l.adminMatchAll, isMatching, () => _matchLib(id, name))),
           ]),
+          if ((_libraryIssues[id] ?? 0) > 0) ...[
+            const SizedBox(height: 8),
+            _issuesRow(cs, tt, lib, _libraryIssues[id]!),
+          ],
         ])));
+  }
+
+  Widget _issuesRow(ColorScheme cs, TextTheme tt, dynamic lib, int count) {
+    final l = AppLocalizations.of(context)!;
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AdminMissingItemsScreen(library: Map<String, dynamic>.from(lib as Map))));
+        _loadAll();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.orange.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.orange.withValues(alpha: 0.25)),
+        ),
+        child: Row(children: [
+          Icon(Icons.report_problem_rounded, size: 16, color: Colors.orange.shade700),
+          const SizedBox(width: 8),
+          Expanded(child: Text(l.adminLibraryIssues(count),
+            style: tt.labelMedium?.copyWith(color: cs.onSurface.withValues(alpha: 0.7), fontWeight: FontWeight.w600))),
+          Text(l.adminLibraryReview, style: tt.labelSmall?.copyWith(color: Colors.orange.shade700, fontWeight: FontWeight.w700)),
+          const SizedBox(width: 2),
+          Icon(Icons.chevron_right_rounded, size: 16, color: Colors.orange.shade700),
+        ]),
+      ),
+    );
   }
 
   Widget _mini(ColorScheme cs, TextTheme tt, String v, String l) => Padding(padding: const EdgeInsets.only(right: 20), child: Column(

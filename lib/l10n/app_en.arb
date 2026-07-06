@@ -1909,6 +1909,69 @@
   "adminLibraryFolders": "folders",
   "adminLibrarySize": "size",
   "adminLibraryDuration": "duration",
+  "adminLibraryIssues": "{count, plural, =1{1 missing or invalid item} other{{count} missing or invalid items}}",
+  "@adminLibraryIssues": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "adminLibraryReview": "Review",
+  "adminMissingTitle": "Missing Items",
+  "adminMissingSubtitle": "Entries in {library} whose files are missing or unreadable",
+  "@adminMissingSubtitle": {
+    "placeholders": {
+      "library": {
+        "type": "String"
+      }
+    }
+  },
+  "adminMissingNone": "No missing or invalid items",
+  "adminMissingBadge": "Missing",
+  "adminInvalidBadge": "Invalid",
+  "adminMissingDeleteTitle": "Remove entry",
+  "adminMissingDeleteOneContent": "Remove \"{title}\" from Audiobookshelf? The files on disk are not deleted.",
+  "@adminMissingDeleteOneContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "adminMissingDeleteManyContent": "Remove {count} entries from Audiobookshelf? The files on disk are not deleted.",
+  "@adminMissingDeleteManyContent": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "adminMissingDeleteCount": "Delete {count}",
+  "@adminMissingDeleteCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "adminMissingRemovedOne": "Removed {title}",
+  "@adminMissingRemovedOne": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "adminMissingRemovedMany": "{count, plural, =1{Removed 1 entry} other{Removed {count} entries}}",
+  "@adminMissingRemovedMany": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "adminMissingDeleteFailed": "Failed to delete entry",
   "adminMatchAction": "Match",
   "adminMatchingStarted": "Matching started for {name}",
   "@adminMatchingStarted": {
@@ -2323,6 +2386,14 @@
   "adminPodcastsNoResults": "No results",
   "adminPodcastsPodcastMatched": "Podcast matched and updated",
   "adminPodcastsFailedMatch": "Failed to match podcast",
+  "adminPodcastsSelectAll": "Select all",
+  "adminPodcastsSelectAllNew": "New only",
+  "adminPodcastsEditInfo": "Edit Info",
+  "adminPodcastsEditInfoSubtitle": "Change title, description, cover and more",
+  "adminPodcastsEditTitle": "Edit Podcast",
+  "adminPodcastsReleaseDate": "Release date",
+  "adminPodcastsExplicit": "Explicit",
+  "adminPodcastsExplicitSubtitle": "Mark this podcast as explicit",
   "episodeListEpisodeFallback": "Episode",
   "episodeListUnknownPodcast": "Unknown Podcast",
   "episodeListMarkedFinished": "{count, plural, =1{1 episode marked as finished} other{{count} episodes marked as finished}}",

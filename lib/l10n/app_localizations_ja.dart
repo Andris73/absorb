@@ -3580,6 +3580,74 @@ class AppLocalizationsJa extends AppLocalizations {
   String get adminLibraryDuration => 'duration';
 
   @override
+  String adminLibraryIssues(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count missing or invalid items',
+      one: '1 missing or invalid item',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get adminLibraryReview => 'Review';
+
+  @override
+  String get adminMissingTitle => 'Missing Items';
+
+  @override
+  String adminMissingSubtitle(String library) {
+    return 'Entries in $library whose files are missing or unreadable';
+  }
+
+  @override
+  String get adminMissingNone => 'No missing or invalid items';
+
+  @override
+  String get adminMissingBadge => 'Missing';
+
+  @override
+  String get adminInvalidBadge => 'Invalid';
+
+  @override
+  String get adminMissingDeleteTitle => 'Remove entry';
+
+  @override
+  String adminMissingDeleteOneContent(String title) {
+    return 'Remove \"$title\" from Audiobookshelf? The files on disk are not deleted.';
+  }
+
+  @override
+  String adminMissingDeleteManyContent(int count) {
+    return 'Remove $count entries from Audiobookshelf? The files on disk are not deleted.';
+  }
+
+  @override
+  String adminMissingDeleteCount(int count) {
+    return 'Delete $count';
+  }
+
+  @override
+  String adminMissingRemovedOne(String title) {
+    return 'Removed $title';
+  }
+
+  @override
+  String adminMissingRemovedMany(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Removed $count entries',
+      one: 'Removed 1 entry',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get adminMissingDeleteFailed => 'Failed to delete entry';
+
+  @override
   String get adminMatchAction => 'Match';
 
   @override
@@ -4220,6 +4288,31 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get adminPodcastsFailedMatch => 'Failed to match podcast';
+
+  @override
+  String get adminPodcastsSelectAll => 'Select all';
+
+  @override
+  String get adminPodcastsSelectAllNew => 'New only';
+
+  @override
+  String get adminPodcastsEditInfo => 'Edit Info';
+
+  @override
+  String get adminPodcastsEditInfoSubtitle =>
+      'Change title, description, cover and more';
+
+  @override
+  String get adminPodcastsEditTitle => 'Edit Podcast';
+
+  @override
+  String get adminPodcastsReleaseDate => 'Release date';
+
+  @override
+  String get adminPodcastsExplicit => 'Explicit';
+
+  @override
+  String get adminPodcastsExplicitSubtitle => 'Mark this podcast as explicit';
 
   @override
   String get episodeListEpisodeFallback => 'Episode';

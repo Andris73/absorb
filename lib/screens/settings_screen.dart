@@ -158,6 +158,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _rmabBaseUrl;
   String? _rmabApiToken;
   bool _loaded = false;
+  int _adminIssueCount = 0;
   String _downloadLocationLabel = 'App Internal Storage (Default)';
   bool _canPickDownloadLocation = false;
   int _totalDownloadSizeBytes = 0;
@@ -196,7 +197,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _localServerController = TextEditingController();
     _loadSettings();
+    _loadAdminIssueCount();
     PlayerSettings.settingsChanged.addListener(_onExternalSettingsChange);
+  }
+
+  /// Sum missing/invalid item counts across all libraries so the Server Admin
+  /// button can show a badge when there's cleanup to do, without opening admin.
+  Future<void> _loadAdminIssueCount() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAdmin) return;
+    final api = auth.apiService;
+    if (api == null) return;
+    final ids = context
+        .read<LibraryProvider>()
+        .libraries
+        .map((l) => (l as Map)['id'] as String? ?? '')
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (ids.isEmpty) return;
+    final counts = await Future.wait(ids.map(api.getIssueItemCount));
+    if (!mounted) return;
+    setState(() => _adminIssueCount = counts.fold<int>(0, (a, b) => a + b));
   }
 
   @override
@@ -1185,10 +1206,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       borderRadius: BorderRadius.circular(14),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(14),
-                        onTap: () {
-                          Navigator.push(context, MaterialPageRoute(
+                        onTap: () async {
+                          await Navigator.push(context, MaterialPageRoute(
                             builder: (_) => const AdminScreen(),
                           ));
+                          _loadAdminIssueCount();
                         },
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1205,6 +1227,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                                 ],
                               )),
+                              if (_adminIssueCount > 0) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                    Icon(Icons.report_problem_rounded, size: 12, color: Colors.orange.shade700),
+                                    const SizedBox(width: 4),
+                                    Text('$_adminIssueCount', style: tt.labelSmall?.copyWith(
+                                      color: Colors.orange.shade700, fontWeight: FontWeight.w700)),
+                                  ]),
+                                ),
+                                const SizedBox(width: 10),
+                              ],
                               Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
                             ],
                           ),
