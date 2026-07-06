@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Tiny 1x1 now-playing widget: cover art, tap anywhere toggles play/pause -->
+<!-- Adaptive now-playing widget: full-bleed cover. At 1x1 it's cover + a
+     centered play/pause tap target. Resize it larger and a notification-style
+     player panel (title / author / chapter / progress / transport) fades in
+     over the bottom of the cover; rows appear as there's room for them. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
@@ -15,7 +18,7 @@
         android:src="@mipmap/ic_launcher"
         android:contentDescription="Cover art" />
 
-    <!-- Subtle centered play/pause indicator (reflects state; whole tile is tappable) -->
+    <!-- Tiny-size indicator: reflects state; the whole tile is the tap target -->
     <ImageView
         android:id="@+id/widget_play_pause"
         android:layout_width="40dp"
@@ -26,5 +29,152 @@
         android:background="@drawable/widget_play_btn_bg"
         android:scaleType="centerInside"
         android:contentDescription="Play or pause" />
+
+    <!-- Player panel pinned to the bottom of the cover. The scrim is the panel's
+         own background so it always wraps whatever rows are visible. -->
+    <LinearLayout
+        android:id="@+id/widget_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:background="@drawable/widget_controls_scrim"
+        android:paddingTop="22dp"
+        android:paddingBottom="12dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="18dp"
+            android:paddingEnd="18dp"
+            android:textColor="#FFFFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/widget_author"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="18dp"
+            android:paddingEnd="18dp"
+            android:textColor="#CCFFFFFF"
+            android:textSize="12sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/widget_chapter"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="18dp"
+            android:paddingEnd="18dp"
+            android:paddingTop="1dp"
+            android:textColor="#99FFFFFF"
+            android:textSize="11sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:visibility="gone" />
+
+        <!-- Progress is drawn as a bitmap (see drawProgressBar): a static
+             Android-Auto-style squiggle while playing, flat when paused.
+             fitXY fills the panel width exactly, so the played fraction
+             lines up regardless of our width estimate. -->
+        <ImageView
+            android:id="@+id/widget_progress"
+            android:layout_width="match_parent"
+            android:layout_height="12dp"
+            android:layout_marginStart="18dp"
+            android:layout_marginEnd="18dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="2dp"
+            android:scaleType="fitXY"
+            android:contentDescription="Progress"
+            android:visibility="gone" />
+
+        <!-- Transport row: skip buttons pushed toward the edges, play/pause
+             centered. Weighted so the cluster spreads across the full width. -->
+        <LinearLayout
+            android:id="@+id/widget_controls"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <!-- Skip back: arrow icon with duration overlay -->
+            <FrameLayout
+                android:id="@+id/widget_skip_back"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_weight="1"
+                android:contentDescription="Skip backward">
+                <ImageView
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_widget_skip_back"
+                    android:scaleType="centerInside" />
+                <TextView
+                    android:id="@+id/widget_skip_back_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginTop="2dp"
+                    android:text="10"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="9sp"
+                    android:textStyle="bold"
+                    android:fontFamily="sans-serif-medium" />
+            </FrameLayout>
+
+            <!-- Play/pause: white circle with dark icon -->
+            <ImageButton
+                android:id="@+id/widget_pp"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:padding="12dp"
+                android:src="@drawable/ic_widget_play_dark"
+                android:background="@drawable/widget_play_btn_bg"
+                android:contentDescription="Play or pause"
+                android:scaleType="centerInside" />
+
+            <!-- Skip forward: arrow icon with duration overlay -->
+            <FrameLayout
+                android:id="@+id/widget_skip_forward"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_weight="1"
+                android:contentDescription="Skip forward">
+                <ImageView
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_widget_skip_forward"
+                    android:scaleType="centerInside" />
+                <TextView
+                    android:id="@+id/widget_skip_forward_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginTop="2dp"
+                    android:text="30"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="9sp"
+                    android:textStyle="bold"
+                    android:fontFamily="sans-serif-medium" />
+            </FrameLayout>
+
+        </LinearLayout>
+
+    </LinearLayout>
 
 </FrameLayout>
