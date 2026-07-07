@@ -518,6 +518,8 @@ private struct ArtMediumView: View {
                 .foregroundStyle(.white.opacity(0.8))
                 .lineLimit(1)
                 .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+            ArtProgressBar(progress: entry.progress)
+                .padding(.top, 6)
             ArtControlsRow(entry: entry, playDiameter: 38, skipSize: 16, spacing: 30)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 6)
@@ -553,11 +555,17 @@ private struct ArtLargeView: View {
                         // without waking the app. They tick at 1x wall speed;
                         // the timeline's projected entries re-baseline them so
                         // other playback speeds can't drift visibly.
+                        //
+                        // Timer text reserves an oversized box and left-aligns
+                        // its digits inside it, so the countdown needs explicit
+                        // trailing alignment or it drifts toward the center.
                         Text(timerInterval: entry.date.addingTimeInterval(-elapsed)...entry.date.addingTimeInterval(entry.totalS - elapsed),
                              countsDown: false)
-                        Spacer()
-                        Text("-") + Text(timerInterval: entry.date...entry.date.addingTimeInterval(entry.totalS - elapsed),
-                                         countsDown: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        (Text("-") + Text(timerInterval: entry.date...entry.date.addingTimeInterval(entry.totalS - elapsed),
+                                          countsDown: true))
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     } else {
                         Text(formatClock(elapsed))
                         Spacer()
