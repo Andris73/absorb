@@ -48,6 +48,27 @@ public func absorbFlutterAlive(pid: Int) -> Bool {
   return ageMs >= 0 && ageMs < 30_000
 }
 
+/// Stamp that audio actuation is happening right now - a widget play intent
+/// fired, or the native engine is playing. The widget trusts a stored
+/// "playing" flag only while some liveness signal is fresh, and the Flutter
+/// heartbeat can lag by many seconds when a native play wakes a suspended
+/// process - without this stamp the play/pause icon didn't flip until the
+/// heartbeat caught up.
+public func absorbStampAudioActivity() {
+  UserDefaults(suiteName: absorbAppGroup)?.set(
+    Int(Date().timeIntervalSince1970 * 1000), forKey: "audio_active_at")
+}
+
+/// True when audio actuation was stamped within the last 150s (the native
+/// core re-stamps at least every 60s while it drives playback).
+public func absorbAudioActivityFresh() -> Bool {
+  guard let at = UserDefaults(suiteName: absorbAppGroup)?
+          .object(forKey: "audio_active_at") as? Int
+  else { return false }
+  let ageMs = Int(Date().timeIntervalSince1970 * 1000) - at
+  return ageMs >= 0 && ageMs < 150_000
+}
+
 /// Claim audio ownership for this process unless the current owner's Flutter
 /// is verifiably alive in another process. Called from each widget intent's
 /// perform(): iOS chose this process to handle a user-initiated audio action,
@@ -142,6 +163,7 @@ public struct AbsorbPlayPauseIntent: AudioPlaybackIntent {
     // Whichever side actually actuates writes the real state right after.
     let willPlay = core.willPlayAfterToggle()
     UserDefaults(suiteName: absorbAppGroup)?.set(willPlay, forKey: "widget_is_playing")
+    if willPlay { absorbStampAudioActivity() }
     core.log("[NativeCore]   predicted willPlay=\(willPlay)")
     activateAbsorbAudioSession()
     core.toggle()

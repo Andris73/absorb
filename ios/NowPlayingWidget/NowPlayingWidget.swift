@@ -191,11 +191,14 @@ struct NowPlayingProvider: TimelineProvider {
         let author = d?.string(forKey: "widget_author") ?? ""
         // A stored "playing" can outlive reality (app killed mid-play,
         // overnight jetsam) and used to leave the widget's live timers
-        // free-running for hours. Trust it only while the owning process's
-        // Flutter heartbeat is fresh - it goes stale within about 30 seconds
-        // of playback actually stopping.
+        // free-running for hours. Trust it only while something proves audio
+        // is actually live: the owning process's Flutter heartbeat, or the
+        // native side's activity stamp. The stamp is what lets the icon flip
+        // the moment a widget play wakes a suspended app - the heartbeat
+        // lags that by many seconds.
         let storedPlaying = d?.bool(forKey: "widget_is_playing") ?? false
-        let isPlaying = storedPlaying && absorbFlutterAlive(pid: absorbAudioOwnerPid())
+        let isPlaying = storedPlaying &&
+            (absorbFlutterAlive(pid: absorbAudioOwnerPid()) || absorbAudioActivityFresh())
         // The metadata total the app's cards display; the session total
         // (np_total_s) can differ from it by minutes and is only a fallback.
         let displayTotal = d?.double(forKey: "np_display_total_s") ?? 0

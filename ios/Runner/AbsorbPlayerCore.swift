@@ -364,6 +364,7 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
   private func syncWidgetState() {
     let defaults = UserDefaults(suiteName: Self.appGroup)
     defaults?.set(AbsorbAudioEngine.shared.isPlaying, forKey: "widget_is_playing")
+    if AbsorbAudioEngine.shared.isPlaying { absorbStampAudioActivity() }
     let total = totalDuration()
     if total > 0 {
       let permille = Int((globalPosition() / total * 1000).rounded())
@@ -399,6 +400,9 @@ final class AbsorbPlayerCore: NSObject, AbsorbPlayerCoreProtocol, @unchecked Sen
   /// app on relaunch) see the right position. Best-effort - no retry on
   /// failure since we'll try again on the next 60s tick.
   private func pushProgressToServer() {
+    // Runs every 60s while the native core drives playback - keeps the
+    // widget's audio-activity signal fresh so it renders as playing.
+    if AbsorbAudioEngine.shared.isPlaying { absorbStampAudioActivity() }
     let defaults = UserDefaults(suiteName: Self.appGroup)
     guard let itemId = _currentItemId,
           let serverUrl = defaults?.string(forKey: "np_server_url"),
