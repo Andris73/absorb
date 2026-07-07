@@ -28,23 +28,69 @@ struct NowPlayingEntry: TimelineEntry {
     let title: String
     let author: String
     let isPlaying: Bool
-    let progress: Double
+    /// Absolute book position in seconds.
+    let positionS: Double
+    /// The progress segment: the whole book normally, the current chapter
+    /// when the app's chapter-progress setting is on. Bar fill and the time
+    /// labels all run over this range, matching the in-app rows.
+    let segStartS: Double
+    let segEndS: Double
+    /// Whole-book display total (the metadata duration the app's cards show).
     let totalS: Double
     let speed: Double
+    let speedAdjusted: Bool
     let coverImage: UIImage?
     let skipBack: Int
     let skipForward: Int
 
+    var progress: Double {
+        let len = segEndS - segStartS
+        guard len > 0 else { return 0 }
+        return min(1, max(0, (positionS - segStartS) / len))
+    }
+
     /// Copy for a projected future timeline entry - same book state, new
-    /// date and advanced progress.
-    func at(date: Date, progress: Double) -> NowPlayingEntry {
+    /// date, advanced position, and possibly a new chapter segment/title.
+    func at(date: Date, positionS: Double, segStartS: Double, segEndS: Double,
+            title: String) -> NowPlayingEntry {
         NowPlayingEntry(
             date: date, hasBook: hasBook, title: title, author: author,
-            isPlaying: isPlaying, progress: progress, totalS: totalS,
-            speed: speed, coverImage: coverImage,
+            isPlaying: isPlaying, positionS: positionS,
+            segStartS: segStartS, segEndS: segEndS, totalS: totalS,
+            speed: speed, speedAdjusted: speedAdjusted, coverImage: coverImage,
             skipBack: skipBack, skipForward: skipForward
         )
     }
+}
+
+// Projection cadence for playing timelines, and the freeze horizon for the
+// live time labels (two steps: the next entry re-baselines well before it).
+private let artProjectionStepS: TimeInterval = 15
+
+struct WChapter {
+    let start: Double
+    let end: Double
+    let title: String
+}
+
+func loadChapters(_ d: UserDefaults?) -> [WChapter] {
+    guard let json = d?.string(forKey: "np_chapters_json"),
+          let data = json.data(using: .utf8),
+          let raw = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+    else { return [] }
+    return raw.compactMap { m in
+        guard let s = (m["start"] as? NSNumber)?.doubleValue,
+              let e = (m["end"] as? NSNumber)?.doubleValue, e > s else { return nil }
+        return WChapter(start: s, end: e, title: (m["title"] as? String) ?? "")
+    }
+}
+
+/// Chapter containing `pos`, with the app's fallback: past the last end
+/// resolves to the last chapter.
+func chapterAt(_ pos: Double, in chapters: [WChapter]) -> WChapter? {
+    guard !chapters.isEmpty else { return nil }
+    for c in chapters where pos >= c.start && pos < c.end { return c }
+    return pos > 0 ? chapters.last : chapters.first
 }
 
 /// Decode the cover bounded to `maxDimension` px. The art widgets render the
@@ -70,17 +116,20 @@ struct NowPlayingProvider: TimelineProvider {
     func placeholder(in context: Context) -> NowPlayingEntry {
         NowPlayingEntry(
             date: .now, hasBook: true, title: "Audiobook Title",
-            author: "Author Name", isPlaying: false, progress: 0.35,
-            totalS: 30600, speed: 1.0, coverImage: nil, skipBack: 10, skipForward: 30
+            author: "Author Name", isPlaying: false, positionS: 10710,
+            segStartS: 0, segEndS: 30600, totalS: 30600,
+            speed: 1.0, speedAdjusted: true,
+            coverImage: nil, skipBack: 10, skipForward: 30
         )
     }
 
     func getSnapshot(in context: Context, completion: @escaping (NowPlayingEntry) -> Void) {
-        completion(readEntry())
+        completion(readSnapshot().entry)
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<NowPlayingEntry>) -> Void) {
-        let base = readEntry()
+        let snap = readSnapshot()
+        let base = snap.entry
 
         // Paused or no book: nothing moves, one entry is enough.
         guard base.isPlaying, base.hasBook, base.totalS > 0 else {
@@ -89,32 +138,53 @@ struct NowPlayingProvider: TimelineProvider {
             return
         }
 
-        // Playing: pre-schedule projected entries so the progress bar and the
-        // large widget's time baselines advance on their own, at playback
-        // speed, without the app running. At 1.0x the labels are live system
-        // timers between entries; at other speeds the elapsed label is static
-        // per entry, so the step shrinks to keep it updating.
-        let drift = abs(base.speed - 1.0)
-        let stepS: TimeInterval = drift > 0.01 ? 15 : 60
-        let baseElapsed = base.progress * base.totalS
+        // Playing: pre-schedule projected entries so the progress bar, the
+        // time labels, and the chapter segment advance on their own, at
+        // playback speed, without the app running.
+        //
+        // Projected entries can cross a chapter boundary, so the chapter-as-
+        // title label advances too - but only when the stored title already
+        // follows the chapter-as-title pattern, so podcast episode titles and
+        // chapterless books are left alone.
+        let baseChapterTitle = chapterAt(base.positionS, in: snap.chapters)?.title
+        let titleFollowsChapters = baseChapterTitle != nil && baseChapterTitle == base.title
         var entries: [NowPlayingEntry] = []
         var t: TimeInterval = 0
         while t <= 30 * 60 && entries.count < 120 {
-            let elapsed = min(baseElapsed + t * base.speed, base.totalS)
+            let pos = min(base.positionS + t * base.speed, base.totalS)
+            var segStart = 0.0
+            var segEnd = base.totalS
+            var title = base.title
+            if let ch = chapterAt(pos, in: snap.chapters) {
+                if snap.chapterMode {
+                    segStart = ch.start
+                    segEnd = ch.end
+                }
+                if titleFollowsChapters, !ch.title.isEmpty {
+                    title = ch.title
+                }
+            }
             entries.append(base.at(
                 date: Date().addingTimeInterval(t),
-                progress: elapsed / base.totalS
+                positionS: pos, segStartS: segStart, segEndS: segEnd,
+                title: title
             ))
-            if elapsed >= base.totalS { break }
-            t += stepS
+            if pos >= base.totalS { break }
+            t += artProjectionStepS
         }
         completion(Timeline(entries: entries, policy: .atEnd))
     }
 
-    private func readEntry() -> NowPlayingEntry {
+    struct Snapshot {
+        let entry: NowPlayingEntry
+        let chapters: [WChapter]
+        let chapterMode: Bool
+    }
+
+    func readSnapshot() -> Snapshot {
         let d = UserDefaults(suiteName: appGroup)
         if d == nil {
-            NSLog("[WidgetDebug] readEntry: UserDefaults(suiteName:%@) returned nil - app group not accessible from extension", appGroup)
+            NSLog("[WidgetDebug] readSnapshot: UserDefaults(suiteName:%@) returned nil - app group not accessible from extension", appGroup)
         }
         let hasBook = d?.bool(forKey: "widget_has_book") ?? false
         let title = d?.string(forKey: "widget_title") ?? ""
@@ -126,10 +196,29 @@ struct NowPlayingProvider: TimelineProvider {
         // of playback actually stopping.
         let storedPlaying = d?.bool(forKey: "widget_is_playing") ?? false
         let isPlaying = storedPlaying && absorbFlutterAlive(pid: absorbAudioOwnerPid())
-        let progress = Double(d?.integer(forKey: "widget_progress") ?? 0) / 1000.0
-        let totalS = d?.double(forKey: "np_total_s") ?? 0
+        // The metadata total the app's cards display; the session total
+        // (np_total_s) can differ from it by minutes and is only a fallback.
+        let displayTotal = d?.double(forKey: "np_display_total_s") ?? 0
+        let totalS = displayTotal > 0 ? displayTotal : (d?.double(forKey: "np_total_s") ?? 0)
+        // Absolute position; widget_progress is only a legacy fallback (it
+        // follows the notification's chapter-progress mode, so as a book
+        // fraction it can be wildly wrong).
+        let rawPos = d?.object(forKey: "np_position_s") as? Double ?? -1
+        let posS = rawPos >= 0
+            ? min(rawPos, totalS > 0 ? totalS : rawPos)
+            : Double(d?.integer(forKey: "widget_progress") ?? 0) / 1000.0 * totalS
         let rawSpeed = d?.double(forKey: "np_speed") ?? 1.0
         let speed = rawSpeed > 0 ? rawSpeed : 1.0
+        // Default true to match the in-app setting's default.
+        let speedAdjusted = d?.object(forKey: "np_speed_adjusted") as? Bool ?? true
+        let chapters = loadChapters(d)
+        let chapterMode = d?.bool(forKey: "widget_chapter_mode") ?? false
+        var segStart = 0.0
+        var segEnd = totalS
+        if chapterMode, let ch = chapterAt(posS, in: chapters) {
+            segStart = ch.start
+            segEnd = ch.end
+        }
         let skipBack = d?.integer(forKey: "widget_skip_back") ?? 0
         let skipForward = d?.integer(forKey: "widget_skip_forward") ?? 0
         let coverPath = d?.string(forKey: "widget_cover_path") ?? ""
@@ -146,27 +235,31 @@ struct NowPlayingProvider: TimelineProvider {
             }
         }
 
-        NSLog("[WidgetDebug] readEntry: hasBook=%@ title=\"%@\" isPlaying=%@ progress=%.3f coverPath=\"%@\" coverStatus=%@",
+        NSLog("[WidgetDebug] readSnapshot: hasBook=%@ title=\"%@\" isPlaying=%@ pos=%.1f seg=%.1f-%.1f total=%.1f chapterMode=%@ coverStatus=%@",
               hasBook ? "true" : "false",
               title,
               isPlaying ? "true" : "false",
-              progress,
-              coverPath,
+              posS, segStart, segEnd, totalS,
+              chapterMode ? "true" : "false",
               coverStatus)
 
-        return NowPlayingEntry(
+        let entry = NowPlayingEntry(
             date: .now,
             hasBook: hasBook,
             title: title.isEmpty ? "Absorb" : title,
             author: author.isEmpty ? (hasBook ? "" : "Not playing") : author,
             isPlaying: isPlaying,
-            progress: progress,
+            positionS: max(0, posS),
+            segStartS: segStart,
+            segEndS: segEnd,
             totalS: totalS,
             speed: speed,
+            speedAdjusted: speedAdjusted,
             coverImage: cover,
             skipBack: skipBack > 0 ? skipBack : 10,
             skipForward: skipForward > 0 ? skipForward : 30
         )
+        return Snapshot(entry: entry, chapters: chapters, chapterMode: chapterMode)
     }
 }
 
@@ -539,7 +632,6 @@ private struct ArtLargeView: View {
     let entry: NowPlayingEntry
 
     var body: some View {
-        let elapsed = entry.totalS > 0 ? entry.progress * entry.totalS : 0
         VStack(alignment: .leading, spacing: 3) {
             Spacer()
             Text(entry.title)
@@ -554,46 +646,42 @@ private struct ArtLargeView: View {
                 .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
             ArtProgressBar(progress: entry.progress)
                 .padding(.top, 8)
-            if entry.totalS > 0 {
-                // Remaining is wall-clock at the current speed, matching the
-                // in-app player (-14:32 at 1.5x, not the raw -21:48). That
-                // also makes the live countdown exact at any speed, since it
-                // shrinks at one real second per second.
-                let remainingWall = max(0, (entry.totalS - elapsed) / entry.speed)
+            if entry.segEndS > entry.segStartS {
+                // Times run over the active segment (whole book, or the
+                // current chapter in chapter-progress mode) and mirror the
+                // in-app rows exactly: BOTH labels divide by the speed when
+                // the Speed-adjusted time setting is on, like the cards do.
+                let divisor = entry.speedAdjusted ? max(0.1, entry.speed) : 1.0
+                let elapsedShown = max(0, entry.positionS - entry.segStartS) / divisor
+                let remainingShown = max(0, entry.segEndS - entry.positionS) / divisor
+                // With the divisor applied, both values move at exactly one
+                // real second per second at any speed, so both can be live
+                // system timers. Raw display at speed != 1 moves faster than
+                // real time, which a timer can't do - static per entry then.
+                let labelsLive = entry.isPlaying && (entry.speedAdjusted || abs(entry.speed - 1.0) <= 0.01)
                 // Live timers tick as long as iOS keeps showing an entry -
                 // even if playback died hours ago and no refresh ever came.
                 // Freeze them two projection steps past their entry; in
                 // normal operation the next entry re-baselines well before
                 // that, so this only bites when refreshes stop.
-                let liveStep: TimeInterval = abs(entry.speed - 1.0) > 0.01 ? 15 : 60
-                let pauseAt = entry.date.addingTimeInterval(liveStep * 2)
+                let pauseAt = entry.date.addingTimeInterval(artProjectionStepS * 2)
                 HStack {
-                    if entry.isPlaying, abs(entry.speed - 1.0) <= 0.01 {
+                    if labelsLive {
+                        Text(timerInterval: entry.date.addingTimeInterval(-elapsedShown)...entry.date.addingTimeInterval(remainingShown),
+                             pauseTime: pauseAt, countsDown: false)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         // Timer text reserves an oversized box and left-aligns
                         // its digits inside it, so the countdown needs explicit
                         // trailing alignment or it drifts toward the center.
-                        Text(timerInterval: entry.date.addingTimeInterval(-elapsed)...entry.date.addingTimeInterval(entry.totalS - elapsed),
-                             pauseTime: pauseAt, countsDown: false)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        (Text("-") + Text(timerInterval: entry.date...entry.date.addingTimeInterval(remainingWall),
-                                          pauseTime: pauseAt, countsDown: true))
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    } else if entry.isPlaying {
-                        // Position advances at playback speed, which a system
-                        // timer can't tick at - so elapsed is static and the
-                        // 15s projection entries keep it fresh. The countdown
-                        // is wall-clock, so it can stay live and exact.
-                        Text(formatClock(elapsed))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        (Text("-") + Text(timerInterval: entry.date...entry.date.addingTimeInterval(remainingWall),
+                        (Text("-") + Text(timerInterval: entry.date...entry.date.addingTimeInterval(remainingShown),
                                           pauseTime: pauseAt, countsDown: true))
                             .multilineTextAlignment(.trailing)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     } else {
-                        Text(formatClock(elapsed))
-                        Spacer()
-                        Text("-" + formatClock(remainingWall))
+                        Text(formatClock(elapsedShown))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text("-" + formatClock(remainingShown))
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }
                 .font(.caption2)

@@ -594,7 +594,16 @@ class HomeWidgetService {
     final posSec = player.position.inMilliseconds / 1000.0;
     await HomeWidget.saveWidgetData<double>('np_position_s', posSec);
     await HomeWidget.saveWidgetData<double>('np_total_s', player.totalDuration);
+    // The metadata total the in-app cards display - can differ from the
+    // session total above by minutes, and the widget must show the same
+    // numbers as the app.
+    await HomeWidget.saveWidgetData<double>(
+        'np_display_total_s', player.displayDuration);
     await HomeWidget.saveWidgetData<double>('np_speed', player.speed);
+    // The iOS cover art widget divides its remaining time by the speed only
+    // when the in-app player does, so the two always show the same number.
+    await HomeWidget.saveWidgetData<bool>(
+        'np_speed_adjusted', await PlayerSettings.getSpeedAdjustedTime());
 
     // Chapters serialize as a JSON array of {start, end, title} maps. The
     // native side decodes lazily; if decoding fails we fall back to no

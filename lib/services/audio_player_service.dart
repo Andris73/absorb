@@ -1105,6 +1105,12 @@ class AudioPlayerService extends ChangeNotifier {
   String? _currentAuthor;
   String? _currentCoverUrl;
   double _totalDuration = 0;
+  // The item's metadata duration as passed to playItem. _totalDuration gets
+  // replaced by the playback session's track-sum once a stream opens, and the
+  // two can disagree by minutes when the server's metadata is off - but the
+  // in-app cards display the metadata number, so time surfaces that need to
+  // match them (the iOS widget) read this instead.
+  double _metaDuration = 0;
   List<dynamic> _chapters = [];
   ApiService? _api;
   ApiService? get currentApi => _api;
@@ -1322,6 +1328,7 @@ class AudioPlayerService extends ChangeNotifier {
   String? get currentAuthor => _currentAuthor;
   String? get currentCoverUrl => _currentCoverUrl;
   double get totalDuration => _totalDuration;
+  double get displayDuration => _metaDuration > 0 ? _metaDuration : _totalDuration;
   List<dynamic> get chapters => _chapters;
 
   /// GH #298: how every "now playing" surface (lock screen, CarPlay, Android
@@ -1576,6 +1583,7 @@ class AudioPlayerService extends ChangeNotifier {
     _currentAuthor = next['author'] as String?;
     _currentCoverUrl = next['coverUrl'] as String?;
     _totalDuration = (next['duration'] as num?)?.toDouble() ?? 0;
+    _metaDuration = _totalDuration;
     _chapters = (next['chapters'] as List<dynamic>?) ?? [];
     _handler?.updateChaptersQueue(_chapters);
     _trackStartOffsets = [0.0, _totalDuration];
@@ -2447,6 +2455,7 @@ class AudioPlayerService extends ChangeNotifier {
     _currentAuthor = author;
     _currentCoverUrl = coverUrl;
     _totalDuration = totalDuration;
+    _metaDuration = totalDuration;
     _chapters = chapters;
     _shortLocalDurationSec = null; // re-evaluated per source in _playFromLocal
     _handler?.updateChaptersQueue(chapters);
