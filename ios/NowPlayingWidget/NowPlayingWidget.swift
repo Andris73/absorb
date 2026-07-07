@@ -91,11 +91,11 @@ struct NowPlayingProvider: TimelineProvider {
 
         // Playing: pre-schedule projected entries so the progress bar and the
         // large widget's time baselines advance on their own, at playback
-        // speed, without the app running. The live timer labels tick at 1x
-        // wall speed between entries, so when speed isn't 1.0 the step
-        // shrinks to re-snap them before they drift more than ~5 seconds.
+        // speed, without the app running. At 1.0x the labels are live system
+        // timers between entries; at other speeds the elapsed label is static
+        // per entry, so the step shrinks to keep it updating.
         let drift = abs(base.speed - 1.0)
-        let stepS: TimeInterval = drift > 0.01 ? max(10, 5.0 / drift) : 60
+        let stepS: TimeInterval = drift > 0.01 ? 15 : 60
         let baseElapsed = base.progress * base.totalS
         var entries: [NowPlayingEntry] = []
         var t: TimeInterval = 0
@@ -119,7 +119,13 @@ struct NowPlayingProvider: TimelineProvider {
         let hasBook = d?.bool(forKey: "widget_has_book") ?? false
         let title = d?.string(forKey: "widget_title") ?? ""
         let author = d?.string(forKey: "widget_author") ?? ""
-        let isPlaying = d?.bool(forKey: "widget_is_playing") ?? false
+        // A stored "playing" can outlive reality (app killed mid-play,
+        // overnight jetsam) and used to leave the widget's live timers
+        // free-running for hours. Trust it only while the owning process's
+        // Flutter heartbeat is fresh - it goes stale within about 30 seconds
+        // of playback actually stopping.
+        let storedPlaying = d?.bool(forKey: "widget_is_playing") ?? false
+        let isPlaying = storedPlaying && absorbFlutterAlive(pid: absorbAudioOwnerPid())
         let progress = Double(d?.integer(forKey: "widget_progress") ?? 0) / 1000.0
         let totalS = d?.double(forKey: "np_total_s") ?? 0
         let rawSpeed = d?.double(forKey: "np_speed") ?? 1.0
@@ -549,27 +555,45 @@ private struct ArtLargeView: View {
             ArtProgressBar(progress: entry.progress)
                 .padding(.top, 8)
             if entry.totalS > 0 {
+                // Remaining is wall-clock at the current speed, matching the
+                // in-app player (-14:32 at 1.5x, not the raw -21:48). That
+                // also makes the live countdown exact at any speed, since it
+                // shrinks at one real second per second.
+                let remainingWall = max(0, (entry.totalS - elapsed) / entry.speed)
+                // Live timers tick as long as iOS keeps showing an entry -
+                // even if playback died hours ago and no refresh ever came.
+                // Freeze them two projection steps past their entry; in
+                // normal operation the next entry re-baselines well before
+                // that, so this only bites when refreshes stop.
+                let liveStep: TimeInterval = abs(entry.speed - 1.0) > 0.01 ? 15 : 60
+                let pauseAt = entry.date.addingTimeInterval(liveStep * 2)
                 HStack {
-                    if entry.isPlaying {
-                        // Live per-second labels - iOS renders these timers
-                        // without waking the app. They tick at 1x wall speed;
-                        // the timeline's projected entries re-baseline them so
-                        // other playback speeds can't drift visibly.
-                        //
+                    if entry.isPlaying, abs(entry.speed - 1.0) <= 0.01 {
                         // Timer text reserves an oversized box and left-aligns
                         // its digits inside it, so the countdown needs explicit
                         // trailing alignment or it drifts toward the center.
                         Text(timerInterval: entry.date.addingTimeInterval(-elapsed)...entry.date.addingTimeInterval(entry.totalS - elapsed),
-                             countsDown: false)
+                             pauseTime: pauseAt, countsDown: false)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        (Text("-") + Text(timerInterval: entry.date...entry.date.addingTimeInterval(entry.totalS - elapsed),
-                                          countsDown: true))
+                        (Text("-") + Text(timerInterval: entry.date...entry.date.addingTimeInterval(remainingWall),
+                                          pauseTime: pauseAt, countsDown: true))
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    } else if entry.isPlaying {
+                        // Position advances at playback speed, which a system
+                        // timer can't tick at - so elapsed is static and the
+                        // 15s projection entries keep it fresh. The countdown
+                        // is wall-clock, so it can stay live and exact.
+                        Text(formatClock(elapsed))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        (Text("-") + Text(timerInterval: entry.date...entry.date.addingTimeInterval(remainingWall),
+                                          pauseTime: pauseAt, countsDown: true))
                             .multilineTextAlignment(.trailing)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     } else {
                         Text(formatClock(elapsed))
                         Spacer()
-                        Text("-" + formatClock(entry.totalS - elapsed))
+                        Text("-" + formatClock(remainingWall))
                     }
                 }
                 .font(.caption2)
