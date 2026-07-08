@@ -555,6 +555,11 @@ class _AuthGateState extends State<AuthGate> {
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
     classicWordingNotifier.value = await PlayerSettings.getClassicWording();
     PlayerSettings.showExplicitBadge = await PlayerSettings.getShowExplicitBadge();
+    // Rotation lock: main() applied it before scope was active, so that pass
+    // read the never-written unscoped key and always came up unlocked.
+    try {
+      await applyOrientationLock();
+    } catch (_) {}
     // Restore cover seed color
     {
       final seedInt = await PlayerSettings.getCoverSeedColor();
