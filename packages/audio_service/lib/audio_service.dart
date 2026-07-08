@@ -1129,7 +1129,16 @@ class AudioService {
       try {
         await _platform
             .setState(SetStateRequest(state: playbackState._toMessage()));
-        if (playbackState.processingState == AudioProcessingState.idle &&
+        // Absorb patch: on Android, never auto-stop the service when the
+        // state goes idle. just_audio emits idle from player.stop() during
+        // episode auto-advance, and this stopService call deactivated the
+        // MediaSession (Android 16 never re-routes media buttons to a
+        // reactivated session) or destroyed the service outright when the
+        // activity was unbound, leaving lock screen / notification / headset
+        // controls dead. The app's AudioHandler.stop() override deliberately
+        // keeps the session alive; this framework auto-stop bypassed it.
+        if (defaultTargetPlatform != TargetPlatform.android &&
+            playbackState.processingState == AudioProcessingState.idle &&
             previousState?.processingState != AudioProcessingState.idle) {
           await AudioService._stop();
         }

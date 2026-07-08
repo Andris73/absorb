@@ -148,6 +148,17 @@ public class AudioServicePlugin implements FlutterPlugin, ActivityAware {
         return audioHandlerInterface;
     }
 
+    // Absorb patch: re-register the handler as the service listener after the
+    // service is recreated. AudioService.onDestroy nulls the static listener,
+    // and nothing upstream ever sets it again (init only runs on engine
+    // attach), so a recreated service silently dropped every media button
+    // event in MediaSessionCallback while audio kept playing in-process.
+    static void restoreServiceListener() {
+        if (audioHandlerInterface != null) {
+            AudioService.init(audioHandlerInterface);
+        }
+    }
+
     private static MediaBrowserCompat mediaBrowser;
     private static MediaControllerCompat mediaController;
     private static final MediaControllerCompat.Callback controllerCallback = new MediaControllerCompat.Callback() {
@@ -929,22 +940,27 @@ public class AudioServicePlugin implements FlutterPlugin, ActivityAware {
                         for (int i = 0; i < compactActionIndices.length; i++)
                             compactActionIndices[i] = (Integer)compactActionIndexList.get(i);
                     }
-                    AudioService.instance.setState(
-                            actions,
-                            actionBits,
-                            compactActionIndices,
-                            processingState,
-                            playing,
-                            position,
-                            bufferedPosition,
-                            speed,
-                            updateTimeSinceBoot,
-                            errorCode,
-                            errorMessage,
-                            repeatMode,
-                            shuffleMode,
-                            captioningEnabled,
-                            queueIndex);
+                    // Absorb patch: null-guard so a state push after the
+                    // service was destroyed doesn't NPE into the channel's
+                    // error handler.
+                    if (AudioService.instance != null) {
+                        AudioService.instance.setState(
+                                actions,
+                                actionBits,
+                                compactActionIndices,
+                                processingState,
+                                playing,
+                                position,
+                                bufferedPosition,
+                                speed,
+                                updateTimeSinceBoot,
+                                errorCode,
+                                errorMessage,
+                                repeatMode,
+                                shuffleMode,
+                                captioningEnabled,
+                                queueIndex);
+                    }
                     result.success(null);
                     break;
                 }

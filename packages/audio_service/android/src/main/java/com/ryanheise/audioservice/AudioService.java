@@ -305,6 +305,13 @@ public class AudioService extends MediaBrowserServiceCompat {
     public void onCreate() {
         super.onCreate();
         instance = this;
+        // Absorb patch: if this is a recreated service (a previous instance's
+        // onDestroy nulled the listener), re-register the existing handler so
+        // media buttons keep routing to Dart instead of being dropped in
+        // MediaSessionCallback.
+        if (listener == null) {
+            AudioServicePlugin.restoreServiceListener();
+        }
         repeatMode = 0;
         shuffleMode = 0;
         notificationCreated = false;
