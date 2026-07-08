@@ -39,6 +39,14 @@ class NowPlayingWidget : AppWidgetProvider() {
         }
     }
 
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        WidgetClock.syncTicker(context)
+    }
+
+    override fun onDisabled(context: Context) {
+        WidgetClock.syncTicker(context)
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == ACTION_TOGGLE_PLAYBACK) {
             // Optimistic UI: flip the icon immediately, then send the real media button.
@@ -144,8 +152,28 @@ class NowPlayingWidget : AppWidgetProvider() {
                 } else {
                     views.setViewVisibility(R.id.widget_chapter, View.GONE)
                 }
-                views.setProgressBar(R.id.widget_progress, 1000, progress, false)
-                views.setViewVisibility(R.id.widget_progress, View.VISIBLE)
+
+                // Squiggle bar + elapsed/remaining clocks; the WidgetClock
+                // ticker keeps them live while playing.
+                val times = WidgetClock.computeTimes(widgetData)
+                val fraction = times?.fraction ?: (progress / 1000f)
+                val density = context.resources.displayMetrics.density
+                val widthDp = appWidgetManager.getAppWidgetOptions(appWidgetId)
+                    .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 250)
+                views.setImageViewBitmap(
+                    R.id.widget_progress,
+                    WidgetClock.drawProgressBar(WidgetClock.bigBarWidthPx(widthDp, density), (12 * density).toInt(), fraction, isPlaying, density)
+                )
+                if (times != null) {
+                    views.setTextViewText(R.id.widget_time_elapsed, WidgetClock.fmtTime(times.elapsedMs))
+                    views.setTextViewText(R.id.widget_time_remaining, "-" + WidgetClock.fmtTime(times.remainingMs))
+                    views.setViewVisibility(R.id.widget_time_elapsed, View.VISIBLE)
+                    views.setViewVisibility(R.id.widget_time_remaining, View.VISIBLE)
+                } else {
+                    views.setViewVisibility(R.id.widget_time_elapsed, View.GONE)
+                    views.setViewVisibility(R.id.widget_time_remaining, View.GONE)
+                }
+                views.setViewVisibility(R.id.widget_progress_row, View.VISIBLE)
                 views.setViewVisibility(R.id.widget_controls, View.VISIBLE)
 
                 if (isPlaying) {
@@ -182,8 +210,7 @@ class NowPlayingWidget : AppWidgetProvider() {
                 // Idle state
                 views.setTextViewText(R.id.widget_title, "Absorb")
                 views.setTextViewText(R.id.widget_author, "Not playing")
-                views.setProgressBar(R.id.widget_progress, 1000, 0, false)
-                views.setViewVisibility(R.id.widget_progress, View.INVISIBLE)
+                views.setViewVisibility(R.id.widget_progress_row, View.INVISIBLE)
                 views.setViewVisibility(R.id.widget_controls, View.GONE)
                 views.setViewVisibility(R.id.widget_chapter, View.GONE)
                 views.setImageViewResource(R.id.widget_cover, R.mipmap.ic_launcher)
@@ -228,6 +255,7 @@ class NowPlayingWidget : AppWidgetProvider() {
                 mediaButtonPendingIntent(context, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, 3)
             )
             appWidgetManager.updateAppWidget(appWidgetId, views)
+            WidgetClock.syncTicker(context)
         }
     }
 }

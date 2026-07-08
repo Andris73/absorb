@@ -65,6 +65,18 @@
                 android:maxLines="1"
                 android:ellipsize="end" />
 
+            <!-- Thin squiggle progress strip (bitmap from WidgetClock) -->
+            <ImageView
+                android:id="@+id/widget_progress"
+                android:layout_width="match_parent"
+                android:layout_height="8dp"
+                android:layout_marginStart="10dp"
+                android:layout_marginEnd="10dp"
+                android:layout_marginTop="2dp"
+                android:scaleType="fitXY"
+                android:contentDescription="Progress"
+                android:visibility="gone" />
+
             <!-- Equal spacers above and below controls to center them -->
             <FrameLayout
                 android:layout_width="match_parent"
@@ -81,6 +93,16 @@
                 android:paddingStart="4dp"
                 android:paddingEnd="4dp"
                 android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/widget_time_elapsed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="8dp"
+                    android:textColor="#99FFFFFF"
+                    android:textSize="9sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:visibility="gone" />
 
                 <FrameLayout
                     android:id="@+id/widget_skip_back"
@@ -143,6 +165,16 @@
                         android:textStyle="bold"
                         android:fontFamily="sans-serif-medium" />
                 </FrameLayout>
+
+                <TextView
+                    android:id="@+id/widget_time_remaining"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingEnd="8dp"
+                    android:textColor="#99FFFFFF"
+                    android:textSize="9sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:visibility="gone" />
 
             </LinearLayout>
 

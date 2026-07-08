@@ -160,7 +160,9 @@
 
         </LinearLayout>
 
-        <!-- Wrapper fills the gap; ProgressBar is centered inside at 2dp thin -->
+        <!-- Wrapper fills the gap; progress row (elapsed / squiggle bar /
+             remaining) is centered inside. The bar is drawn as a bitmap by
+             WidgetClock: a static wave while playing, flat when paused. -->
         <FrameLayout
             android:id="@+id/widget_progress_wrapper"
             android:layout_width="match_parent"
@@ -169,18 +171,46 @@
             android:layout_below="@id/widget_chapter"
             android:layout_above="@id/widget_controls">
 
-            <ProgressBar
-                android:id="@+id/widget_progress"
-                style="@android:style/Widget.ProgressBar.Horizontal"
+            <LinearLayout
+                android:id="@+id/widget_progress_row"
                 android:layout_width="match_parent"
-                android:layout_height="2dp"
+                android:layout_height="wrap_content"
                 android:layout_gravity="center"
-                android:layout_marginStart="12dp"
-                android:layout_marginEnd="12dp"
-                android:max="1000"
-                android:progress="0"
-                android:progressDrawable="@drawable/widget_progress_bar"
-                android:visibility="invisible" />
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:visibility="invisible">
+
+                <TextView
+                    android:id="@+id/widget_time_elapsed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:textColor="#99FFFFFF"
+                    android:textSize="9sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:visibility="gone" />
+
+                <ImageView
+                    android:id="@+id/widget_progress"
+                    android:layout_width="0dp"
+                    android:layout_height="12dp"
+                    android:layout_weight="1"
+                    android:scaleType="fitXY"
+                    android:contentDescription="Progress" />
+
+                <TextView
+                    android:id="@+id/widget_time_remaining"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:textColor="#99FFFFFF"
+                    android:textSize="9sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:visibility="gone" />
+
+            </LinearLayout>
 
         </FrameLayout>
 
