@@ -679,16 +679,25 @@ class DownloadService extends ChangeNotifier {
         }
         if (allTerminal) {
           debugPrint('[Download] Reconciler failing stalled $itemId');
-          p.finalizing = true;
+          // Don't pre-set p.finalizing: _failBook bails when it's already
+          // true, which turned this whole cleanup into a no-op AND made the
+          // zombie immortal (reconciler and cancel both skip finalizing
+          // items, and the pending entry stays persisted across restarts).
           await _failBook(itemId, cause: 'Interrupted download');
           continue;
         }
       }
-      // No progress and no updates for a while: a dead/zombie slot. Fail it.
-      if (p.overallProgress == 0 &&
-          DateTime.now().difference(p.lastUpdate) > const Duration(minutes: 3)) {
-        debugPrint('[Download] Reconciler failing stale $itemId (no progress)');
-        p.finalizing = true;
+      // No updates for a while: a dead/zombie slot. Zero-progress books get a
+      // short leash; ones with partial progress get a longer one - they can be
+      // zombies too (rehydrated from DB records whose WorkManager jobs are
+      // gone, so they hold a slot with e.g. 40% forever). A healthy transfer
+      // emits updates constantly, so real downloads never sit silent this long
+      // while the app is running.
+      final silence = DateTime.now().difference(p.lastUpdate);
+      if ((p.overallProgress == 0 && silence > const Duration(minutes: 3)) ||
+          silence > const Duration(minutes: 10)) {
+        debugPrint('[Download] Reconciler failing stale $itemId '
+            '(progress=${p.overallProgress}, silent ${silence.inMinutes}m)');
         await _failBook(itemId, cause: 'Interrupted download');
       }
     }
@@ -1224,6 +1233,9 @@ class DownloadService extends ChangeNotifier {
 
     // If at capacity, queue this one
     if (_activeDownloadIds.length >= maxConcurrent) {
+      // Re-check: the dupe guards at the top ran before the awaits above, so
+      // two concurrent callers for the same item can both get here.
+      if (_queue.any((q) => q.itemId == itemId)) return null;
       debugPrint('[Download] Queued "$title" ($itemId); slots ${_activeDownloadIds.length}/$maxConcurrent full, ${_queue.length} waiting');
       _queue.add(_QueuedDownload(
         api: api,
@@ -2073,12 +2085,12 @@ class DownloadService extends ChangeNotifier {
         p.finalizing = true;
         await _finalizeSuccess(itemId);
       } else if (allTerminal) {
-        p.finalizing = true;
+        // No p.finalizing pre-set here or below: _failBook refuses to run
+        // when it's already true (see the reconciler note).
         await _failBook(itemId, cause: 'Interrupted download');
       } else if ((tracked[itemId]?.isEmpty ?? true)) {
         // The package has no record of these tasks (DB wiped) and we can't
         // rebuild durable URLs here, so surface as failed for a manual retry.
-        p.finalizing = true;
         await _failBook(itemId, cause: 'Interrupted download');
       } else {
         // Still in flight: leave it; updates + resumeFromBackground finish it.
