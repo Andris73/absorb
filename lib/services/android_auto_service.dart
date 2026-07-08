@@ -490,6 +490,7 @@ class AndroidAutoService {
         currentTime: localPos > 0 ? localPos : null,
         episodeId: episodeId,
         showId: showId,
+        libraryId: dl.libraryId,
       ));
       debugPrint('[AutoBrowse] Download entry: ${dl.title} cover=$coverUrl');
     }
@@ -820,6 +821,7 @@ class AndroidAutoService {
       duration: duration,
       coverUrl: localCoverUri(id),
       chapters: chapters,
+      libraryId: item['libraryId'] as String?,
     );
   }
 
@@ -1590,6 +1592,7 @@ class AndroidAutoService {
           chapters: ep['chapters'] as List<dynamic>? ?? [],
           episodeId: epId,
           showId: showId,
+          libraryId: fullItem['libraryId'] as String? ?? libraryId,
         ));
       }
       return entries;
