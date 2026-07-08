@@ -156,6 +156,23 @@ class UserAccountService {
     }
   }
 
+  /// Persist tokens refreshed outside the live session (background isolates,
+  /// widget cold paths). The server rotates refresh tokens - each one is
+  /// single-use - so a refresh whose result is only kept in memory strands
+  /// the on-disk session with an expired access token and a consumed refresh
+  /// token, and the next app launch can't sign in.
+  Future<void> persistRefreshedTokens(String accessToken, String? refreshToken) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('token', accessToken);
+    if (refreshToken != null) await prefs.setString('refresh_token', refreshToken);
+    final serverUrl = prefs.getString('server_url');
+    final username = prefs.getString('username');
+    if (serverUrl != null && username != null) {
+      if (_accounts.isEmpty) await init();
+      await updateTokens(serverUrl, username, accessToken, refreshToken: refreshToken);
+    }
+  }
+
   /// Change the server URL of a saved account (e.g. a dynamic-DNS hostname
   /// changed) WITHOUT losing the account's per-user data. The scopeKey is
   /// derived from the URL, so every scoped SharedPreferences key is migrated

@@ -13,6 +13,7 @@ import 'audio_player_service.dart';
 import 'api_service.dart';
 import 'download_service.dart';
 import 'scoped_prefs.dart';
+import 'user_account_service.dart';
 import 'wear_player_service.dart';
 
 const String _androidWidgetName = 'NowPlayingWidget';
@@ -830,6 +831,8 @@ class HomeWidgetService {
       refreshToken: refreshToken,
       isLegacyToken: refreshToken == null,
       customHeaders: headers,
+      onTokensRefreshed: (access, refresh) =>
+          UserAccountService().persistRefreshedTokens(access, refresh),
     );
   }
 
