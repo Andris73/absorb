@@ -9,6 +9,7 @@ import '../providers/library_provider.dart';
 import '../services/api_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/ebook_cache.dart';
+import '../services/progress_sync_service.dart';
 import '../services/foliate_book_server.dart';
 import '../services/volume_key_service.dart';
 
@@ -49,7 +50,7 @@ class FoliateReaderView extends StatefulWidget {
   State<FoliateReaderView> createState() => _FoliateReaderViewState();
 }
 
-class _FoliateReaderViewState extends State<FoliateReaderView> {
+class _FoliateReaderViewState extends State<FoliateReaderView> with WidgetsBindingObserver {
   final _server = FoliateBookServer();
   InAppWebViewController? _controller;
   ApiService? _api;
@@ -84,12 +85,19 @@ class _FoliateReaderViewState extends State<FoliateReaderView> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _setFullscreen(true);
     _api = context.read<AuthProvider>().apiService;
     _lib = context.read<LibraryProvider>();
     _loadInitialCfi();
     _prepare();
     _volumeNav.attach();
+  }
+
+  // Flush on background so an OS kill can't lose the last pages read.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) _flushProgress();
   }
 
   late final EreaderVolumeNav _volumeNav = EreaderVolumeNav(
@@ -99,6 +107,7 @@ class _FoliateReaderViewState extends State<FoliateReaderView> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _volumeNav.detach();
     _setFullscreen(false);
     _flushProgress();
@@ -128,12 +137,7 @@ class _FoliateReaderViewState extends State<FoliateReaderView> {
     if (p != null) _progress = p.clamp(0.0, 1.0);
   }
 
-  String get _ext {
-    final name = (widget.ebookFile['metadata'] as Map<String, dynamic>?)?['filename'] as String?
-        ?? widget.ebookFile['name'] as String?
-        ?? '';
-    return name.contains('.') ? name.substring(name.lastIndexOf('.')).toLowerCase() : '';
-  }
+  String get _ext => ebookExtFromFile(widget.ebookFile);
 
   String _mimeFor(String ext) {
     switch (ext) {
@@ -264,7 +268,7 @@ class _FoliateReaderViewState extends State<FoliateReaderView> {
     final api = _api;
     final cfi = _cfi;
     if (api == null || cfi == null || cfi == _lastSyncedCfi) return;
-    api.updateEbookProgress(widget.itemId, ebookLocation: cfi, ebookProgress: _progress);
+    ProgressSyncService().pushEbookProgress(api, widget.itemId, location: cfi, progress: _progress);
     _lib?.applyLocalEbookProgress(widget.itemId, location: cfi, progress: _progress);
     _lastSync = DateTime.now();
     _lastSyncedCfi = cfi;

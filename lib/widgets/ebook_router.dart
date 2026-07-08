@@ -1,20 +1,18 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../services/ebook_cache.dart';
 import 'ebook_reader_view.dart';
 import 'pdf_reader_view.dart';
 import 'foliate_reader_view.dart';
 import 'overlay_toast.dart';
 
-/// Lower-cased ebook format for an ABS ebookFile - prefers the explicit
-/// `ebookFormat` field, falls back to the filename extension.
+/// Lower-cased ebook format (no dot) for an ABS ebookFile. Shares the cache's
+/// format-first derivation so the router, cache and readers can never disagree
+/// on what a file is.
 String ebookExt(Map<String, dynamic>? ebookFile) {
   if (ebookFile == null) return '';
-  final fmt = (ebookFile['ebookFormat'] as String?)?.toLowerCase();
-  if (fmt != null && fmt.isNotEmpty) return fmt;
-  final fn = (ebookFile['metadata'] as Map<String, dynamic>?)?['filename'] as String?
-      ?? ebookFile['name'] as String?;
-  if (fn == null || !fn.contains('.')) return '';
-  return fn.substring(fn.lastIndexOf('.') + 1).toLowerCase();
+  final ext = ebookExtFromFile(ebookFile);
+  return ext.startsWith('.') ? ext.substring(1) : ext;
 }
 
 /// Formats the in-app reader can open. EPUB uses the full reader, PDF the

@@ -82,12 +82,8 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   Map<String, dynamic>? get _ebookFile =>
       (_media['ebookFile'] as Map<String, dynamic>?) ?? _fetchedEbookFile;
   String? get _ebookExt {
-    final ebookFile = _ebookFile;
-    if (ebookFile == null) return null;
-    final fn = (ebookFile['metadata'] as Map<String, dynamic>?)?['filename'] as String?
-        ?? ebookFile['name'] as String?;
-    if (fn == null || !fn.contains('.')) return null;
-    return fn.substring(fn.lastIndexOf('.') + 1).toLowerCase();
+    final ext = ebookExt(_ebookFile);
+    return ext.isEmpty ? null : ext;
   }
   List<dynamic> get _chapters {
     // Prefer fetched chapters (from full item or episode), fall back to inline data

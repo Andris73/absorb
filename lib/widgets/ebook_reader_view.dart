@@ -12,6 +12,7 @@ import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/ebook_annotation_service.dart';
 import '../services/ebook_cache.dart';
+import '../services/progress_sync_service.dart';
 import '../services/reader_font_service.dart';
 import '../services/scoped_prefs.dart';
 import '../services/volume_key_service.dart';
@@ -111,6 +112,11 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   // per mount, or it re-triggers itself into an endless display->displayed loop
   // that freezes page-turn taps. Reset whenever the viewer remounts.
   bool _didLoadRescue = false;
+  // Same event, same reason: the handler/highlight/font wiring must run once
+  // per mount, not on every chapter crossing - unguarded it stacked a new JS
+  // relocated-listener, re-registered every highlight and re-shipped the
+  // ~100KB font payload each time a chapter boundary was crossed.
+  bool _didInitViewer = false;
 
   // Reader settings
   int _fontSize = 16;
@@ -159,7 +165,11 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     WidgetsBinding.instance.addObserver(this);
     _epubController = EpubController();
     _loadInitialLocation();
-    _loadSettings().then((_) => _downloadAndOpen());
+    // A settings read failure must not stop the book from opening - fall back
+    // to the field defaults and open anyway.
+    _loadSettings()
+        .catchError((e) => debugPrint('[EbookReader] settings load failed: $e'))
+        .whenComplete(_downloadAndOpen);
     // Fullscreen is toggled once the open transition completes (see _onRouteAnim
     // / didChangeDependencies), not here: hiding the system bars mid-transition
     // forces a full relayout while the busy home screen is still compositing
@@ -369,6 +379,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       _locationsReady = false;
       _viewerKey++; // force the viewer to remount with the new spread
       _didLoadRescue = false; // let the remounted viewer rescue its first paint
+      _didInitViewer = false; // fresh JS context needs its wiring again
     });
     await ScopedPrefs.setInt(_kSpread, index);
   }
@@ -607,10 +618,11 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) return;
-    api.updateEbookProgress(
+    ProgressSyncService().pushEbookProgress(
+      api,
       widget.itemId,
-      ebookLocation: cfi,
-      ebookProgress: progress,
+      location: cfi,
+      progress: progress,
     );
     context.read<LibraryProvider>().applyLocalEbookProgress(
       widget.itemId, location: cfi, progress: progress);
@@ -1957,11 +1969,14 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                   debugPrint('[EbookReader] onEpubLoaded item=${widget.itemId} '
                       'rescue=${once != null && once.isNotEmpty ? "cfi" : "start"}');
                 }
-                _loadAnnotations().then((_) => _restoreHighlights());
-                _setupPageInfoHandler();
-                _setupTapHandler();
-                _setupFontInjector();
-                _applyFontFace();
+                if (!_didInitViewer) {
+                  _didInitViewer = true;
+                  _loadAnnotations().then((_) => _restoreHighlights());
+                  _setupPageInfoHandler();
+                  _setupTapHandler();
+                  _setupFontInjector();
+                  _applyFontFace();
+                }
               },
               onRelocated: (value) {
                 if (!mounted) return;

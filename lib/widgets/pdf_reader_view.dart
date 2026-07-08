@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/api_service.dart';
 import '../services/ebook_cache.dart';
+import '../services/progress_sync_service.dart';
 import '../services/volume_key_service.dart';
 
 /// Full-screen PDF reader. PDFs are fixed-layout, so this is deliberately
@@ -30,7 +31,7 @@ class PdfReaderView extends StatefulWidget {
   State<PdfReaderView> createState() => _PdfReaderViewState();
 }
 
-class _PdfReaderViewState extends State<PdfReaderView> {
+class _PdfReaderViewState extends State<PdfReaderView> with WidgetsBindingObserver {
   final _controller = PdfViewerController();
   ApiService? _api;
   LibraryProvider? _lib;
@@ -52,12 +53,19 @@ class _PdfReaderViewState extends State<PdfReaderView> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _setFullscreen(true);
     _api = context.read<AuthProvider>().apiService;
     _lib = context.read<LibraryProvider>();
     _loadInitialPage();
     _open();
     _volumeNav.attach();
+  }
+
+  // Flush on background so an OS kill can't lose the last pages read.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) _flushProgress();
   }
 
   late final EreaderVolumeNav _volumeNav = EreaderVolumeNav(
@@ -73,6 +81,7 @@ class _PdfReaderViewState extends State<PdfReaderView> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _volumeNav.detach();
     _setFullscreen(false);
     _flushProgress();
@@ -126,7 +135,7 @@ class _PdfReaderViewState extends State<PdfReaderView> {
     final api = _api;
     if (page == null || api == null || _pageCount <= 0 || page == _lastSyncedPage) return;
     final frac = (page / _pageCount).clamp(0.0, 1.0);
-    api.updateEbookProgress(widget.itemId, ebookLocation: '$page', ebookProgress: frac);
+    ProgressSyncService().pushEbookProgress(api, widget.itemId, location: '$page', progress: frac);
     _lib?.applyLocalEbookProgress(widget.itemId, location: '$page', progress: frac);
     _lastSync = DateTime.now();
     _lastSyncedPage = page;

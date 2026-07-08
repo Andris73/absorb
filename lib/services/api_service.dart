@@ -1097,9 +1097,10 @@ class ApiService {
     }
   }
 
-  /// Update ebook reading progress on the server.
+  /// Update ebook reading progress on the server. Returns whether the PATCH
+  /// landed, so the caller can queue the position for a later retry.
   /// PATCH /api/me/progress/:id
-  Future<void> updateEbookProgress(
+  Future<bool> updateEbookProgress(
     String itemId, {
     required String ebookLocation,
     required double ebookProgress,
@@ -1124,8 +1125,10 @@ class ApiService {
         body: body,
       ).timeout(const Duration(seconds: 10));
       debugPrint('[API] updateEbookProgress response: ${resp.statusCode} ${resp.body}');
+      return resp.statusCode >= 200 && resp.statusCode < 300;
     } catch (e) {
       debugPrint('[API] updateEbookProgress error: $e');
+      return false;
     }
   }
 

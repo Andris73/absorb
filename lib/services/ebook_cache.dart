@@ -5,11 +5,16 @@ import 'package:path_provider/path_provider.dart';
 import 'api_service.dart';
 
 /// File extension (with leading dot) for an ABS ebookFile, or '' if unknown.
+/// Prefers the explicit `ebookFormat` field over the filename extension so a
+/// mis-named file can't be treated as the wrong format downstream (foliate-js
+/// tells CBZ and EPUB apart purely by the served filename).
 String ebookExtFromFile(Map<String, dynamic> ebookFile) {
+  final fmt = (ebookFile['ebookFormat'] as String?)?.toLowerCase();
+  if (fmt != null && fmt.isNotEmpty) return '.$fmt';
   final name = (ebookFile['metadata'] as Map<String, dynamic>?)?['filename'] as String?
       ?? ebookFile['name'] as String?
       ?? '';
-  return name.contains('.') ? name.substring(name.lastIndexOf('.')) : '';
+  return name.contains('.') ? name.substring(name.lastIndexOf('.')).toLowerCase() : '';
 }
 
 Future<Directory> _ebookCacheDir() async {

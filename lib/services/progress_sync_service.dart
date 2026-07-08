@@ -319,9 +319,11 @@ class ProgressSyncService {
           }
         }
       }
-      // Also flush offline listening time while we have a connection
+      // Also flush offline listening time and queued ebook positions while
+      // we have a connection
       if (_consecutiveFailures == 0) {
         await _flushOfflineListeningTimeInternal(api: api);
+        await _flushPendingEbookProgress(api);
       }
     } finally {
       _isFlushing = false;
@@ -329,7 +331,8 @@ class ProgressSyncService {
 
     final remaining = await ScopedPrefs.getStringList('pending_syncs');
     final pendingOffline = await ScopedPrefs.getStringList('pending_offline_listening');
-    if ((_flushAgain || remaining.isNotEmpty || pendingOffline.isNotEmpty) && _isOnline) {
+    final pendingEbook = await getPendingEbookProgress();
+    if ((_flushAgain || remaining.isNotEmpty || pendingOffline.isNotEmpty || pendingEbook.isNotEmpty) && _isOnline) {
       _flushAgain = false;
 
       // Exponential backoff: 5s, 10s, 20s, 40s, ... capped at 5 minutes
@@ -347,6 +350,77 @@ class ProgressSyncService {
       );
     } else {
       _flushAgain = false;
+    }
+  }
+
+  // ── Ebook reading progress (durable offline queue) ──
+
+  /// Push an ebook position to the server. A failed PATCH is persisted
+  /// (newest position per item) and retried by flushPendingSync when
+  /// connectivity returns, so pages read offline survive an app restart.
+  Future<void> pushEbookProgress(
+    ApiService api,
+    String itemId, {
+    required String location,
+    required double progress,
+  }) async {
+    final ok = _isOnline &&
+        await api.updateEbookProgress(itemId,
+            ebookLocation: location, ebookProgress: progress);
+    if (ok) {
+      await _removePendingEbook(itemId);
+      return;
+    }
+    final pending = await getPendingEbookProgress();
+    pending[itemId] = {
+      'loc': location,
+      'prog': progress,
+      'ts': DateTime.now().millisecondsSinceEpoch,
+    };
+    await ScopedPrefs.setString('pending_ebook_progress', jsonEncode(pending));
+    debugPrint('[Sync] Queued ebook progress for $itemId (offline or PATCH failed)');
+  }
+
+  /// Queued ebook positions whose PATCH hasn't landed yet
+  /// (itemId -> {loc, prog, ts}).
+  Future<Map<String, Map<String, dynamic>>> getPendingEbookProgress() async {
+    final raw = await ScopedPrefs.getString('pending_ebook_progress');
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      return map.map((k, v) => MapEntry(k, Map<String, dynamic>.from(v as Map)));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> _removePendingEbook(String itemId) async {
+    final pending = await getPendingEbookProgress();
+    if (pending.remove(itemId) == null) return;
+    await ScopedPrefs.setString('pending_ebook_progress', jsonEncode(pending));
+  }
+
+  Future<void> _flushPendingEbookProgress(ApiService api) async {
+    final pending = await getPendingEbookProgress();
+    if (pending.isEmpty) return;
+    debugPrint('[Sync] Flushing ${pending.length} pending ebook positions');
+    for (final entry in pending.entries) {
+      final loc = entry.value['loc'] as String?;
+      final prog = (entry.value['prog'] as num?)?.toDouble();
+      if (loc == null || prog == null) {
+        await _removePendingEbook(entry.key);
+        continue;
+      }
+      final ok = await api.updateEbookProgress(entry.key,
+          ebookLocation: loc, ebookProgress: prog);
+      if (ok) {
+        await _removePendingEbook(entry.key);
+        _consecutiveFailures = 0;
+      } else {
+        // Server unreachable - let the existing backoff schedule the retry.
+        _consecutiveFailures++;
+        break;
+      }
     }
   }
 

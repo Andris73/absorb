@@ -1165,12 +1165,8 @@ class _ExpandedCardState extends State<ExpandedCard> {
   Map<String, dynamic>? get _ebookFile =>
       (_media['ebookFile'] as Map<String, dynamic>?) ?? _fetchedEbookFile;
   String? get _ebookExt {
-    final ef = _ebookFile;
-    if (ef == null) return null;
-    final fn = (ef['metadata'] as Map<String, dynamic>?)?['filename'] as String?
-        ?? ef['name'] as String?;
-    if (fn == null || !fn.contains('.')) return null;
-    return fn.substring(fn.lastIndexOf('.') + 1).toLowerCase();
+    final ext = ebookExt(_ebookFile);
+    return ext.isEmpty ? null : ext;
   }
 
   void _openReader() {

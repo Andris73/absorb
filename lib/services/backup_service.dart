@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'audio_player_service.dart';
+import 'reader_font_service.dart';
 import 'scoped_prefs.dart';
 import 'sleep_timer_service.dart';
 import 'user_account_service.dart';
@@ -198,6 +199,7 @@ class BackupService {
     final pendingOfflineListening = await ScopedPrefs.getStringList('pending_offline_listening');
     final bookmarksPendingCreates = await ScopedPrefs.getString('bookmarks_pending_creates');
     final bookmarksPendingDeletes = await ScopedPrefs.getString('bookmarks_pending_deletes');
+    final pendingEbookProgress = await ScopedPrefs.getString('pending_ebook_progress');
 
     // Offline listening accumulators (scoped) - keyed by itemId
     final offlineListening = <String, int>{};
@@ -243,6 +245,31 @@ class BackupService {
       final value = prefs.getString(key);
       if (value != null && value.isNotEmpty) metadataOverrides[itemId] = value;
     }
+
+    // Ebook annotations (scoped, keyed by itemId). Highlights, bookmarks and
+    // their notes live only on-device (ABS has no ebook annotation API), so
+    // the backup is their only way to survive a reinstall.
+    final ebookAnnotations = <String, String>{};
+    final annotPrefix = '${scopePrefix}ebook_annotations_';
+    for (final key in prefs.getKeys()) {
+      if (!key.startsWith(annotPrefix)) continue;
+      final itemId = key.substring(annotPrefix.length);
+      final value = prefs.getString(key);
+      if (value != null && value.isNotEmpty) ebookAnnotations[itemId] = value;
+    }
+
+    // E-reader appearance + behavior (scoped)
+    final ereader = <String, dynamic>{
+      'fontSize': await ScopedPrefs.getInt('ereader_fontSize'),
+      'lineHeight': await ScopedPrefs.getDouble('ereader_lineHeight'),
+      'marginH': await ScopedPrefs.getInt('ereader_margin_h'),
+      'marginV': await ScopedPrefs.getInt('ereader_margin_v'),
+      'spread': await ScopedPrefs.getInt('ereader_spread'),
+      'theme': await ScopedPrefs.getString('ereader_theme'),
+      'font': await ScopedPrefs.getString('ereader_font'),
+      'volumeNav': await PlayerSettings.getEreaderVolumeNav(),
+      'volumeNavWhilePlaying': await PlayerSettings.getEreaderVolumeNavWhilePlaying(),
+    };
 
     // Per-podcast UI prefs (GLOBAL, not scoped - keyed by itemId)
     final podcastPrefs = <String, Map<String, dynamic>>{};
@@ -298,10 +325,13 @@ class BackupService {
       'pendingOfflineListening': pendingOfflineListening,
       'bookmarksPendingCreates': bookmarksPendingCreates,
       'bookmarksPendingDeletes': bookmarksPendingDeletes,
+      'pendingEbookProgress': pendingEbookProgress,
       'offlineListening': offlineListening,
       'rmab': rmab,
       'homeLayouts': homeLayouts,
       'metadataOverrides': metadataOverrides,
+      'ebookAnnotations': ebookAnnotations,
+      'ereader': ereader,
       'podcastPrefs': podcastPrefs,
       'customDownloadPath': customDownloadPath,
       'accounts': accounts,
@@ -585,6 +615,8 @@ class BackupService {
     if (bmpc != null) await ScopedPrefs.setString('bookmarks_pending_creates', bmpc);
     final bmpd = data['bookmarksPendingDeletes'] as String?;
     if (bmpd != null) await ScopedPrefs.setString('bookmarks_pending_deletes', bmpd);
+    final pep = data['pendingEbookProgress'] as String?;
+    if (pep != null) await ScopedPrefs.setString('pending_ebook_progress', pep);
 
     // Offline listening accumulators (scoped, per-item) - write through SharedPreferences
     // directly because ScopedPrefs doesn't expose setInt with scope handling here.
@@ -629,6 +661,35 @@ class BackupService {
       for (final entry in metadataOverrides.entries) {
         await ScopedPrefs.setString('metadata_override_${entry.key}', entry.value as String);
       }
+    }
+
+    // Ebook annotations (scoped, keyed by itemId)
+    final ebookAnnotations = data['ebookAnnotations'] as Map<String, dynamic>?;
+    if (ebookAnnotations != null) {
+      for (final entry in ebookAnnotations.entries) {
+        await ScopedPrefs.setString('ebook_annotations_${entry.key}', entry.value as String);
+      }
+    }
+
+    // E-reader appearance + behavior (scoped)
+    final er = data['ereader'] as Map<String, dynamic>?;
+    if (er != null) {
+      if (er['fontSize'] != null) await ScopedPrefs.setInt('ereader_fontSize', er['fontSize'] as int);
+      if (er['lineHeight'] != null) await ScopedPrefs.setDouble('ereader_lineHeight', (er['lineHeight'] as num).toDouble());
+      if (er['marginH'] != null) await ScopedPrefs.setInt('ereader_margin_h', er['marginH'] as int);
+      if (er['marginV'] != null) await ScopedPrefs.setInt('ereader_margin_v', er['marginV'] as int);
+      if (er['spread'] != null) await ScopedPrefs.setInt('ereader_spread', er['spread'] as int);
+      if (er['theme'] != null) await ScopedPrefs.setString('ereader_theme', er['theme'] as String);
+      if (er['font'] != null) {
+        final fontId = er['font'] as String;
+        await ScopedPrefs.setString('ereader_font', fontId);
+        // The woff2 files aren't in the backup - re-fetch the selected font
+        // so the restored choice actually renders.
+        final font = readerFontById(fontId);
+        if (font != null && font.downloadable) ReaderFontService().download(font);
+      }
+      if (er['volumeNav'] != null) await PlayerSettings.setEreaderVolumeNav(er['volumeNav'] as String);
+      if (er['volumeNavWhilePlaying'] != null) await PlayerSettings.setEreaderVolumeNavWhilePlaying(er['volumeNavWhilePlaying'] as bool);
     }
 
     // Per-podcast UI prefs (GLOBAL, not scoped)
