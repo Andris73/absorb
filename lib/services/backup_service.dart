@@ -55,7 +55,10 @@ class BackupService {
       'rollingDownloadCount': await PlayerSettings.getRollingDownloadCount(),
       'rollingDownloadDeleteFinished': await PlayerSettings.getRollingDownloadDeleteFinished(),
       'queueAutoDownload': await PlayerSettings.getQueueAutoDownload(),
-      'mergeAbsorbingLibraries': await PlayerSettings.getMergeAbsorbingLibraries(),
+      'mergeAbsorbingLibraries': await PlayerSettings.getMergeAbsorbingLibrariesRaw(),
+      'podcastTabEnabled': await PlayerSettings.getPodcastTabEnabled(),
+      'podcastTabLibraryId': await PlayerSettings.getPodcastTabLibraryId(),
+      'episodeNotifIntervalMinutes': await PlayerSettings.getEpisodeNotifIntervalMinutes(),
       'maxConcurrentDownloads': await PlayerSettings.getMaxConcurrentDownloads(),
       'colorSource': await PlayerSettings.getColorSource(),
       'flatBackground': await PlayerSettings.getFlatBackground(),
@@ -441,6 +444,9 @@ class BackupService {
     if (s['rollingDownloadDeleteFinished'] != null) PlayerSettings.setRollingDownloadDeleteFinished(s['rollingDownloadDeleteFinished'] as bool);
     if (s['queueAutoDownload'] != null) PlayerSettings.setQueueAutoDownload(s['queueAutoDownload'] as bool);
     if (s['mergeAbsorbingLibraries'] != null) PlayerSettings.setMergeAbsorbingLibraries(s['mergeAbsorbingLibraries'] as bool);
+    if (s['podcastTabEnabled'] != null) PlayerSettings.setPodcastTabEnabled(s['podcastTabEnabled'] as bool);
+    if (s['podcastTabLibraryId'] != null) PlayerSettings.setPodcastTabLibraryId(s['podcastTabLibraryId'] as String);
+    if (s['episodeNotifIntervalMinutes'] != null) PlayerSettings.setEpisodeNotifIntervalMinutes(s['episodeNotifIntervalMinutes'] as int);
     if (s['maxConcurrentDownloads'] != null) PlayerSettings.setMaxConcurrentDownloads(s['maxConcurrentDownloads'] as int);
     if (s['colorSource'] != null) PlayerSettings.setColorSource(s['colorSource'] as String);
     if (s['flatBackground'] != null) PlayerSettings.setFlatBackground(s['flatBackground'] as bool);

@@ -14,6 +14,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
+import '../services/episode_notification_service.dart';
 import '../services/sleep_timer_service.dart';
 import '../services/user_account_service.dart';
 import '../services/backup_service.dart';
@@ -107,6 +108,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
   bool _queueAutoDownload = false;
   bool _mergeAbsorbingLibraries = false;
+  bool _podcastTabEnabled = false;
+  String _podcastTabLibraryId = '';
+  int _episodeNotifMinutes = 0;
   int _maxConcurrentDownloads = 1;
   bool _hideEbookOnly = false;
   bool _showGoodreadsButton = false;
@@ -633,6 +637,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  String _episodeNotifIntervalLabel(AppLocalizations l, int minutes) {
+    if (minutes <= 0) return l.notifIntervalOff;
+    if (minutes < 60) return l.notifIntervalMinutes(minutes);
+    if (minutes == 60) return l.notifIntervalHour;
+    return l.notifIntervalHours(minutes ~/ 60);
+  }
+
+  String _episodeNotifLabel(AppLocalizations l) =>
+      _episodeNotifIntervalLabel(l, _episodeNotifMinutes);
+
+  Future<void> _pickEpisodeNotifInterval() async {
+    final l = AppLocalizations.of(context)!;
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(l.settingsEpisodeNotifs),
+        children: [
+          for (final m in [0, 15, 30, 60, 180, 360, 720, 1440])
+            RadioListTile<int>(
+              value: m,
+              groupValue: _episodeNotifMinutes,
+              title: Text(_episodeNotifIntervalLabel(l, m)),
+              onChanged: (v) => Navigator.pop(ctx, v),
+            ),
+        ],
+      ),
+    );
+    if (picked == null || picked == _episodeNotifMinutes) return;
+    setState(() => _episodeNotifMinutes = picked);
+    await PlayerSettings.setEpisodeNotifIntervalMinutes(picked);
+    await EpisodeNotificationService.syncRegistration();
+    // Make sure notifications are allowed when turning the feature on.
+    if (picked > 0) await Permission.notification.request();
+  }
+
+  Future<void> _pickPodcastTabLibrary(List<Map<String, dynamic>> podcastLibs) async {
+    final l = AppLocalizations.of(context)!;
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(l.settingsPodcastTabLibrary),
+        children: [
+          for (final p in podcastLibs)
+            RadioListTile<String>(
+              value: p['id'] as String,
+              groupValue: _podcastTabLibraryId,
+              title: Text(p['name'] as String? ?? ''),
+              onChanged: (v) => Navigator.pop(ctx, v),
+            ),
+        ],
+      ),
+    );
+    if (picked == null || picked == _podcastTabLibraryId) return;
+    setState(() => _podcastTabLibraryId = picked);
+    await PlayerSettings.setPodcastTabLibraryId(picked);
+  }
+
   Future<void> _loadSettings() async {
     final results = await Future.wait([
       AutoRewindSettings.load(),                              // 0
@@ -651,7 +712,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       PlayerSettings.getShakeAddMinutes(),                    // 13
       PlayerSettings.getBookQueueMode(),                      // 14
       PlayerSettings.getQueueAutoDownload(),                  // 15
-      PlayerSettings.getMergeAbsorbingLibraries(),            // 16
+      PlayerSettings.getMergeAbsorbingLibrariesRaw(),         // 16
       PlayerSettings.getMaxConcurrentDownloads(),             // 17
       PlayerSettings.getHideEbookOnly(),                      // 18
       PlayerSettings.getShowGoodreadsButton(),                // 19
@@ -762,7 +823,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final longSkipButtons = await PlayerSettings.getLongSkipButtons();
     final longFwd = await PlayerSettings.getLongForwardSkip();
     final longBack = await PlayerSettings.getLongBackSkip();
+    final podcastTabEnabled = await PlayerSettings.getPodcastTabEnabled();
+    final podcastTabLibraryId = await PlayerSettings.getPodcastTabLibraryId();
+    final episodeNotifMinutes = await PlayerSettings.getEpisodeNotifIntervalMinutes();
     if (mounted) setState(() {
+      _podcastTabEnabled = podcastTabEnabled;
+      _podcastTabLibraryId = podcastTabLibraryId;
+      _episodeNotifMinutes = episodeNotifMinutes;
       _sleepRewindSeconds = sleepRewind;
       _lockPortrait = lockPortrait;
       _autoSeriesDownloadDefault = autoSeriesDownload;
@@ -1773,18 +1840,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       valueListenable: classicWordingNotifier,
                       builder: (context, _, __) {
                         final w = Wording.of(context);
+                        // The dedicated Podcasts tab implies merged libraries;
+                        // show it locked on rather than a toggle that snaps back.
+                        final effectiveMerge =
+                            _mergeAbsorbingLibraries || _podcastTabEnabled;
                         return SwitchListTile(
                           title: Row(children: [
                             Flexible(child: Text(w.mergeLibraries)),
                             _infoIcon(w.mergeLibrariesInfoTitle, w.mergeLibrariesInfoContent),
                           ]),
                           subtitle: Text(
-                            _mergeAbsorbingLibraries
-                                ? w.mergeLibrariesOnSubtitle
-                                : w.mergeLibrariesOffSubtitle,
+                            _podcastTabEnabled
+                                ? l.settingsMergeImpliedByPodcastTab
+                                : effectiveMerge
+                                    ? w.mergeLibrariesOnSubtitle
+                                    : w.mergeLibrariesOffSubtitle,
                             style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                          value: _mergeAbsorbingLibraries,
-                          onChanged: _loaded ? (v) {
+                          value: effectiveMerge,
+                          onChanged: (_loaded && !_podcastTabEnabled) ? (v) {
                             setState(() => _mergeAbsorbingLibraries = v);
                             PlayerSettings.setMergeAbsorbingLibraries(v);
                           } : null,
@@ -1832,7 +1905,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ]),
                         const SizedBox(height: 8),
                         // When libraries are merged, show a single unified control
-                        if (_mergeAbsorbingLibraries) ...[
+                        if (_mergeAbsorbingLibraries || _podcastTabEnabled) ...[
                           Text(l.queueModeMergedSubtitle,
                             style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                           const SizedBox(height: 8),
@@ -2928,6 +3001,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   isExpanded: _expandedSection == 'Library',
                   onExpansionChanged: (v) => _onSectionExpanded('Library', v),
                   children: [
+                    Consumer<LibraryProvider>(builder: (context, lib, _) {
+                      final podcastLibs = lib.libraries
+                          .whereType<Map<String, dynamic>>()
+                          .where((l) => (l['mediaType'] as String? ?? 'book') == 'podcast')
+                          .toList();
+                      if (podcastLibs.isEmpty) return const SizedBox.shrink();
+                      final currentName = podcastLibs.firstWhere(
+                        (p) => p['id'] == _podcastTabLibraryId,
+                        orElse: () => podcastLibs.first,
+                      )['name'] as String? ?? '';
+                      return Column(children: [
+                        SwitchListTile(
+                          title: Text(l.settingsPodcastTab),
+                          subtitle: Text(l.settingsPodcastTabDesc,
+                              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                          value: _podcastTabEnabled,
+                          onChanged: _loaded ? (v) async {
+                            var libId = _podcastTabLibraryId;
+                            if (v && !podcastLibs.any((p) => p['id'] == libId)) {
+                              libId = podcastLibs.first['id'] as String;
+                              await PlayerSettings.setPodcastTabLibraryId(libId);
+                            }
+                            setState(() {
+                              _podcastTabEnabled = v;
+                              _podcastTabLibraryId = libId;
+                            });
+                            await PlayerSettings.setPodcastTabEnabled(v);
+                          } : null,
+                        ),
+                        if (_podcastTabEnabled && podcastLibs.length > 1)
+                          ListTile(
+                            title: Text(l.settingsPodcastTabLibrary),
+                            subtitle: Text(currentName,
+                                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                            trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
+                            onTap: () => _pickPodcastTabLibrary(podcastLibs),
+                          ),
+                        if (Platform.isAndroid) ...[
+                          const Divider(height: 1, indent: 16, endIndent: 16),
+                          ListTile(
+                            title: Text(l.settingsEpisodeNotifs),
+                            subtitle: Text(
+                                '${l.settingsEpisodeNotifsDesc} - ${_episodeNotifLabel(l)}',
+                                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                            trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
+                            onTap: _loaded ? _pickEpisodeNotifInterval : null,
+                          ),
+                          if (_episodeNotifMinutes > 0)
+                            ListTile(
+                              title: Text(l.settingsBatteryUnrestricted),
+                              subtitle: Text(l.settingsBatteryUnrestrictedDesc,
+                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              trailing: Icon(Icons.battery_saver_rounded, color: cs.onSurfaceVariant),
+                              onTap: () => Permission.ignoreBatteryOptimizations.request(),
+                            ),
+                        ],
+                        const Divider(height: 1, indent: 16, endIndent: 16),
+                      ]);
+                    }),
                     SwitchListTile(
                       title: Text(l.hideEbookOnlyTitles),
                       subtitle: Text(
@@ -4002,6 +4134,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (settings?['manualSeedColor'] is int) applyManualSeed(settings!['manualSeedColor'] as int);
       if (settings?['gradientIntensity'] is num) applyGradientIntensity((settings!['gradientIntensity'] as num).toDouble());
       if (settings?['useColorEverywhere'] is bool) applyUseColorEverywhere(settings!['useColorEverywhere'] as bool);
+      await applyOrientationLock();
 
       // Refresh UI
       await _loadSettings();

@@ -1750,6 +1750,108 @@ abstract class AppLocalizations {
   /// **'Shows'**
   String get appShellShowsTab;
 
+  /// No description provided for @appShellPodcastsTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Podcasts'**
+  String get appShellPodcastsTab;
+
+  /// No description provided for @libraryTabEpisodes.
+  ///
+  /// In en, this message translates to:
+  /// **'Episodes'**
+  String get libraryTabEpisodes;
+
+  /// No description provided for @filterAllEpisodes.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get filterAllEpisodes;
+
+  /// No description provided for @filterUnplayed.
+  ///
+  /// In en, this message translates to:
+  /// **'Unplayed'**
+  String get filterUnplayed;
+
+  /// No description provided for @episodeFeedEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No episodes match this filter'**
+  String get episodeFeedEmpty;
+
+  /// No description provided for @settingsPodcastTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Podcasts tab'**
+  String get settingsPodcastTab;
+
+  /// No description provided for @settingsPodcastTabDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Give one podcast library its own tab in the bottom bar'**
+  String get settingsPodcastTabDesc;
+
+  /// No description provided for @settingsPodcastTabLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Podcasts tab library'**
+  String get settingsPodcastTabLibrary;
+
+  /// No description provided for @settingsMergeImpliedByPodcastTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Always on while the Podcasts tab is enabled'**
+  String get settingsMergeImpliedByPodcastTab;
+
+  /// No description provided for @settingsEpisodeNotifs.
+  ///
+  /// In en, this message translates to:
+  /// **'New episode notifications'**
+  String get settingsEpisodeNotifs;
+
+  /// No description provided for @settingsEpisodeNotifsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Check subscribed shows in the background'**
+  String get settingsEpisodeNotifsDesc;
+
+  /// No description provided for @notifIntervalOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get notifIntervalOff;
+
+  /// No description provided for @notifIntervalMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'Every {n} minutes'**
+  String notifIntervalMinutes(int n);
+
+  /// No description provided for @notifIntervalHour.
+  ///
+  /// In en, this message translates to:
+  /// **'Every hour'**
+  String get notifIntervalHour;
+
+  /// No description provided for @notifIntervalHours.
+  ///
+  /// In en, this message translates to:
+  /// **'Every {n} hours'**
+  String notifIntervalHours(int n);
+
+  /// No description provided for @settingsBatteryUnrestricted.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow unrestricted battery use'**
+  String get settingsBatteryUnrestricted;
+
+  /// No description provided for @settingsBatteryUnrestrictedDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Keeps the system from pausing background checks on some phones'**
+  String get settingsBatteryUnrestrictedDesc;
+
   /// No description provided for @appShellPressBackToExit.
   ///
   /// In en, this message translates to:

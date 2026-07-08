@@ -24,6 +24,13 @@ mixin _StateMixin on ChangeNotifier {
   final Map<String, int> _pendingUnfinishedDeltas = {};
   final Map<String, (int, int)> _unfinishedCountAdjustments = {};
 
+  /// Personalized sections cached per library, so tab-driven flips between
+  /// the book library and the dedicated Podcasts tab restore instantly
+  /// instead of blanking and refetching. Refreshed through the normal
+  /// loadPersonalizedView path.
+  final Map<String, List<dynamic>> _sectionsByLibrary = {};
+  final Map<String, DateTime> _sectionsFetchedAt = {};
+
   Future<void>? _personalizedInFlight;
   Future<void>? _progressShelvesInFlight;
   DateTime? _lastPersonalizedFetchAt;

@@ -654,20 +654,48 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
   void _buildProgressMap(AuthProvider auth) {
     _progressMap = {};
-    final userJson = auth.userJson;
-    if (userJson == null) return;
-    final progressList = userJson['mediaProgress'] as List<dynamic>?;
-    if (progressList == null) return;
-    for (final mp in progressList) {
-      if (mp is Map<String, dynamic>) {
-        final itemId = mp['libraryItemId'] as String?;
-        final episodeId = mp['episodeId'] as String?;
-        if (itemId != null) {
-          final key = episodeId != null ? '$itemId-$episodeId' : itemId;
-          _progressMap[key] = mp;
+    final progressList = auth.userJson?['mediaProgress'] as List<dynamic>?;
+    if (progressList != null) {
+      for (final mp in progressList) {
+        if (mp is Map<String, dynamic>) {
+          final itemId = mp['libraryItemId'] as String?;
+          final episodeId = mp['episodeId'] as String?;
+          if (itemId != null) {
+            final key = episodeId != null ? '$itemId-$episodeId' : itemId;
+            _progressMap[key] = mp;
+          }
         }
       }
     }
+    // Overlay queued-offline ebook positions (their PATCH never landed), so a
+    // cold start can't resume the reader behind the last page read offline.
+    _overlayPendingEbookProgress();
+  }
+
+  // Once overlaid here, the position lives in _progressMap like any local
+  // write, so _refreshProgress's furthest-wins snapshot carries it forward.
+  Future<void> _overlayPendingEbookProgress() async {
+    final pending = await ProgressSyncService().getPendingEbookProgress();
+    if (pending.isEmpty) return;
+    var changed = false;
+    for (final entry in pending.entries) {
+      final loc = entry.value['loc'] as String?;
+      final prog = (entry.value['prog'] as num?)?.toDouble() ?? 0;
+      if (loc == null) continue;
+      // Furthest wins, same rule as _refreshProgress: a fresher server
+      // position (read on another device) stays.
+      final serverProg =
+          (_progressMap[entry.key]?['ebookProgress'] as num?)?.toDouble() ?? -1;
+      if (prog >= serverProg) {
+        _progressMap[entry.key] = {
+          ...?_progressMap[entry.key],
+          'ebookLocation': loc,
+          'ebookProgress': prog.clamp(0.0, 1.0),
+        };
+        changed = true;
+      }
+    }
+    if (changed) notifyListeners();
   }
 
   Future<void> _refreshProgress() async {
@@ -1278,12 +1306,15 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       return;
     }
 
-    if (!force &&
-        _lastPersonalizedFetchAt != null &&
-        _lastPersonalizedFetchLibraryId == _selectedLibraryId &&
-        DateTime.now().difference(_lastPersonalizedFetchAt!) <
-            _StateMixin._personalizedFetchCooldown) {
-      return;
+    // Per-library cooldown, so a book <-> podcast tab flip that returns
+    // within the window reuses the cached sections instead of refetching.
+    if (!force) {
+      final fetchedAt = _sectionsFetchedAt[_selectedLibraryId];
+      if (fetchedAt != null &&
+          DateTime.now().difference(fetchedAt) <
+              _StateMixin._personalizedFetchCooldown) {
+        return;
+      }
     }
 
     final inFlight = _doLoadPersonalizedView();
@@ -1335,6 +1366,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       await (this as _AbsorbingMixin)._updateAbsorbingCache();
 
       _injectDownloadedSection();
+
+      // Snapshot after injection so a tab flip restores the full shelf set.
+      _sectionsByLibrary[_selectedLibraryId!] = _personalizedSections;
+      _sectionsFetchedAt[_selectedLibraryId!] = DateTime.now();
 
       if (isPodcastLibrary) {
         _hydrateRssFeedFieldsDeferred();

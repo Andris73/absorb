@@ -12,6 +12,7 @@ import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import '../widgets/home_section.dart';
 import '../widgets/absorb_page_header.dart';
+import '../widgets/library_picker_sheet.dart';
 import '../widgets/shimmer.dart';
 import '../widgets/book_detail_sheet.dart';
 import '../widgets/card_buttons.dart';
@@ -205,79 +206,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     }
   }
 
-  void _showLibraryPicker(BuildContext context, ColorScheme cs, TextTheme tt,
-      List<dynamic> allLibraries, LibraryProvider lib) {
-    final l = AppLocalizations.of(context)!;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final bottomPad = MediaQuery.of(ctx).viewPadding.bottom;
-        return Container(
-          constraints:
-              BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.6),
-          decoration: BoxDecoration(
-            color: cs.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 12),
-              Center(
-                  child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                          color: cs.onSurfaceVariant.withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(2)))),
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Text(l.selectLibrary,
-                    style:
-                        tt.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
-              ),
-              const SizedBox(height: 12),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  padding: EdgeInsets.only(bottom: bottomPad + 16),
-                  itemCount: allLibraries.length,
-                  itemBuilder: (_, i) {
-                    final library = allLibraries[i] as Map<String, dynamic>;
-                    final id = library['id'] as String;
-                    final name = library['name'] as String? ?? l.libraryFallback;
-                    final mediaType = library['mediaType'] as String? ?? 'book';
-                    final isSelected = id == lib.selectedLibraryId;
-                    return ListTile(
-                      leading: Icon(
-                          mediaType == 'podcast'
-                              ? Icons.podcasts_rounded
-                              : Icons.auto_stories_rounded,
-                          color: isSelected ? cs.primary : cs.onSurfaceVariant),
-                      title: Text(name),
-                      trailing: isSelected
-                          ? Icon(Icons.check_circle_rounded, color: cs.primary)
-                          : null,
-                      selected: isSelected,
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        if (!isSelected) lib.selectLibrary(id);
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   static const _sectionIcons = {
     'continue-listening': Icons.play_circle_outline_rounded,
     'continue-series': Icons.auto_stories_rounded,
@@ -370,8 +298,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                           borderRadius: BorderRadius.circular(20),
                           clipBehavior: Clip.antiAlias,
                           child: InkWell(
-                            onTap: () => _showLibraryPicker(
-                                context, cs, tt, allLibraries, lib),
+                            onTap: () => showLibraryPickerSheet(context, lib),
                             borderRadius: BorderRadius.circular(20),
                             child: Container(
                               padding: const EdgeInsets.symmetric(

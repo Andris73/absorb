@@ -908,6 +908,65 @@ class AppLocalizationsJa extends AppLocalizations {
   String get appShellShowsTab => 'Shows';
 
   @override
+  String get appShellPodcastsTab => 'Podcasts';
+
+  @override
+  String get libraryTabEpisodes => 'Episodes';
+
+  @override
+  String get filterAllEpisodes => 'All';
+
+  @override
+  String get filterUnplayed => 'Unplayed';
+
+  @override
+  String get episodeFeedEmpty => 'No episodes match this filter';
+
+  @override
+  String get settingsPodcastTab => 'Podcasts tab';
+
+  @override
+  String get settingsPodcastTabDesc =>
+      'Give one podcast library its own tab in the bottom bar';
+
+  @override
+  String get settingsPodcastTabLibrary => 'Podcasts tab library';
+
+  @override
+  String get settingsMergeImpliedByPodcastTab =>
+      'Always on while the Podcasts tab is enabled';
+
+  @override
+  String get settingsEpisodeNotifs => 'New episode notifications';
+
+  @override
+  String get settingsEpisodeNotifsDesc =>
+      'Check subscribed shows in the background';
+
+  @override
+  String get notifIntervalOff => 'Off';
+
+  @override
+  String notifIntervalMinutes(int n) {
+    return 'Every $n minutes';
+  }
+
+  @override
+  String get notifIntervalHour => 'Every hour';
+
+  @override
+  String notifIntervalHours(int n) {
+    return 'Every $n hours';
+  }
+
+  @override
+  String get settingsBatteryUnrestricted => 'Allow unrestricted battery use';
+
+  @override
+  String get settingsBatteryUnrestrictedDesc =>
+      'Keeps the system from pausing background checks on some phones';
+
+  @override
   String get appShellPressBackToExit => 'Press back again to exit';
 
   @override

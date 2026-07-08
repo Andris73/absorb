@@ -283,6 +283,13 @@ class DownloadService extends ChangeNotifier {
   factory DownloadService() => _instance;
   DownloadService._();
 
+  /// Set to true (before init) by short-lived background isolates like the
+  /// episode-notification job. Downloads then run as plain background tasks
+  /// instead of in the foreground service: Android 15+ kills a dataSync
+  /// foreground service started while the app is in the background almost
+  /// immediately ("FGS (dataSync) timed out"), leaving the task stuck at 0%.
+  static bool backgroundIsolateMode = false;
+
   final Map<String, DownloadInfo> _downloads = {};
   final Set<String> _activeDownloadIds = {};
   final Set<String> _cancelledIds = {};
@@ -695,13 +702,19 @@ class DownloadService extends ChangeNotifier {
   /// continue when backgrounded, locked, or killed.
   Future<void> _configureDownloader() async {
     if (_downloaderConfigured) return;
-    // Always run downloads in the Android foreground service. Without this,
-    // smaller books can run as background WorkManager jobs that some OEM ROMs
-    // throttle or kill, leaving downloads stuck.
+    // Run downloads in the Android foreground service. Without this, smaller
+    // books can run as background WorkManager jobs that some OEM ROMs throttle
+    // or kill, leaving downloads stuck. Exception: background isolates must NOT
+    // use the foreground service (see backgroundIsolateMode) - the app's next
+    // real start reconfigures back to always.
     if (Platform.isAndroid) {
       try {
-        await FileDownloader()
-            .configure(androidConfig: [(Config.runInForeground, Config.always)]);
+        await FileDownloader().configure(androidConfig: [
+          (
+            Config.runInForeground,
+            backgroundIsolateMode ? Config.never : Config.always,
+          ),
+        ]);
       } catch (e) {
         debugPrint('[Download] androidConfig failed: $e');
       }
@@ -1245,6 +1258,42 @@ class DownloadService extends ChangeNotifier {
       libraryId: libraryId,
     ));
     return null;
+  }
+
+  /// Download entry point for short-lived background isolates (the episode
+  /// notification job). Same guards as [downloadItem], but awaits the enqueue
+  /// (the isolate dies as soon as the task returns, which would cut off a
+  /// fire-and-forget mid-flight) and skips the in-memory concurrency queue
+  /// (queued entries would die with the isolate; background_downloader
+  /// schedules the handed-over tasks natively either way).
+  Future<void> enqueueBackgroundDownload({
+    required ApiService api,
+    required String itemId,
+    required String title,
+    String? author,
+    String? coverUrl,
+    String? episodeId,
+    String? libraryId,
+  }) async {
+    if (_activeDownloadIds.contains(itemId)) return;
+    if (isDownloaded(itemId)) return;
+    if (_queue.any((q) => q.itemId == itemId)) return;
+    final wifiOnly = await PlayerSettings.getWifiOnlyDownloads();
+    if (wifiOnly) {
+      final connectivity = await Connectivity().checkConnectivity();
+      // Not on WiFi: skip silently - the in-app catch-up still sees the
+      // episode as new and downloads it on the next open.
+      if (!connectivity.contains(ConnectivityResult.wifi)) return;
+    }
+    await _executeDownload(
+      api: api,
+      itemId: itemId,
+      title: title,
+      author: author,
+      coverUrl: coverUrl,
+      episodeId: episodeId,
+      libraryId: libraryId,
+    );
   }
 
   /// Fill free download slots from the queue.

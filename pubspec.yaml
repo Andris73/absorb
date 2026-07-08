@@ -56,6 +56,9 @@ dependencies:
   # Download notifications
   flutter_local_notifications: ^17.2.1
 
+  # Background new-episode checks (Android)
+  workmanager: ^0.9.0
+
   device_info_plus: ^11.0.0
 
   # choose file location

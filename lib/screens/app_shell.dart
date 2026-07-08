@@ -25,6 +25,7 @@ import 'home_screen.dart';
 import 'library_screen.dart';
 import 'stats_screen.dart';
 import 'settings_screen.dart';
+import '../widgets/library_picker_sheet.dart';
 import '../widgets/welcome_sheet.dart';
 import '../services/review_service.dart';
 import '../services/update_checker_service.dart';
@@ -72,7 +73,8 @@ class AppShell extends StatefulWidget {
       _applyLibraryFilterGlobal((s) => s.applyGenreFilter(genre));
 
   static bool _applyLibraryFilterGlobal(
-      void Function(LibraryScreenState) apply) {
+    void Function(LibraryScreenState) apply,
+  ) {
     final inst = _AppShellState._instance;
     if (inst == null) return false;
     // If the full-screen expanded player is on top of the shell, pop it
@@ -102,6 +104,7 @@ class AppShell extends StatefulWidget {
         WidgetsBinding.instance.addPostFrameCallback((_) => tryApply());
       }
     }
+
     WidgetsBinding.instance.addPostFrameCallback((_) => tryApply());
     return true;
   }
@@ -120,11 +123,19 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> with WidgetsBindingObserver, TickerProviderStateMixin {
+class _AppShellState extends State<AppShell>
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   static _AppShellState? _instance;
 
   // Tabs: 0=Home, 1=Library, 2=Absorbing (default), 3=Stats, 4=Settings
   int _currentIndex = 2; // overridden by user preference in initState
+
+  // Dedicated Podcasts tab (optional 6th destination, display order Home,
+  // Library, Podcasts, Absorbing, Stats, Settings). Stack pages keep their
+  // historic 0-4 indexes: the Podcasts and Library destinations share page 1,
+  // and which one is highlighted is derived from the selected library.
+  bool _podcastTabEnabled = false;
+  String _podcastTabLibraryId = '';
   final _homeKey = GlobalKey<HomeScreenState>();
   final _libraryKey = GlobalKey<LibraryScreenState>();
   final _player = AudioPlayerService();
@@ -136,7 +147,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
   bool _expandedIsOpen = false;
   bool _wasCasting = false;
   DateTime? _lastBackPress;
-  String? _lastCoverItemId; // tracks which item's cover we derived the scheme from
+  // Tracks which item's cover we derived the scheme from.
+  String? _lastCoverItemId;
 
   // ── Scroll-to-hide bottom nav (driven by Library screen) ──
   late final AnimationController _navBarAnimController = AnimationController(
@@ -174,6 +186,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
         WidgetsBinding.instance.addPostFrameCallback((_) => tryFocus());
       }
     }
+
     WidgetsBinding.instance.addPostFrameCallback((_) => tryFocus());
   }
 
@@ -312,7 +325,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     _wasPlaying = _player.isPlaying;
     _lastItemId = _player.currentItemId;
     WidgetsBinding.instance.addObserver(this);
-    AudioPlayerService.setOnEpisodePlayStartedCallback(AppShell.goToAbsorbingGlobal);
+    AudioPlayerService.setOnEpisodePlayStartedCallback(
+      AppShell.goToAbsorbingGlobal,
+    );
     _player.addListener(_onPlayerChanged);
     _wasCasting = _cast.isCasting;
     _cast.addListener(_onCastChanged);
@@ -323,8 +338,66 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
       if (mounted) _deriveCoverScheme();
     });
     context.read<LibraryProvider>().addListener(_onLibraryChanged);
+    _loadPodcastTabPrefs();
+    PlayerSettings.settingsChanged.addListener(_loadPodcastTabPrefs);
     WelcomeSheet.showIfNeeded(context);
     _checkForUpdate();
+  }
+
+  Future<void> _loadPodcastTabPrefs() async {
+    final enabled = await PlayerSettings.getPodcastTabEnabled();
+    final libId = await PlayerSettings.getPodcastTabLibraryId();
+    if (!mounted) return;
+    if (enabled != _podcastTabEnabled || libId != _podcastTabLibraryId) {
+      setState(() {
+        _podcastTabEnabled = enabled;
+        _podcastTabLibraryId = libId;
+      });
+    }
+  }
+
+  bool _podcastsShown(LibraryProvider lib) =>
+      _podcastTabEnabled &&
+      _podcastTabLibraryId.isNotEmpty &&
+      lib.libraries.any((l) => l['id'] == _podcastTabLibraryId);
+
+  // Display-destination index <-> stack page mapping when the Podcasts tab
+  // is shown (it sits at display slot 2 and shares stack page 1).
+  int _pageForDest(int dest, bool podcastsShown) {
+    if (!podcastsShown) return dest;
+    if (dest <= 1) return dest;
+    if (dest == 2) return 1;
+    return dest - 1;
+  }
+
+  int _selectedDest(LibraryProvider lib, bool podcastsShown) {
+    if (!podcastsShown) return _currentIndex;
+    if (_currentIndex == 0) return 0;
+    if (_currentIndex == 1) {
+      return lib.selectedLibraryId == _podcastTabLibraryId ? 2 : 1;
+    }
+    return _currentIndex + 1;
+  }
+
+  /// Keep the selected library in step with the destination being entered:
+  /// Podcasts pins its library; Home/Library return to the remembered book
+  /// library. Uses the light switch so playback and cached shelves survive.
+  void _syncTabLibrary(int dest, bool podcastsShown) {
+    if (!podcastsShown) return;
+    final lib = context.read<LibraryProvider>();
+    if (dest == 2) {
+      if (lib.selectedLibraryId != _podcastTabLibraryId) {
+        lib.selectLibraryLight(_podcastTabLibraryId);
+      }
+    } else if (dest == 0 || dest == 1) {
+      if (lib.selectedLibraryId == _podcastTabLibraryId) {
+        lib.lastBookLibraryId().then((bookLib) {
+          if (mounted && bookLib != null && bookLib != _podcastTabLibraryId) {
+            lib.selectLibraryLight(bookLib);
+          }
+        });
+      }
+    }
   }
 
   static const _isGithubBuild = bool.fromEnvironment('GITHUB_BUILD');
@@ -332,7 +405,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
   void _checkForUpdate() async {
     if (!_isGithubBuild) return;
     final includePreReleases = await PlayerSettings.getIncludePreReleases();
-    final info = await UpdateCheckerService.check(includePreReleases: includePreReleases);
+    final info = await UpdateCheckerService.check(
+      includePreReleases: includePreReleases,
+    );
     if (info == null || !mounted) return;
     await UpdateDialog.show(context, info);
   }
@@ -344,7 +419,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     _navBarAnimController.dispose();
     _player.removeListener(_onPlayerChanged);
     _cast.removeListener(_onCastChanged);
-    try { context.read<LibraryProvider>().removeListener(_onLibraryChanged); } catch (_) {}
+    PlayerSettings.settingsChanged.removeListener(_loadPodcastTabPrefs);
+    try {
+      context.read<LibraryProvider>().removeListener(_onLibraryChanged);
+    } catch (_) {}
     if (_instance == this) _instance = null;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -355,6 +433,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     // Re-derive cover scheme whenever absorbing list changes so the app
     // theme always reflects the current [0] book.
     _deriveCoverScheme();
+    // With the dedicated Podcasts tab, Home never shows the podcast library.
+    // Covers the cold start restoring last_selected_library onto page 0.
+    final lib = context.read<LibraryProvider>();
+    if (_currentIndex == 0 &&
+        _podcastsShown(lib) &&
+        lib.selectedLibraryId == _podcastTabLibraryId) {
+      _syncTabLibrary(0, true);
+    }
   }
 
   /// Attempt to derive cover scheme. Returns true if successful.
@@ -387,23 +473,30 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     if (coverUrl.startsWith('/')) {
       provider = FileImage(File(coverUrl));
     } else {
-      provider = CachedNetworkImageProvider(coverUrl, headers: lib.mediaHeaders);
+      provider = CachedNetworkImageProvider(
+        coverUrl,
+        headers: lib.mediaHeaders,
+      );
     }
 
     final brightness = Theme.of(context).brightness;
     PaletteGenerator.fromImageProvider(provider, maximumColorCount: 16)
         .then((palette) {
-      final seedColor = accentFromCoverPalette(palette);
-      if (seedColor == null) {
-        _lastCoverItemId = null;
-        return;
-      }
-      final scheme = ColorScheme.fromSeed(seedColor: seedColor, brightness: brightness);
-      coverSchemeNotifier.value = scheme;
-      PlayerSettings.setCoverSeedColor(seedColor.toARGB32());
-    }).catchError((_) {
-      _lastCoverItemId = null;
-    });
+          final seedColor = accentFromCoverPalette(palette);
+          if (seedColor == null) {
+            _lastCoverItemId = null;
+            return;
+          }
+          final scheme = ColorScheme.fromSeed(
+            seedColor: seedColor,
+            brightness: brightness,
+          );
+          coverSchemeNotifier.value = scheme;
+          PlayerSettings.setCoverSeedColor(seedColor.toARGB32());
+        })
+        .catchError((_) {
+          _lastCoverItemId = null;
+        });
     return true; // cover URL found, image load in progress
   }
 
@@ -437,6 +530,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
   }
 
   Future<void> _maybeAutoExpand() async {
+    // Only auto-open the full-screen player from the Absorbing tab - starting
+    // playback from elsewhere (another tab, the nav long-press) shouldn't
+    // yank the user into the player.
+    if (_currentIndex != 2) return;
     final enabled = await PlayerSettings.getFullScreenPlayer();
     if (!enabled || !mounted || !_player.hasBook) return;
 
@@ -479,12 +576,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
 
     _expandedIsOpen = true;
     final nav = Navigator.of(context, rootNavigator: true);
-    await nav.push(ExpandedCardRoute(
-      child: ExpandedCard(
-        item: item,
-        player: _player,
+    await nav.push(
+      ExpandedCardRoute(
+        child: ExpandedCard(item: item, player: _player),
       ),
-    ));
+    );
     // Route was popped — expanded view closed
     _expandedIsOpen = false;
   }
@@ -568,7 +664,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     }
 
     // Only do a full server refresh if enough time has passed
-    if (_lastRefresh == null || now.difference(_lastRefresh!) > _refreshCooldown) {
+    if (_lastRefresh == null ||
+        now.difference(_lastRefresh!) > _refreshCooldown) {
       _lastRefresh = now;
       lib.refresh();
       // Keep Android Auto / CarPlay browse tree in sync
@@ -594,18 +691,25 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
         // If already on Absorbing tab, require double-back to exit
         if (_currentIndex == 2) {
           final now = DateTime.now();
-          if (_lastBackPress != null && now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
+          if (_lastBackPress != null &&
+              now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
             SystemChannels.platform.invokeMethod('SystemNavigator.pop', true);
             return;
           }
           _lastBackPress = now;
           ScaffoldMessenger.of(context).clearSnackBars();
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(AppLocalizations.of(context)!.appShellPressBackToExit),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                AppLocalizations.of(context)!.appShellPressBackToExit,
+              ),
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
           return;
         }
 
@@ -613,18 +717,18 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
         _switchToAbsorbing();
       },
       child: Scaffold(
-      body: FadeTransition(
-        opacity: _fadeController,
-        child: IndexedStack(
-          index: _currentIndex,
-          children: List<Widget>.generate(
-            _pages.length,
-            (i) => _pages[i] ?? const SizedBox.shrink(),
+        body: FadeTransition(
+          opacity: _fadeController,
+          child: IndexedStack(
+            index: _currentIndex,
+            children: List<Widget>.generate(
+              _pages.length,
+              (i) => _pages[i] ?? const SizedBox.shrink(),
+            ),
           ),
         ),
+        bottomNavigationBar: _buildBottomNav(context),
       ),
-      bottomNavigationBar: _buildBottomNav(context),
-    ),
     );
   }
 
@@ -640,7 +744,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     } else if (_currentIndex == 1) {
       correctNotifier = _libraryKey.currentState?.barsRevealNotifier;
     }
-    final wrongAttachment = isHomeOrLibrary &&
+    final wrongAttachment =
+        isHomeOrLibrary &&
         _navBarListener != null &&
         correctNotifier != null &&
         !identical(_activeBarNotifier, correctNotifier);
@@ -664,7 +769,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
       // nav bar visible so it doesn't get hidden by the previous tab's notifier.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        if (_currentIndex != 0 && _currentIndex != 1 && _navBarListener != null) {
+        if (_currentIndex != 0 &&
+            _currentIndex != 1 &&
+            _navBarListener != null) {
           _detachNavBarListener();
           _navBarAnimController.value = 1.0;
         }
@@ -674,64 +781,133 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver, Ticker
     // shorter screen height. Tablets keep the full-size bar in any orientation.
     final mq = MediaQuery.of(context);
     final isTablet = mq.size.shortestSide >= 600;
-    final isPhoneLandscape = !isTablet && mq.orientation == Orientation.landscape;
+    final isPhoneLandscape =
+        !isTablet && mq.orientation == Orientation.landscape;
+    final lib = context.watch<LibraryProvider>();
+    final podcastsShown = _podcastsShown(lib);
+    final destinations = _buildDestinations(context, podcastsShown);
     return SizeTransition(
       sizeFactor: _navBarAnimController,
       axisAlignment: 1.0,
-      child: NavigationBar(
-        selectedIndex: _currentIndex,
-        height: isPhoneLandscape ? 56 : null,
-        labelBehavior: isPhoneLandscape
-            ? NavigationDestinationLabelBehavior.alwaysHide
-            : NavigationDestinationLabelBehavior.alwaysShow,
-        onDestinationSelected: (i) {
-          // If tapping Library while already on Library, clear search
-          if (i == 1 && _currentIndex == 1 &&
-              _libraryKey.currentState?.isSearchActive == true) {
-            _libraryKey.currentState?.clearSearch();
-            return;
-          }
-          _navigateTo(i);
-          // Refresh data on switching to Library, Home, Absorbing, or Stats
-          if (i == 0 || i == 1 || i == 2 || i == 3) {
-            _refreshDataForTab(i);
-          }
-        },
-        destinations: _buildDestinations(context),
+      // NavigationBar has no per-destination long-press, so map the press x
+      // to a destination slot. Plain taps pass through untouched.
+      child: GestureDetector(
+        onLongPressStart: (details) =>
+            _onNavLongPress(details.localPosition.dx, destinations.length),
+        child: NavigationBar(
+          selectedIndex: _selectedDest(lib, podcastsShown),
+          height: isPhoneLandscape ? 56 : null,
+          labelBehavior: isPhoneLandscape
+              ? NavigationDestinationLabelBehavior.alwaysHide
+              : NavigationDestinationLabelBehavior.alwaysShow,
+          onDestinationSelected: (dest) {
+            final page = _pageForDest(dest, podcastsShown);
+            // Re-tapping the active library-ish destination clears search
+            if (page == 1 &&
+                _currentIndex == 1 &&
+                dest == _selectedDest(lib, podcastsShown) &&
+                _libraryKey.currentState?.isSearchActive == true) {
+              _libraryKey.currentState?.clearSearch();
+              return;
+            }
+            _syncTabLibrary(dest, podcastsShown);
+            _navigateTo(page);
+            // Refresh data on switching to Library, Home, Absorbing, or Stats
+            if (page == 0 || page == 1 || page == 2 || page == 3) {
+              _refreshDataForTab(page);
+            }
+          },
+          destinations: destinations,
+        ),
       ),
     );
   }
 
-  List<NavigationDestination> _buildDestinations(BuildContext context) {
+  void _onNavLongPress(double dx, int destCount) {
+    final width = MediaQuery.sizeOf(context).width;
+    if (width <= 0 || destCount <= 0) return;
+    final slot = (dx / (width / destCount)).floor().clamp(0, destCount - 1);
+    final absorbingSlot = destCount >= 6 ? 3 : 2;
+    if (slot == 0) {
+      // Home: quick library switcher.
+      final lib = context.read<LibraryProvider>();
+      if (lib.libraries.length < 2) return;
+      HapticFeedback.mediumImpact();
+      showLibraryPickerSheet(context, lib);
+    } else if (slot == 1) {
+      // Library: focus search.
+      HapticFeedback.mediumImpact();
+      final lib = context.read<LibraryProvider>();
+      if (_podcastsShown(lib)) _syncTabLibrary(1, true);
+      _openSearch();
+    } else if (slot == absorbingSlot) {
+      // Absorbing: toggle playback without leaving the current tab.
+      if (!_player.hasBook) return;
+      HapticFeedback.mediumImpact();
+      if (_player.isPlaying) {
+        _player.pause();
+      } else {
+        _player.play();
+      }
+    }
+  }
+
+  List<NavigationDestination> _buildDestinations(
+    BuildContext context,
+    bool podcastsShown,
+  ) {
     final l = AppLocalizations.of(context)!;
     final lib = context.watch<LibraryProvider>();
-    final isPodcast = lib.isPodcastLibrary;
+    // With the dedicated Podcasts tab, Home/Library always wear their book
+    // labels - the podcast library being selected must not morph them.
+    final isPodcast = !podcastsShown && lib.isPodcastLibrary;
 
+    // tooltip: '' everywhere: the default label Tooltip registers its own
+    // long-press recognizer, which silently wins the gesture arena over the
+    // bar-level long-press handler (quick actions per slot).
     return [
       NavigationDestination(
         icon: Icon(isPodcast ? Icons.explore_outlined : Icons.home_outlined),
-        selectedIcon: Icon(isPodcast ? Icons.explore_rounded : Icons.home_rounded),
+        selectedIcon: Icon(
+          isPodcast ? Icons.explore_rounded : Icons.home_rounded,
+        ),
         label: isPodcast ? l.appShellDiscoverTab : l.appShellHomeTab,
+        tooltip: '',
       ),
       NavigationDestination(
-        icon: Icon(isPodcast ? Icons.podcasts_outlined : Icons.library_books_outlined),
-        selectedIcon: Icon(isPodcast ? Icons.podcasts_rounded : Icons.library_books_rounded),
+        icon: Icon(
+          isPodcast ? Icons.podcasts_outlined : Icons.library_books_outlined,
+        ),
+        selectedIcon: Icon(
+          isPodcast ? Icons.podcasts_rounded : Icons.library_books_rounded,
+        ),
         label: isPodcast ? l.appShellShowsTab : l.appShellLibraryTab,
+        tooltip: '',
       ),
+      if (podcastsShown)
+        NavigationDestination(
+          icon: const Icon(Icons.podcasts_outlined),
+          selectedIcon: const Icon(Icons.podcasts_rounded),
+          label: l.appShellPodcastsTab,
+          tooltip: '',
+        ),
       NavigationDestination(
         icon: const _AnimatedWaveIcon(size: 24, active: false),
         selectedIcon: const _AnimatedWaveIcon(size: 24, active: true),
         label: Wording.of(context).appShellAbsorbingTab,
+        tooltip: '',
       ),
       NavigationDestination(
         icon: const Icon(Icons.bar_chart_rounded),
         selectedIcon: const Icon(Icons.bar_chart_rounded),
         label: l.appShellStatsTab,
+        tooltip: '',
       ),
       NavigationDestination(
         icon: const Icon(Icons.settings_outlined),
         selectedIcon: const Icon(Icons.settings_rounded),
         label: l.appShellSettingsTab,
+        tooltip: '',
       ),
     ];
   }
@@ -808,7 +984,11 @@ class _NavWavePainter extends CustomPainter {
   final Color color;
   final bool playing;
 
-  _NavWavePainter({required this.phase, required this.color, required this.playing});
+  _NavWavePainter({
+    required this.phase,
+    required this.color,
+    required this.playing,
+  });
 
   static const _barHeights = [0.35, 0.6, 1.0, 0.6, 0.35];
   static const _barCount = 5;
@@ -832,7 +1012,10 @@ class _NavWavePainter extends CustomPainter {
 
       if (playing) {
         final barPhase = phase * 2 * math.pi + i * 1.2;
-        final ratio = (baseRatio * (0.5 + 0.5 * math.sin(barPhase))).clamp(0.2, 1.0);
+        final ratio = (baseRatio * (0.5 + 0.5 * math.sin(barPhase))).clamp(
+          0.2,
+          1.0,
+        );
         final half = maxHalf * ratio;
         canvas.drawLine(Offset(x, midY - half), Offset(x, midY + half), paint);
       } else {

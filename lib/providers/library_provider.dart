@@ -318,11 +318,62 @@ class LibraryProvider extends ChangeNotifier
     _playlists = [];
     _collections = [];
     await ScopedPrefs.setString('last_selected_library', libraryId);
+    await _rememberBookLibrary(libraryId);
     await _loadSectionPrefs();
     notifyListeners();
     await loadPersonalizedView(force: true);
     AndroidAutoService().refresh(force: true);
     CarPlayService().refreshTemplates();
+  }
+
+  /// Library switch for the dedicated Podcasts tab flips. Never stops
+  /// playback, restores cached sections instantly and only refetches once
+  /// the per-library cooldown expires - picker-driven switches keep using
+  /// [selectLibrary] (full refresh).
+  Future<void> selectLibraryLight(String libraryId) async {
+    if (libraryId == _selectedLibraryId) return;
+    _selectedLibraryId = libraryId;
+    _series = [];
+    _playlists = [];
+    _collections = [];
+    _personalizedSections = _sectionsByLibrary[libraryId] ?? [];
+    await ScopedPrefs.setString('last_selected_library', libraryId);
+    await _rememberBookLibrary(libraryId);
+    await _loadSectionPrefs();
+    notifyListeners();
+    await loadPersonalizedView();
+    AndroidAutoService().refresh(force: true);
+    CarPlayService().refreshTemplates();
+  }
+
+  bool isPodcastLibraryId(String libraryId) {
+    final library = _libraries.firstWhere(
+      (l) => l['id'] == libraryId,
+      orElse: () => null,
+    );
+    if (library is! Map<String, dynamic>) return false;
+    return (library['mediaType'] as String? ?? 'book') == 'podcast';
+  }
+
+  /// Track the last non-podcast library so the Home/Library tabs know where
+  /// to return when leaving the dedicated Podcasts tab.
+  Future<void> _rememberBookLibrary(String libraryId) async {
+    if (!isPodcastLibraryId(libraryId)) {
+      await ScopedPrefs.setString('last_book_library', libraryId);
+    }
+  }
+
+  /// The library the Home/Library tabs should show: the last-used book
+  /// library, or the first non-podcast library as a fallback.
+  Future<String?> lastBookLibraryId() async {
+    final saved = await ScopedPrefs.getString('last_book_library');
+    if (saved != null && _libraries.any((l) => l['id'] == saved)) return saved;
+    for (final l in _libraries) {
+      if ((l['mediaType'] as String? ?? 'book') != 'podcast') {
+        return l['id'] as String?;
+      }
+    }
+    return null;
   }
 
 

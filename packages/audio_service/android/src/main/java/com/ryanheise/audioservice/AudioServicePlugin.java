@@ -266,6 +266,7 @@ public class AudioServicePlugin implements FlutterPlugin, ActivityAware {
     public void onAttachedToEngine(FlutterPluginBinding binding) {
         flutterPluginBinding = binding;
         clientInterface = new ClientInterface(flutterPluginBinding.getBinaryMessenger());
+        clientInterface.plugin = this;
         clientInterface.setContext(flutterPluginBinding.getApplicationContext());
         clientInterfaces.add(clientInterface);
         if (applicationContext == null) {
@@ -278,9 +279,13 @@ public class AudioServicePlugin implements FlutterPlugin, ActivityAware {
             audioHandlerInterface = new AudioHandlerInterface(flutterPluginBinding.getBinaryMessenger());
             AudioService.init(audioHandlerInterface);
         }
-        if (mediaBrowser == null) {
-            connect();
-        }
+        // Absorb patch: do NOT connect() here. Auxiliary engines (WorkManager's
+        // background job) also attach this plugin, and connecting from them
+        // starts AudioService, which caches a FlutterEngine running the full
+        // app main() headless in a frozen background process - the activity
+        // then attaches to that stuck engine and sits on the splash screen.
+        // Engines that actually host audio connect via onAttachedToActivity or
+        // the "configure" call below.
     }
 
     @Override
@@ -413,6 +418,10 @@ public class AudioServicePlugin implements FlutterPlugin, ActivityAware {
         private final MethodChannel channel;
         private boolean wrongEngineDetected;
         private boolean serviceConnectionFailed;
+        // Absorb patch: back-reference to the owning plugin instance so the
+        // "configure" handler can call the (instance) connect() - see the
+        // connect() relocation comments in onAttachedToEngine.
+        private AudioServicePlugin plugin;
 
         // This is implemented in Dart already.
         // But we may need to bring this back if we want to connect to another process's media session.
@@ -499,6 +508,14 @@ public class AudioServicePlugin implements FlutterPlugin, ActivityAware {
                             audioHandlerInterface.switchToMessenger(messenger);
                         }
                         audioHandlerInterface.invokePendingMethods();
+                    }
+                    // Absorb patch: connect() moved here from onAttachedToEngine
+                    // (see the comment there). This runs for every engine that
+                    // hosts an AudioHandler - the activity's engine and the
+                    // service-spawned headless engine - but never for auxiliary
+                    // engines that don't call AudioService.init.
+                    if (mediaBrowser == null && plugin != null) {
+                        plugin.connect();
                     }
                     if (mediaController != null) {
                         result.success(mapOf());

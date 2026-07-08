@@ -10,7 +10,10 @@ void showOverlayToast(BuildContext context, String message, {IconData? icon}) {
   _currentToast?.remove();
   _currentToast = null;
 
-  final overlay = Overlay.of(context);
+  // No overlay (startup, account switch, background-triggered callers): drop
+  // the toast instead of throwing into whatever async flow asked for it.
+  final overlay = Overlay.maybeOf(context);
+  if (overlay == null) return;
   late OverlayEntry entry;
   entry = OverlayEntry(
     builder: (_) => _AnimatedToast(

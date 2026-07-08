@@ -29,6 +29,7 @@ import 'services/user_account_service.dart';
 import 'services/android_auto_service.dart';
 import 'services/carplay_service.dart';
 import 'services/chromecast_service.dart';
+import 'services/episode_notification_service.dart';
 import 'services/home_widget_service.dart';
 import 'services/log_service.dart';
 import 'services/quick_actions_service.dart';
@@ -560,6 +561,10 @@ class _AuthGateState extends State<AuthGate> {
     try {
       await applyOrientationLock();
     } catch (_) {}
+    // Background new-episode notifications: re-register the periodic job
+    // (self-healing after OEM kills) and wire up notification taps.
+    EpisodeNotificationService.syncRegistration();
+    EpisodeNotificationService.initTapHandling();
     // Restore cover seed color
     {
       final seedInt = await PlayerSettings.getCoverSeedColor();

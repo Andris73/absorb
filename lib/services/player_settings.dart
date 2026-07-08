@@ -153,8 +153,27 @@ class PlayerSettings {
   static Future<String> getBookmarkSort() => _get('bookmarkSort', 'newest');
   static Future<void> setBookmarkSort(String value) => _set('bookmarkSort', value);
 
-  static Future<bool> getMergeAbsorbingLibraries() => _get('mergeAbsorbingLibraries', false);
+  // The dedicated Podcasts tab implies merged behavior: playback must survive
+  // the tab-driven library flips and the Absorbing tab must keep showing the
+  // playing item from either tab.
+  static Future<bool> getMergeAbsorbingLibraries() async =>
+      await _get('mergeAbsorbingLibraries', false) || await getPodcastTabEnabled();
+  /// The stored toggle value, without the Podcasts-tab implication. For the
+  /// settings UI and backups - exporting the effective value would bake
+  /// merge=true into a restore permanently.
+  static Future<bool> getMergeAbsorbingLibrariesRaw() => _get('mergeAbsorbingLibraries', false);
   static Future<void> setMergeAbsorbingLibraries(bool value) => _set('mergeAbsorbingLibraries', value);
+
+  // Dedicated bottom-nav Podcasts tab (pinned to one podcast library).
+  static Future<bool> getPodcastTabEnabled() => _get('podcastTabEnabled', false);
+  static Future<void> setPodcastTabEnabled(bool value) => _set('podcastTabEnabled', value, notify: true);
+  static Future<String> getPodcastTabLibraryId() => _get('podcastTabLibraryId', '');
+  static Future<void> setPodcastTabLibraryId(String value) => _set('podcastTabLibraryId', value, notify: true);
+
+  // Background new-episode notification checks, in minutes (0 = off).
+  // WorkManager's floor for periodic jobs is 15 minutes.
+  static Future<int> getEpisodeNotifIntervalMinutes() => _get('episodeNotifIntervalMinutes', 0);
+  static Future<void> setEpisodeNotifIntervalMinutes(int value) => _set('episodeNotifIntervalMinutes', value, notify: true);
 
   static Future<int> getMaxConcurrentDownloads() => _get('maxConcurrentDownloads', 1);
   static Future<void> setMaxConcurrentDownloads(int value) => _set('maxConcurrentDownloads', value);

@@ -119,6 +119,9 @@ class ApiService {
 
     _refreshCompleter = Completer<bool>();
     try {
+      // Timeout is load-bearing: this is awaited from tryRestoreSession via
+      // the 401-retry path, and a stalled response here would otherwise hold
+      // the splash screen forever.
       final response = await http.post(
         Uri.parse('$_cleanBaseUrl/api/authorize'),
         headers: {
@@ -126,7 +129,7 @@ class ApiService {
           'Authorization': 'Bearer $_refreshToken',
           'x-return-tokens': 'true',
         },
-      );
+      ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -1328,10 +1331,10 @@ class ApiService {
 
   /// Get recent podcast episodes for a library.
   /// GET /api/libraries/:id/recent-episodes
-  Future<List<dynamic>> getRecentEpisodes(String libraryId, {int limit = 25}) async {
+  Future<List<dynamic>> getRecentEpisodes(String libraryId, {int limit = 25, int page = 0}) async {
     try {
       final resp = await _authGet(
-        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/recent-episodes?limit=$limit'),
+        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/recent-episodes?limit=$limit&page=$page'),
       );
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
