@@ -389,6 +389,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       _lastChapterIdx = -1;
       _lastSeenUpdatedAt = context.read<LibraryProvider>().itemUpdatedAt(_itemId);
       _fetchChaptersIfNeeded();
+      // The per-show speed is item state too - without this, a card recycled
+      // for a different item shows times computed at the old item's speed.
+      _loadSavedSpeed();
     }
     // Re-resolve the cover shape: the item (or its libraryId) may have changed,
     // or the player may now know the library for the item that just started.
