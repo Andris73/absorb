@@ -1105,7 +1105,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
       coverUrl: _coverUrl, totalDuration: _effectiveDuration, chapters: _chapters,
       episodeId: _episodeId,
       episodeTitle: _recentEpisode?['title'] as String?,
-      libraryId: _item['libraryId'] as String?,
+      libraryId: _resolveLibraryId(),
     );
     if (mounted) {
       if (error != null) showErrorSnackBar(context, error);

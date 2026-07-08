@@ -134,7 +134,9 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
       coverUrl: api.getCoverUrl(_itemId), totalDuration: _duration, chapters: _chapters,
       episodeId: _episodeId,
       episodeTitle: _episodeTitle,
-      libraryId: context.read<LibraryProvider>().selectedLibraryId,
+      // The show's own library, not the browsing library (wrong with unified
+      // libraries on). Null lets the player resolve it from the session.
+      libraryId: widget.podcastItem['libraryId'] as String?,
     );
     debugPrint('[PodcastPlay] playItem returned in ${DateTime.now().difference(t0).inMilliseconds}ms (error=${error ?? 'none'})');
     if (error != null && rootContext.mounted) {

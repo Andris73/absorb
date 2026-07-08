@@ -1129,7 +1129,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       coverUrl: _coverUrl, totalDuration: _effectiveDuration, chapters: _chapters,
       episodeId: _episodeId,
       episodeTitle: _recentEpisode?['title'] as String?,
-      libraryId: widget.item['libraryId'] as String?,
+      libraryId: _resolveLibraryId(),
     );
     if (mounted) {
       if (error != null) showErrorSnackBar(context, error);

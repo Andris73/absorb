@@ -461,6 +461,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     debugPrint('[Handler] fastForward() - seeking forward');
     final skipAmount = await PlayerSettings.getEffectiveForwardSkip(
         libraryId: _service?.currentLibraryId);
+    debugPrint('[SkipDebug] fastForward: lib=${_service?.currentLibraryId} amount=${skipAmount}s');
     if (_service != null) {
       await _service!.skipForward(skipAmount);
     } else {
@@ -474,6 +475,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     debugPrint('[Handler] rewind() - seeking back');
     final skipAmount = await PlayerSettings.getEffectiveBackSkip(
         libraryId: _service?.currentLibraryId);
+    debugPrint('[SkipDebug] rewind: lib=${_service?.currentLibraryId} amount=${skipAmount}s');
     if (_service != null) {
       await _service!.skipBackward(skipAmount);
     } else {
@@ -1263,6 +1265,7 @@ class AudioPlayerService extends ChangeNotifier {
   void _syncNotifSkipCache() {
     final libId = _currentLibraryId;
     PlayerSettings.getEffectiveForwardSkip(libraryId: libId).then((v) {
+      debugPrint('[SkipDebug] notif cache: lib=$libId fwd=${v}s (was ${_handler?._cachedForwardSkip})');
       if (_handler != null && v != _handler!._cachedForwardSkip) {
         _handler!._cachedForwardSkip = v;
         _handler!.refreshPlaybackState();
@@ -1274,6 +1277,42 @@ class AudioPlayerService extends ChangeNotifier {
         _handler!.refreshPlaybackState();
       }
     });
+  }
+
+  /// Fill in a missing library id for the playing item so per-library skip
+  /// amounts apply outside the in-app UI too (notification, headset, home
+  /// widget, Android Auto). Lean shelf items and merged-library podcast
+  /// entries often arrive without one; try download metadata synchronously,
+  /// then the server.
+  void _resolveMissingLibraryId(String itemId, String? episodeId) {
+    if (itemId.isEmpty) return;
+    if (_currentLibraryId != null && _currentLibraryId!.isNotEmpty) return;
+    final key = episodeId != null ? '$itemId-$episodeId' : itemId;
+    final fromDownload = DownloadService().getInfo(key).libraryId;
+    if (fromDownload != null && fromDownload.isNotEmpty) {
+      debugPrint('[SkipDebug] libraryId resolved from download metadata: $fromDownload');
+      _currentLibraryId = fromDownload;
+      return;
+    }
+    final api = _api;
+    if (api == null) return;
+    unawaited(() async {
+      try {
+        final item = await api.getLibraryItem(itemId);
+        final libId = item?['libraryId'] as String?;
+        if (libId == null || libId.isEmpty) return;
+        // Only adopt if this item is still the one playing and nothing else
+        // resolved the library in the meantime (e.g. the play session).
+        if (_currentItemId != itemId) return;
+        if (_currentLibraryId != null && _currentLibraryId!.isNotEmpty) return;
+        debugPrint('[SkipDebug] libraryId resolved from server: $libId');
+        _currentLibraryId = libId;
+        _syncNotifSkipCache();
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[SkipDebug] libraryId lookup failed: $e');
+      }
+    }());
   }
 
   /// The last seek target in seconds (absolute book position).
@@ -1578,6 +1617,7 @@ class AudioPlayerService extends ChangeNotifier {
     _currentItemId = next['itemId'] as String?;
     _currentEpisodeId = next['episodeId'] as String?;
     _currentLibraryId = next['libraryId'] as String?;
+    _resolveMissingLibraryId(_currentItemId ?? '', _currentEpisodeId);
     _syncNotifSkipCache();
     _currentTitle = next['title'] as String?;
     _currentAuthor = next['author'] as String?;
@@ -2445,6 +2485,8 @@ class AudioPlayerService extends ChangeNotifier {
     _currentItemId = itemId;
     _currentEpisodeId = episodeId;
     _currentLibraryId = libraryId;
+    debugPrint('[SkipDebug] playItem libraryId=$libraryId (item=$itemId ep=$episodeId)');
+    _resolveMissingLibraryId(itemId, episodeId);
     _syncNotifSkipCache();
     // Reset local-session mode for every new play; _playFromLocal re-enables it
     // for downloaded items. Without this it leaks from a prior downloaded play
@@ -3078,6 +3120,15 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     _playbackSessionId = sessionData['id'] as String?;
+    // Sessions know their library; adopt it when the caller couldn't provide
+    // one so per-library skip amounts work for lean/merged shelf items.
+    final sessionLibId = sessionData['libraryId'] as String?;
+    if ((_currentLibraryId == null || _currentLibraryId!.isEmpty) &&
+        sessionLibId != null && sessionLibId.isNotEmpty) {
+      debugPrint('[SkipDebug] libraryId adopted from play session: $sessionLibId');
+      _currentLibraryId = sessionLibId;
+      _syncNotifSkipCache();
+    }
     _lastServerSync = DateTime.now();
     _logEvent(PlaybackEventType.sessionStart, detail: 'stream');
     var audioTracks = sessionData['audioTracks'] as List<dynamic>?;

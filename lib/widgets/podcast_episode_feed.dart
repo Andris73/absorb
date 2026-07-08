@@ -224,7 +224,10 @@ class _PodcastEpisodeFeedState extends State<PodcastEpisodeFeed> {
       chapters: chapters,
       episodeId: episodeId,
       episodeTitle: title,
-      libraryId: widget.libraryId,
+      // Prefer the show's own library - the feed can aggregate shows from
+      // other libraries when unified libraries is on.
+      libraryId: (ep['podcast'] as Map<String, dynamic>?)?['libraryId'] as String? ??
+          widget.libraryId,
     );
     if (error != null && mounted) showErrorSnackBar(context, error);
   }

@@ -326,7 +326,11 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
       chapters: chapters,
       episodeId: episodeId,
       episodeTitle: episodeTitle,
-      libraryId: context.read<LibraryProvider>().selectedLibraryId,
+      // The show's own library, not the browsing library - with unified
+      // libraries on, this sheet can open shows from other libraries and the
+      // selected library would pin the wrong per-library skip amounts. Null
+      // is fine: the player resolves it from the session/server.
+      libraryId: widget.podcastItem['libraryId'] as String?,
     );
     if (mounted) {
       if (error != null) showErrorSnackBar(context, error);

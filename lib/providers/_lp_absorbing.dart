@@ -304,6 +304,13 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
           final key = '$showId-$epId';
           final cached = _absorbingItemCache[key];
           if (cached == null) continue;
+          // Synthetic merged-library entries are built from show maps that
+          // may lack a libraryId; without it the card controls and playback
+          // fall back to the global skip amounts.
+          final cachedLibId = cached['libraryId'] as String?;
+          if (cachedLibId == null || cachedLibId.isEmpty) {
+            cached['libraryId'] = fullItem['libraryId'];
+          }
           final ep = episodes.cast<Map<String, dynamic>?>().firstWhere(
                 (e) => e != null && (e['id'] as String?) == epId,
                 orElse: () => null,
