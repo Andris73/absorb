@@ -167,6 +167,16 @@
                 android:resource="@xml/stats_widget_info" />
         </receiver>
 
+        <!-- An app update kills playback but the widgets redraw from the
+             stashed state, which still says playing - reset it on install. -->
+        <receiver
+            android:name=".PackageReplacedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Bridge to the AbsorbWear watch app: receives sync requests and
              sign-out events sent from the watch over the Wearable Data Layer. -->
         <service

@@ -47,6 +47,7 @@ import java.util.List;
 import java.util.Map;
 
 import io.flutter.embedding.engine.FlutterEngine;
+import io.flutter.embedding.engine.FlutterEngineCache;
 
 public class AudioService extends MediaBrowserServiceCompat {
     public static final String CONTENT_STYLE_SUPPORTED = "android.media.browse.CONTENT_STYLE_SUPPORTED";
@@ -349,8 +350,15 @@ public class AudioService extends MediaBrowserServiceCompat {
             }
         };
 
-        flutterEngine = AudioServicePlugin.getFlutterEngine(this);
-        System.out.println("flutterEngine warmed up");
+        // Absorb patch: only adopt an engine that already exists - never
+        // create one here. A headless service start (widget media-button
+        // press or the system's media resumption bind after the process died,
+        // e.g. an app update installed mid-listen) would run the app's full
+        // main() with no activity, and that half-initialized engine gets
+        // cached: the next app launch attaches to it and freezes on the
+        // splash screen until the user force-stops the app. Real launches
+        // create the engine through the activity before connecting.
+        flutterEngine = FlutterEngineCache.getInstance().get(AudioServicePlugin.getFlutterEngineId());
     }
 
     @Override
