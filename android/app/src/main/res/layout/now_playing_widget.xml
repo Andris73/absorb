@@ -41,7 +41,7 @@
             android:layout_alignTop="@id/widget_cover"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
-            android:paddingTop="4dp"
+            android:paddingTop="12dp"
             android:text="Absorb"
             android:textColor="#FFFFFF"
             android:textSize="15sp"
@@ -87,6 +87,7 @@
             android:layout_height="wrap_content"
             android:layout_toEndOf="@id/widget_cover"
             android:layout_alignBottom="@id/widget_cover"
+            android:layout_marginBottom="8dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:paddingStart="4dp"
@@ -123,7 +124,7 @@
             <!-- Play/pause: white circle with dark icon -->
             <ImageButton
                 android:id="@+id/widget_play_pause"
-                android:layout_width="40dp"
+                android:layout_width="56dp"
                 android:layout_height="40dp"
                 android:padding="8dp"
                 android:src="@drawable/ic_widget_play_dark"

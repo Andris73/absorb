@@ -50,15 +50,25 @@ class NowPlayingWidgetCompact : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == ACTION_TOGGLE_PLAYBACK) {
             val widgetData = HomeWidgetPlugin.getData(context)
-            val wasPlaying = widgetData.getBoolean("widget_is_playing", false)
-            widgetData.edit().putBoolean("widget_is_playing", !wasPlaying).apply()
+            widgetData.edit().putBoolean("widget_is_playing", false).apply()
 
+            // A render failure here must not stop the broadcast below, or the
+            // tap silently does nothing instead of toggling playback.
             val mgr = AppWidgetManager.getInstance(context)
             for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidgetCompact::class.java))) {
-                updateWidget(context, mgr, id)
+                try { updateWidget(context, mgr, id) } catch (e: Exception) {
+                    android.util.Log.e("NowPlayingWidgetCompact", "toggle update failed", e)
+                }
             }
             for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidget::class.java))) {
-                NowPlayingWidget.updateWidget(context, mgr, id)
+                try { NowPlayingWidget.updateWidget(context, mgr, id) } catch (e: Exception) {
+                    android.util.Log.e("NowPlayingWidgetCompact", "toggle update failed", e)
+                }
+            }
+            for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidgetTiny::class.java))) {
+                try { NowPlayingWidgetTiny.updateWidget(context, mgr, id) } catch (e: Exception) {
+                    android.util.Log.e("NowPlayingWidgetCompact", "toggle update failed", e)
+                }
             }
 
             val mediaIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
@@ -126,8 +136,9 @@ class NowPlayingWidgetCompact : AppWidgetProvider() {
                 views.setViewPadding(R.id.widget_outer, 0, 0, 0, 0)
             }
 
-            val hasBook = widgetData.getBoolean("widget_has_book", false)
             val title = widgetData.getString("widget_title", null)
+            val hasBook = widgetData.getBoolean("widget_has_book", false)
+            val canControl = (hasBook || !title.isNullOrEmpty()) && WidgetClock.isEngineAlive()
             val author = widgetData.getString("widget_author", null)
             val isPlaying = widgetData.getBoolean("widget_is_playing", false)
             val coverPath = widgetData.getString("widget_cover_path", null)
@@ -221,7 +232,7 @@ class NowPlayingWidgetCompact : AppWidgetProvider() {
                 R.id.widget_skip_back,
                 mediaButtonPendingIntent(context, KeyEvent.KEYCODE_MEDIA_REWIND, 12)
             )
-            val playPauseIntent = if (hasBook) {
+            val playPauseIntent = if (canControl) {
                 val toggleIntent = Intent(context, NowPlayingWidgetCompact::class.java).apply {
                     action = ACTION_TOGGLE_PLAYBACK
                 }

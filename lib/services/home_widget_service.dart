@@ -65,10 +65,12 @@ class HomeWidgetService {
       await HomeWidget.setAppGroupId(_appGroupId);
       debugPrint('[WidgetDebug] setAppGroupId=$_appGroupId');
       try {
-        _groupContainerPath =
-            await _widgetChannel.invokeMethod<String>('getGroupContainerPath');
+        _groupContainerPath = await _widgetChannel.invokeMethod<String>(
+          'getGroupContainerPath',
+        );
         debugPrint(
-            '[WidgetDebug] groupContainerPath=${_groupContainerPath ?? "<null>"}');
+          '[WidgetDebug] groupContainerPath=${_groupContainerPath ?? "<null>"}',
+        );
       } catch (e) {
         debugPrint('[WidgetDebug] Failed to get group container path: $e');
       }
@@ -157,13 +159,16 @@ class HomeWidgetService {
   ///
   /// iOS only - Android doesn't have the native core path.
   Future<double?> getNativeNowPlayingPosition(
-      String itemId, String? episodeId) async {
+    String itemId,
+    String? episodeId,
+  ) async {
     if (!Platform.isIOS) return null;
     try {
       final stashedItem = await HomeWidget.getWidgetData<String>('np_item_id');
       if (stashedItem != itemId) return null;
-      final stashedEpisode =
-          await HomeWidget.getWidgetData<String>('np_episode_id');
+      final stashedEpisode = await HomeWidget.getWidgetData<String>(
+        'np_episode_id',
+      );
       if (stashedEpisode != episodeId) return null;
       final pos = await HomeWidget.getWidgetData<double>('np_position_s');
       return pos;
@@ -202,7 +207,9 @@ class HomeWidgetService {
           // any current session (the watch already knows what it picked).
           final itemId = uri.queryParameters['itemId'];
           final rawEpisode = uri.queryParameters['episodeId'];
-          final episodeId = (rawEpisode == null || rawEpisode.isEmpty) ? null : rawEpisode;
+          final episodeId = (rawEpisode == null || rawEpisode.isEmpty)
+              ? null
+              : rawEpisode;
           if (itemId != null && itemId.isNotEmpty) {
             _handlePlayItem(itemId, episodeId);
           }
@@ -238,7 +245,9 @@ class HomeWidgetService {
   /// Always plays (no toggle path) — the watch already chose which book
   /// it wants and the user expects an immediate switch.
   Future<void> _handlePlayItem(String itemId, String? episodeId) async {
-    debugPrint('[HomeWidget] _handlePlayItem itemId=$itemId episodeId=$episodeId');
+    debugPrint(
+      '[HomeWidget] _handlePlayItem itemId=$itemId episodeId=$episodeId',
+    );
     final player = AudioPlayerService();
 
     final prefs = await SharedPreferences.getInstance();
@@ -254,8 +263,9 @@ class HomeWidgetService {
     final headersJson = prefs.getString('custom_headers');
     if (headersJson != null) {
       try {
-        customHeaders =
-            Map<String, String>.from(jsonDecode(headersJson) as Map);
+        customHeaders = Map<String, String>.from(
+          jsonDecode(headersJson) as Map,
+        );
       } catch (_) {}
     }
 
@@ -286,9 +296,9 @@ class HomeWidgetService {
       if (episodeId != null) {
         final episodes = (media['episodes'] as List<dynamic>?) ?? [];
         final episode = episodes.cast<Map<String, dynamic>>().firstWhere(
-              (e) => e['id'] == episodeId,
-              orElse: () => <String, dynamic>{},
-            );
+          (e) => e['id'] == episodeId,
+          orElse: () => <String, dynamic>{},
+        );
         final epTitle = episode['title'] as String? ?? title;
         final epDuration =
             (episode['duration'] as num?)?.toDouble() ?? duration;
@@ -324,8 +334,9 @@ class HomeWidgetService {
   Future<void> _handlePlayPause() async {
     final player = AudioPlayerService();
     debugPrint(
-        '[WidgetDebug] _handlePlayPause hasBook=${player.hasBook} isPlaying=${player.isPlaying}\n'
-        'Caller:\n${StackTrace.current}');
+      '[WidgetDebug] _handlePlayPause hasBook=${player.hasBook} isPlaying=${player.isPlaying}\n'
+      'Caller:\n${StackTrace.current}',
+    );
 
     // When there's an active session the widget uses a MediaSession media button
     // instead of launching the app, so this path is only hit for cold resume.
@@ -352,15 +363,18 @@ class HomeWidgetService {
     final serverUrl = prefs.getString('server_url');
     final token = prefs.getString('token');
     final refreshToken = prefs.getString('refresh_token');
-    debugPrint('[HomeWidget] play_pause: server=${serverUrl != null}, token=${token != null}');
+    debugPrint(
+      '[HomeWidget] play_pause: server=${serverUrl != null}, token=${token != null}',
+    );
     if (serverUrl == null || token == null) return;
 
     Map<String, String>? customHeaders;
     final headersJson = prefs.getString('custom_headers');
     if (headersJson != null) {
       try {
-        customHeaders =
-            Map<String, String>.from(jsonDecode(headersJson) as Map);
+        customHeaders = Map<String, String>.from(
+          jsonDecode(headersJson) as Map,
+        );
       } catch (_) {}
     }
 
@@ -375,7 +389,9 @@ class HomeWidgetService {
     final episodeId = prefs.getString('widget_episode_id');
 
     try {
-      debugPrint('[HomeWidget] play_pause: fetching item $itemId (episode=$episodeId)');
+      debugPrint(
+        '[HomeWidget] play_pause: fetching item $itemId (episode=$episodeId)',
+      );
       final fullItem = await api.getLibraryItem(itemId);
       if (fullItem == null) {
         debugPrint('[HomeWidget] play_pause: getLibraryItem returned null');
@@ -395,9 +411,9 @@ class HomeWidgetService {
       if (episodeId != null) {
         final episodes = (media['episodes'] as List<dynamic>?) ?? [];
         final episode = episodes.cast<Map<String, dynamic>>().firstWhere(
-              (e) => e['id'] == episodeId,
-              orElse: () => <String, dynamic>{},
-            );
+          (e) => e['id'] == episodeId,
+          orElse: () => <String, dynamic>{},
+        );
         final epTitle = episode['title'] as String? ?? title;
         final epDuration =
             (episode['duration'] as num?)?.toDouble() ?? duration;
@@ -466,13 +482,18 @@ class HomeWidgetService {
     final hasBook = player.hasBook;
 
     debugPrint(
-        '[WidgetDebug] _updateWidgetData hasBook=$hasBook isPlaying=${player.isPlaying} title="${player.currentTitle ?? ""}" itemId=${player.currentItemId}');
+      '[WidgetDebug] _updateWidgetData hasBook=$hasBook isPlaying=${player.isPlaying} title="${player.currentTitle ?? ""}" itemId=${player.currentItemId}',
+    );
 
     await HomeWidget.saveWidgetData<bool>('widget_has_book', hasBook);
 
     // Push user's skip durations so the widget shows them on the buttons.
-    final skipBack = await PlayerSettings.getEffectiveBackSkip(libraryId: player.currentLibraryId);
-    final skipForward = await PlayerSettings.getEffectiveForwardSkip(libraryId: player.currentLibraryId);
+    final skipBack = await PlayerSettings.getEffectiveBackSkip(
+      libraryId: player.currentLibraryId,
+    );
+    final skipForward = await PlayerSettings.getEffectiveForwardSkip(
+      libraryId: player.currentLibraryId,
+    );
     await HomeWidget.saveWidgetData<int>('widget_skip_back', skipBack);
     await HomeWidget.saveWidgetData<int>('widget_skip_forward', skipForward);
 
@@ -481,12 +502,18 @@ class HomeWidgetService {
       // the title and "Author · Book" beneath, same as the lock screen. The
       // separate chapter line is cleared so the large widget doesn't repeat it.
       await HomeWidget.saveWidgetData<String>(
-          'widget_title', player.nowPlayingTitle);
+        'widget_title',
+        player.nowPlayingTitle,
+      );
       await HomeWidget.saveWidgetData<String>(
-          'widget_author', player.nowPlayingSubtitle);
+        'widget_author',
+        player.nowPlayingSubtitle,
+      );
       await HomeWidget.saveWidgetData<String>('widget_chapter', '');
       await HomeWidget.saveWidgetData<bool>(
-          'widget_is_playing', player.isPlaying);
+        'widget_is_playing',
+        player.isPlaying,
+      );
 
       final totalDur = player.totalDuration;
       final posSec = player.position.inMilliseconds / 1000.0;
@@ -497,7 +524,10 @@ class HomeWidgetService {
         final chStart = player.currentChapterStart;
         final chLen = player.currentChapterEnd - chStart;
         if (chLen > 0) {
-          progress = (((posSec - chStart) / chLen) * 1000).round().clamp(0, 1000);
+          progress = (((posSec - chStart) / chLen) * 1000).round().clamp(
+            0,
+            1000,
+          );
         }
       } else if (totalDur > 0) {
         progress = ((posSec / totalDur) * 1000).round().clamp(0, 1000);
@@ -509,15 +539,25 @@ class HomeWidgetService {
       // timestamp + speed, so it can tick every second between these
       // (throttled) pushes. Chapter bounds come from np_chapters_json.
       await HomeWidget.saveWidgetData<int>(
-          'widget_pos_abs_ms', player.position.inMilliseconds);
+        'widget_pos_abs_ms',
+        player.position.inMilliseconds,
+      );
       await HomeWidget.saveWidgetData<int>(
-          'widget_total_ms', (totalDur * 1000).round());
-      await HomeWidget.saveWidgetData<int>('widget_pos_at_s',
-          DateTime.now().millisecondsSinceEpoch ~/ 1000);
+        'widget_total_ms',
+        (totalDur * 1000).round(),
+      );
       await HomeWidget.saveWidgetData<int>(
-          'widget_speed_x100', (player.speed * 100).round());
+        'widget_pos_at_s',
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      );
+      await HomeWidget.saveWidgetData<int>(
+        'widget_speed_x100',
+        (player.speed * 100).round(),
+      );
       await HomeWidget.saveWidgetData<bool>(
-          'widget_chapter_mode', player.notifChapterMode);
+        'widget_chapter_mode',
+        player.notifChapterMode,
+      );
 
       // Persist item/episode ID so the widget can resume after app kill
       final prefs = await SharedPreferences.getInstance();
@@ -586,11 +626,16 @@ class HomeWidgetService {
   /// Streaming case (Phase 2) will need the server URL + auth token too;
   /// for now we only stash the file paths so Phase 1.3 (downloaded books)
   /// can play.
-  Future<void> _stashPlaybackStateForNativeCore(AudioPlayerService player) async {
+  Future<void> _stashPlaybackStateForNativeCore(
+    AudioPlayerService player,
+  ) async {
     final itemId = player.currentItemId;
     if (itemId == null) return;
     await HomeWidget.saveWidgetData<String>('np_item_id', itemId);
-    await HomeWidget.saveWidgetData<String?>('np_episode_id', player.currentEpisodeId);
+    await HomeWidget.saveWidgetData<String?>(
+      'np_episode_id',
+      player.currentEpisodeId,
+    );
 
     final posSec = player.position.inMilliseconds / 1000.0;
     await HomeWidget.saveWidgetData<double>('np_position_s', posSec);
@@ -599,19 +644,25 @@ class HomeWidgetService {
     // session total above by minutes, and the widget must show the same
     // numbers as the app.
     await HomeWidget.saveWidgetData<double>(
-        'np_display_total_s', player.displayDuration);
+      'np_display_total_s',
+      player.displayDuration,
+    );
     await HomeWidget.saveWidgetData<double>('np_speed', player.speed);
     // The iOS cover art widget divides its remaining time by the speed only
     // when the in-app player does, so the two always show the same number.
     await HomeWidget.saveWidgetData<bool>(
-        'np_speed_adjusted', await PlayerSettings.getSpeedAdjustedTime());
+      'np_speed_adjusted',
+      await PlayerSettings.getSpeedAdjustedTime(),
+    );
 
     // Chapters serialize as a JSON array of {start, end, title} maps. The
     // native side decodes lazily; if decoding fails we fall back to no
     // chapter info and play the file straight through.
     try {
       await HomeWidget.saveWidgetData<String>(
-          'np_chapters_json', jsonEncode(player.chapters));
+        'np_chapters_json',
+        jsonEncode(player.chapters),
+      );
     } catch (e) {
       debugPrint('[WidgetDebug] chapter encode failed: $e');
       await HomeWidget.saveWidgetData<String>('np_chapters_json', '[]');
@@ -621,22 +672,30 @@ class HomeWidgetService {
     final download = DownloadService().getInfo(itemId);
     final paths = download.localPaths;
     await HomeWidget.saveWidgetData<String>(
-        'np_audio_paths_json', jsonEncode(paths));
+      'np_audio_paths_json',
+      jsonEncode(paths),
+    );
     await HomeWidget.saveWidgetData<bool>('np_is_downloaded', paths.isNotEmpty);
 
     // Streaming endpoints (token already in URL, plus any reverse-proxy
     // headers like Cloudflare Access). Native picks these up when
     // np_is_downloaded is false.
     await HomeWidget.saveWidgetData<String>(
-        'np_stream_urls_json', jsonEncode(player.activeStreamUrls));
+      'np_stream_urls_json',
+      jsonEncode(player.activeStreamUrls),
+    );
     await HomeWidget.saveWidgetData<String>(
-        'np_stream_headers_json', jsonEncode(player.activeStreamHeaders));
+      'np_stream_headers_json',
+      jsonEncode(player.activeStreamHeaders),
+    );
 
     // Multi-track support: cumulative track start offsets so the native
     // core can figure out which track contains a given absolute position
     // (e.g. saved-position 4500s in a 3-file book might fall in track 2).
     await HomeWidget.saveWidgetData<String>(
-        'np_track_offsets_json', jsonEncode(player.trackStartOffsets));
+      'np_track_offsets_json',
+      jsonEncode(player.trackStartOffsets),
+    );
 
     // Server URL + API token so the native core can push progress updates
     // directly to ABS while Flutter is dead. Lets users listen for hours
@@ -655,23 +714,28 @@ class HomeWidgetService {
 
     // Cover path piggybacks on the existing widget_cover_path entry, but
     // expose it under the np_ namespace too for clarity on the native side.
-    final coverPath = await HomeWidget.getWidgetData<String>('widget_cover_path');
+    final coverPath = await HomeWidget.getWidgetData<String>(
+      'widget_cover_path',
+    );
     if (coverPath != null) {
       await HomeWidget.saveWidgetData<String>('np_cover_path', coverPath);
     }
     // GH #298: iOS native now-playing (AbsorbPlayerCore) reads these — feed it
     // the same chapter-as-title / "Author · Book" treatment as the lock screen.
+    await HomeWidget.saveWidgetData<String>('np_title', player.nowPlayingTitle);
     await HomeWidget.saveWidgetData<String>(
-        'np_title', player.nowPlayingTitle);
-    await HomeWidget.saveWidgetData<String>(
-        'np_author', player.nowPlayingSubtitle);
+      'np_author',
+      player.nowPlayingSubtitle,
+    );
 
-    debugPrint('[WidgetDebug] [NativeCore] Stashed: item=$itemId ep=${player.currentEpisodeId} '
-        'pos=${posSec.toStringAsFixed(1)}s tot=${player.totalDuration.toStringAsFixed(0)}s '
-        'speed=${player.speed} dl=${paths.isNotEmpty} '
-        'streams=${player.activeStreamUrls.length} '
-        'tracks=${player.trackStartOffsets.length} '
-        'server=${api?.baseUrl ?? "none"}');
+    debugPrint(
+      '[WidgetDebug] [NativeCore] Stashed: item=$itemId ep=${player.currentEpisodeId} '
+      'pos=${posSec.toStringAsFixed(1)}s tot=${player.totalDuration.toStringAsFixed(0)}s '
+      'speed=${player.speed} dl=${paths.isNotEmpty} '
+      'streams=${player.activeStreamUrls.length} '
+      'tracks=${player.trackStartOffsets.length} '
+      'server=${api?.baseUrl ?? "none"}',
+    );
   }
 
   Future<void> _updateAllWidgets() async {
@@ -723,7 +787,9 @@ class HomeWidgetService {
     if (!force && _lastStatsFetch != null) {
       final since = DateTime.now().difference(_lastStatsFetch!);
       if (since < _statsThrottle) {
-        debugPrint('[StatsWidget] Skipping refresh: ${since.inSeconds}s since last (throttle=${_statsThrottle.inSeconds}s)');
+        debugPrint(
+          '[StatsWidget] Skipping refresh: ${since.inSeconds}s since last (throttle=${_statsThrottle.inSeconds}s)',
+        );
         return;
       }
     }
@@ -739,7 +805,8 @@ class HomeWidgetService {
       final stats = await api.getListeningStats();
       final me = await api.getMe();
 
-      if (stats == null) debugPrint('[StatsWidget] listening-stats returned null');
+      if (stats == null)
+        debugPrint('[StatsWidget] listening-stats returned null');
       if (me == null) debugPrint('[StatsWidget] /me returned null');
 
       // Both calls failed - the server is unreachable. Don't blow away the
@@ -754,10 +821,14 @@ class HomeWidgetService {
       final today = _todaySeconds(dailyMap).round();
       final week = _weekSeconds(dailyMap).round();
       final streak = _currentStreak(dailyMap);
-      final hidden = (await ScopedPrefs.getStringList('year_hidden_ids')).toSet();
+      final hidden = (await ScopedPrefs.getStringList(
+        'year_hidden_ids',
+      )).toSet();
       final booksYear = _countBooksFinishedThisYear(me, hidden);
 
-      debugPrint('[StatsWidget] Computed: today=${today}s week=${week}s streak=${streak}d booksThisYear=$booksYear (dailyMapKeys=${dailyMap.length})');
+      debugPrint(
+        '[StatsWidget] Computed: today=${today}s week=${week}s streak=${streak}d booksThisYear=$booksYear (dailyMapKeys=${dailyMap.length})',
+      );
 
       _todayBase = today;
       _weekBase = week;
@@ -767,7 +838,10 @@ class HomeWidgetService {
       await HomeWidget.saveWidgetData<int>('widget_stats_today', today);
       await HomeWidget.saveWidgetData<int>('widget_stats_week', week);
       await HomeWidget.saveWidgetData<int>('widget_stats_streak', streak);
-      await HomeWidget.saveWidgetData<int>('widget_stats_books_year', booksYear);
+      await HomeWidget.saveWidgetData<int>(
+        'widget_stats_books_year',
+        booksYear,
+      );
       await _updateStatsWidget();
       debugPrint('[StatsWidget] Pushed and updateWidget(StatsWidget) called');
     } catch (e) {
@@ -787,9 +861,13 @@ class HomeWidgetService {
     _localAddedWeek += seconds;
     try {
       await HomeWidget.saveWidgetData<int>(
-          'widget_stats_today', _todayBase + _localAddedToday);
+        'widget_stats_today',
+        _todayBase + _localAddedToday,
+      );
       await HomeWidget.saveWidgetData<int>(
-          'widget_stats_week', _weekBase + _localAddedWeek);
+        'widget_stats_week',
+        _weekBase + _localAddedWeek,
+      );
       await _updateStatsWidget();
     } catch (e) {
       debugPrint('[StatsWidget] Local add failed: $e');
@@ -807,8 +885,9 @@ class HomeWidgetService {
     final headersJson = prefs.getString('custom_headers');
     if (headersJson != null) {
       try {
-        customHeaders =
-            Map<String, String>.from(jsonDecode(headersJson) as Map);
+        customHeaders = Map<String, String>.from(
+          jsonDecode(headersJson) as Map,
+        );
       } catch (_) {}
     }
     final headers = customHeaders ?? const <String, String>{};
@@ -820,8 +899,10 @@ class HomeWidgetService {
     final localEnabled = await PlayerSettings.getLocalServerEnabled();
     final localUrl = await PlayerSettings.getLocalServerUrl();
     if (localEnabled && localUrl.isNotEmpty) {
-      final localReachable = await ApiService.pingServer(localUrl, customHeaders: headers)
-          .timeout(const Duration(seconds: 3), onTimeout: () => false);
+      final localReachable = await ApiService.pingServer(
+        localUrl,
+        customHeaders: headers,
+      ).timeout(const Duration(seconds: 3), onTimeout: () => false);
       if (localReachable) baseUrl = localUrl;
     }
 
@@ -877,7 +958,8 @@ class HomeWidgetService {
     final now = DateTime.now();
     final startOffset = _daySeconds(dailyMap, _dateKey(now)) > 0 ? 0 : 1;
     for (int i = startOffset; i < 365; i++) {
-      if (_daySeconds(dailyMap, _dateKey(now.subtract(Duration(days: i)))) > 0) {
+      if (_daySeconds(dailyMap, _dateKey(now.subtract(Duration(days: i)))) >
+          0) {
         streak++;
       } else {
         break;
@@ -886,7 +968,10 @@ class HomeWidgetService {
     return streak;
   }
 
-  int _countBooksFinishedThisYear(Map<String, dynamic>? me, Set<String> hidden) {
+  int _countBooksFinishedThisYear(
+    Map<String, dynamic>? me,
+    Set<String> hidden,
+  ) {
     if (me == null) return 0;
     final progress = me['mediaProgress'];
     if (progress is! List) return 0;
@@ -962,10 +1047,13 @@ class HomeWidgetService {
     }
 
     final pathInGroup =
-        coverPath != null && _groupContainerPath != null && coverPath.startsWith(_groupContainerPath!);
+        coverPath != null &&
+        _groupContainerPath != null &&
+        coverPath.startsWith(_groupContainerPath!);
     final exists = coverPath != null && File(coverPath).existsSync();
     debugPrint(
-        '[WidgetDebug] cover source=$source path=$coverPath exists=$exists inAppGroup=$pathInGroup');
+      '[WidgetDebug] cover source=$source path=$coverPath exists=$exists inAppGroup=$pathInGroup',
+    );
 
     try {
       await HomeWidget.saveWidgetData<String?>('widget_cover_path', coverPath);

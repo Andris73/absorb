@@ -12,7 +12,9 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.widget.RemoteViews
+import com.ryanheise.audioservice.AudioServicePlugin
 import es.antonborri.home_widget.HomeWidgetPlugin
+import io.flutter.embedding.engine.FlutterEngineCache
 import org.json.JSONArray
 
 // Shared live-clock machinery for the now-playing widgets: the squiggle
@@ -26,6 +28,16 @@ import org.json.JSONArray
 internal object WidgetClock {
     // Android's own cell-size formula: 70dp per cell, 30dp inter-cell gap.
     fun cellsFor(dp: Int): Int = if (dp <= 0) 1 else (dp + 30) / 70
+
+    // widget_has_book / widget_title are stashed prefs that outlive the app
+    // process, so they still read true after a swipe-close. Routing a tap
+    // through the MediaSession broadcast in that state is a dead end -
+    // AudioService.onCreate only adopts a cached engine, never creates one,
+    // so a truly dead process can't pick the button press up at all. Gate on
+    // whether an engine is actually cached to tell "session still alive" from
+    // "just stale prefs" and fall back to a normal cold-start app launch.
+    fun isEngineAlive(): Boolean =
+        FlutterEngineCache.getInstance().get(AudioServicePlugin.getFlutterEngineId()) != null
 
     // Width gate for the tiny widget's clocks beside the progress bar.
     // Measured: 2 real cells report 171dp (Pixel) / 201dp (One UI), 3 cells
@@ -135,8 +147,8 @@ internal object WidgetClock {
 
         if (playing) {
             // Capped so the wave fits thinner bars (the compact strip).
-            val amplitude = minOf(3f * density, (h - stroke * 2) / 2f).coerceAtLeast(1f)
-            val wavelength = 24f * density
+            val amplitude = minOf(1.8f * density, (h - stroke * 2) / 2f).coerceAtLeast(0.75f)
+            val wavelength = 36f * density
             val path = Path()
             path.moveTo(inset, centerY)
             var x = inset
@@ -196,7 +208,9 @@ internal object WidgetClock {
     fun syncTicker(context: Context) {
         val app = context.applicationContext
         val widgetData = HomeWidgetPlugin.getData(app)
-        var shouldTick = widgetData.getBoolean("widget_has_book", false) &&
+        val hasPlayableItem = widgetData.getBoolean("widget_has_book", false) ||
+            !widgetData.getString("widget_title", null).isNullOrEmpty()
+        var shouldTick = hasPlayableItem &&
             widgetData.getBoolean("widget_is_playing", false)
         if (shouldTick) {
             val mgr = AppWidgetManager.getInstance(app)

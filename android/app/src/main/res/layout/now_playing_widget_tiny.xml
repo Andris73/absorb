@@ -4,6 +4,15 @@
      player panel (title / author / chapter / progress / transport) fades in
      over the bottom of the cover; rows appear as there's room for them. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_outer"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingStart="5dp"
+    android:paddingEnd="5dp"
+    android:paddingTop="5dp"
+    android:paddingBottom="5dp">
+
+<FrameLayout
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -21,7 +30,7 @@
     <!-- Tiny-size indicator: reflects state; the whole tile is the tap target -->
     <ImageView
         android:id="@+id/widget_play_pause"
-        android:layout_width="40dp"
+        android:layout_width="48dp"
         android:layout_height="40dp"
         android:layout_gravity="center"
         android:padding="9dp"
@@ -170,7 +179,7 @@
             <!-- Play/pause: white circle with dark icon -->
             <ImageButton
                 android:id="@+id/widget_pp"
-                android:layout_width="52dp"
+                android:layout_width="72dp"
                 android:layout_height="52dp"
                 android:padding="12dp"
                 android:src="@drawable/ic_widget_play_dark"
@@ -208,4 +217,5 @@
 
     </LinearLayout>
 
+</FrameLayout>
 </FrameLayout>

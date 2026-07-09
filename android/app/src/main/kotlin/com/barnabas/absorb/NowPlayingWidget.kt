@@ -49,18 +49,29 @@ class NowPlayingWidget : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == ACTION_TOGGLE_PLAYBACK) {
-            // Optimistic UI: flip the icon immediately, then send the real media button.
+            // Optimistic UI for pause only. Never mark the widget playing
+            // before the audio service confirms there is actually audio.
             val widgetData = HomeWidgetPlugin.getData(context)
-            val wasPlaying = widgetData.getBoolean("widget_is_playing", false)
-            widgetData.edit().putBoolean("widget_is_playing", !wasPlaying).apply()
+            widgetData.edit().putBoolean("widget_is_playing", false).apply()
 
-            // Re-render both widget types so they stay in sync.
+            // Re-render every now-playing widget size so they stay in sync.
+            // A render failure here must not stop the broadcast below, or the
+            // tap silently does nothing instead of toggling playback.
             val mgr = AppWidgetManager.getInstance(context)
             for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidget::class.java))) {
-                updateWidget(context, mgr, id)
+                try { updateWidget(context, mgr, id) } catch (e: Exception) {
+                    android.util.Log.e("NowPlayingWidget", "toggle update failed", e)
+                }
             }
             for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidgetCompact::class.java))) {
-                NowPlayingWidgetCompact.updateWidget(context, mgr, id)
+                try { NowPlayingWidgetCompact.updateWidget(context, mgr, id) } catch (e: Exception) {
+                    android.util.Log.e("NowPlayingWidget", "toggle update failed", e)
+                }
+            }
+            for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidgetTiny::class.java))) {
+                try { NowPlayingWidgetTiny.updateWidget(context, mgr, id) } catch (e: Exception) {
+                    android.util.Log.e("NowPlayingWidget", "toggle update failed", e)
+                }
             }
 
             // Forward to MediaButtonReceiver for the actual playback toggle.
@@ -130,8 +141,9 @@ class NowPlayingWidget : AppWidgetProvider() {
                 views.setViewPadding(R.id.widget_outer, 0, 0, 0, 0)
             }
 
-            val hasBook = widgetData.getBoolean("widget_has_book", false)
             val title = widgetData.getString("widget_title", null)
+            val hasBook = widgetData.getBoolean("widget_has_book", false)
+            val canControl = (hasBook || !title.isNullOrEmpty()) && WidgetClock.isEngineAlive()
             val author = widgetData.getString("widget_author", null)
             val chapter = widgetData.getString("widget_chapter", null)
             val isPlaying = widgetData.getBoolean("widget_is_playing", false)
@@ -232,9 +244,9 @@ class NowPlayingWidget : AppWidgetProvider() {
                 R.id.widget_skip_back,
                 mediaButtonPendingIntent(context, KeyEvent.KEYCODE_MEDIA_REWIND, 2)
             )
-            // Active session: custom broadcast flips the icon instantly then forwards
-            // to MediaSession. No session: launch the app for cold resume.
-            val playPauseIntent = if (hasBook) {
+            // Use MediaSession whenever the widget has a remembered item, but
+            // never mark it playing until Dart confirms audio actually started.
+            val playPauseIntent = if (canControl) {
                 val toggleIntent = Intent(context, NowPlayingWidget::class.java).apply {
                     action = ACTION_TOGGLE_PLAYBACK
                 }

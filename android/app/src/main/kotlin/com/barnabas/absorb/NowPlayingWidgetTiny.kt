@@ -13,7 +13,9 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
+import android.os.Build
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.KeyEvent
 import android.view.View
 import android.net.Uri
@@ -68,14 +70,28 @@ class NowPlayingWidgetTiny : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == ACTION_TOGGLE_PLAYBACK) {
-            // Optimistic UI: flip the icon immediately, then send the real media button.
+            // Optimistic UI for pause only. Never mark the widget playing
+            // before the audio service confirms there is actually audio.
             val widgetData = HomeWidgetPlugin.getData(context)
-            val wasPlaying = widgetData.getBoolean("widget_is_playing", false)
-            widgetData.edit().putBoolean("widget_is_playing", !wasPlaying).apply()
+            widgetData.edit().putBoolean("widget_is_playing", false).apply()
 
+            // A render failure here must not stop the broadcast below, or the
+            // tap silently does nothing instead of toggling playback.
             val mgr = AppWidgetManager.getInstance(context)
             for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidgetTiny::class.java))) {
-                updateWidget(context, mgr, id)
+                try { updateWidget(context, mgr, id) } catch (e: Exception) {
+                    android.util.Log.e("NowPlayingWidgetTiny", "toggle update failed", e)
+                }
+            }
+            for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidget::class.java))) {
+                try { NowPlayingWidget.updateWidget(context, mgr, id) } catch (e: Exception) {
+                    android.util.Log.e("NowPlayingWidgetTiny", "toggle update failed", e)
+                }
+            }
+            for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidgetCompact::class.java))) {
+                try { NowPlayingWidgetCompact.updateWidget(context, mgr, id) } catch (e: Exception) {
+                    android.util.Log.e("NowPlayingWidgetTiny", "toggle update failed", e)
+                }
             }
 
             val mediaIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
@@ -170,8 +186,16 @@ class NowPlayingWidgetTiny : AppWidgetProvider() {
             val widgetData = HomeWidgetPlugin.getData(context)
             val views = RemoteViews(context.packageName, R.layout.now_playing_widget_tiny)
 
+            // OnePlus launchers add their own generous widget padding,
+            // so zero ours out to avoid double-padding.
+            if (Build.MANUFACTURER.equals("OnePlus", ignoreCase = true)) {
+                views.setViewPadding(R.id.widget_outer, 0, 0, 0, 0)
+            }
+
             val hasBook = widgetData.getBoolean("widget_has_book", false)
             val isPlaying = widgetData.getBoolean("widget_is_playing", false)
+            val title = widgetData.getString("widget_title", null)
+            val canControl = (hasBook || !title.isNullOrEmpty()) && WidgetClock.isEngineAlive()
             val coverPath = widgetData.getString("widget_cover_path", null)
 
             // Current widget size. Portrait reports width via MIN_WIDTH and
@@ -183,7 +207,7 @@ class NowPlayingWidgetTiny : AppWidgetProvider() {
             val targetPx = (maxOf(widthDp, heightDp, 80) * density).toInt()
 
             // Wide enough (2+ cells) for the transport row, and a session to control.
-            val showPanel = hasBook && WidgetClock.cellsFor(widthDp) >= 2
+            val showPanel = canControl && WidgetClock.cellsFor(widthDp) >= 2
             // Reveal the info rows by how many dp of height the launcher actually
             // gives the widget, not by cell count: launcher row heights vary too
             // much (a 1-row widget reports ~102dp on One UI but ~121dp on Pixel),
@@ -214,9 +238,21 @@ class NowPlayingWidgetTiny : AppWidgetProvider() {
 
                 // When it's only tall enough for the button row, keep the panel
                 // tight; give it breathing room once text/progress appear.
-                val padTop = ((if (showInfo) 22 else 8) * density).toInt()
-                val padBottom = ((if (showInfo) 12 else 8) * density).toInt()
-                views.setViewPadding(R.id.widget_panel, 0, padTop, 0, padBottom)
+                val pad = ((if (showInfo) 22 else 4) * density).toInt()
+                views.setViewPadding(R.id.widget_panel, 0, pad, 0, pad)
+
+                // The short tier now also carries a title line (see below), so
+                // the transport row no longer fits at its full-height size
+                // without getting clipped by the panel's available height -
+                // shrink it to the same 40dp the compact widget uses, which is
+                // also exactly what the pill drawable's corner radius is tuned
+                // for.
+                if (!showInfo && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    views.setViewLayoutHeight(R.id.widget_pp, 40f, TypedValue.COMPLEX_UNIT_DIP)
+                    views.setViewLayoutWidth(R.id.widget_pp, 56f, TypedValue.COMPLEX_UNIT_DIP)
+                    views.setViewLayoutHeight(R.id.widget_skip_back, 40f, TypedValue.COMPLEX_UNIT_DIP)
+                    views.setViewLayoutHeight(R.id.widget_skip_forward, 40f, TypedValue.COMPLEX_UNIT_DIP)
+                }
 
                 // Transport + progress are in every panel size, including the
                 // short buttons-only one (cover + squiggle + controls, like a
@@ -246,12 +282,14 @@ class NowPlayingWidgetTiny : AppWidgetProvider() {
                     views.setViewVisibility(R.id.widget_time_remaining, View.GONE)
                 }
 
-                // Title / author only once there's vertical room for them.
+                // Title shows as soon as the panel does, even at a 1-row
+                // height (same as the compact widget) - just smaller and
+                // alone. Author needs the extra vertical room from showInfo.
+                views.setTextViewText(R.id.widget_title, if (title.isNullOrEmpty()) "Absorb" else title)
+                views.setViewVisibility(R.id.widget_title, View.VISIBLE)
                 if (showInfo) {
-                    val title = widgetData.getString("widget_title", null)
+                    views.setTextViewTextSize(R.id.widget_title, TypedValue.COMPLEX_UNIT_SP, 15f)
                     val author = widgetData.getString("widget_author", null)
-                    views.setTextViewText(R.id.widget_title, if (title.isNullOrEmpty()) "Absorb" else title)
-                    views.setViewVisibility(R.id.widget_title, View.VISIBLE)
                     if (author.isNullOrEmpty()) {
                         views.setViewVisibility(R.id.widget_author, View.GONE)
                     } else {
@@ -259,7 +297,7 @@ class NowPlayingWidgetTiny : AppWidgetProvider() {
                         views.setViewVisibility(R.id.widget_author, View.VISIBLE)
                     }
                 } else {
-                    views.setViewVisibility(R.id.widget_title, View.GONE)
+                    views.setTextViewTextSize(R.id.widget_title, TypedValue.COMPLEX_UNIT_SP, 12f)
                     views.setViewVisibility(R.id.widget_author, View.GONE)
                 }
 
@@ -286,14 +324,14 @@ class NowPlayingWidgetTiny : AppWidgetProvider() {
             } else {
                 // 1x1: centered indicator, whole tile toggles play/pause.
                 views.setViewVisibility(R.id.widget_panel, View.GONE)
-                if (hasBook) {
+                if (canControl) {
                     views.setViewVisibility(R.id.widget_play_pause, View.VISIBLE)
                     views.setImageViewResource(R.id.widget_play_pause, playPauseIcon)
                 } else {
                     views.setViewVisibility(R.id.widget_play_pause, View.GONE)
                 }
 
-                val tapIntent = if (hasBook) {
+                val tapIntent = if (canControl) {
                     togglePendingIntent(context)
                 } else {
                     HomeWidgetLaunchIntent.getActivity(
