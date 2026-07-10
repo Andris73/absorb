@@ -14,7 +14,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:palette_generator/palette_generator.dart';
 import '../utils/cover_accent.dart';
 import '../main.dart'
-    show snappyTransitionsNotifier, coverSchemeNotifier, rootNavigatorKey;
+    show snappyTransitionsNotifier, coverSchemeNotifier, rootNavigatorKey, applyOrientationLock;
 import '../l10n/app_localizations.dart';
 import '../services/wording.dart';
 import '../services/android_auto_service.dart';
@@ -614,6 +614,11 @@ class _AppShellState extends State<AppShell>
   void _handleAppForegrounded() {
     if (!_lifecycleBackgrounded) return;
     _lifecycleBackgrounded = false;
+    // The rotation lock lives on the Activity, and Android can recreate the
+    // activity over the still-running cached engine (swipe away from recents
+    // while playback keeps the service alive). main() doesn't re-run then, so
+    // re-apply the saved lock on every return to the foreground.
+    applyOrientationLock();
     // Belt-and-suspenders: never let the nav bar come back hidden after a
     // resume. The screens snap their own driver back to shown on next scroll
     // anyway, but mirror it here in case the user resumes onto a stale tab.
