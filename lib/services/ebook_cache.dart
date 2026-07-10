@@ -17,6 +17,38 @@ String ebookExtFromFile(Map<String, dynamic> ebookFile) {
   return name.contains('.') ? name.substring(name.lastIndexOf('.')).toLowerCase() : '';
 }
 
+/// Formats the in-app readers can open. EPUB uses the full reader, PDF the
+/// dedicated viewer, and foliate-js covers MOBI/AZW3/CBZ. CBR is RAR-based
+/// and foliate-js can't read it, so it's recognized but stays download-only.
+const foliateEbookFormats = {'mobi', 'azw3', 'cbz'};
+const readableEbookFormats = {'epub', 'pdf', ...foliateEbookFormats};
+const allEbookFormats = {...readableEbookFormats, 'cbr'};
+
+/// The ebook to use for a library item: the server's primary (media.ebookFile)
+/// when set, otherwise the best supplementary ebook from libraryFiles - epub
+/// first (mirroring the server's own primary pick), then the first readable
+/// format, then any ebook file (a CBR can still be saved to device).
+/// Audiobooks-only libraries mark every ebook supplementary and never set a
+/// primary, so without this fallback those books always showed "no ebook".
+Map<String, dynamic>? resolveEbookFile(Map<String, dynamic>? item) {
+  if (item == null) return null;
+  final media = item['media'] as Map<String, dynamic>?;
+  final primary = media?['ebookFile'] as Map<String, dynamic>?;
+  if (primary != null) return primary;
+  Map<String, dynamic>? firstReadable;
+  Map<String, dynamic>? firstEbook;
+  for (final f in (item['libraryFiles'] as List<dynamic>? ?? const [])) {
+    if (f is! Map<String, dynamic>) continue;
+    final ext = ebookExtFromFile(f);
+    final fmt = ext.startsWith('.') ? ext.substring(1) : ext;
+    if (!allEbookFormats.contains(fmt)) continue;
+    if (fmt == 'epub') return f;
+    if (readableEbookFormats.contains(fmt)) firstReadable ??= f;
+    firstEbook ??= f;
+  }
+  return firstReadable ?? firstEbook;
+}
+
 Future<Directory> _ebookCacheDir() async {
   final base = await getApplicationSupportDirectory();
   final dir = Directory('${base.path}/ebook_cache');

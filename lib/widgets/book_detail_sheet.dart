@@ -436,7 +436,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final progressData = lib.getProgressData(widget.itemId);
     final isFinished = progressData?['isFinished'] == true;
     final currentTime = (progressData?['currentTime'] as num?)?.toDouble() ?? 0;
-    final ebookFile = media['ebookFile'] as Map<String, dynamic>?;
+    final ebookFile = resolveEbookFile(_item);
 
     final isEbookOnly = PlayerSettings.isEbookOnly(_item!);
 
@@ -830,7 +830,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final authorName = metadata['authorName'] as String? ?? '';
     final duration = (media['duration'] as num?)?.toDouble() ?? 0;
     final serverPath = _item!['path'] as String? ?? _item!['relPath'] as String? ?? '';
-    final ebookFile = media['ebookFile'] as Map<String, dynamic>?;
+    final ebookFile = resolveEbookFile(_item);
     final isEbookOnly = PlayerSettings.isEbookOnly(_item!);
 
     final lib = context.watch<LibraryProvider>();

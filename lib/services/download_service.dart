@@ -1406,8 +1406,8 @@ class DownloadService extends ChangeNotifier {
       // Pull the companion ebook into the offline cache too, so a downloaded
       // book is fully readable offline. Fire-and-forget - never blocks or fails
       // the audio download.
-      final ebookFile = ((sessionData['libraryItem'] as Map<String, dynamic>?)?['media']
-          as Map<String, dynamic>?)?['ebookFile'] as Map<String, dynamic>?;
+      final ebookFile =
+          resolveEbookFile(sessionData['libraryItem'] as Map<String, dynamic>?);
       if (ebookFile != null) {
         unawaited(_cacheEbookForOffline(api, apiItemId, ebookFile, title));
       }

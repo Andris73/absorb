@@ -1393,7 +1393,6 @@ class CardActionDelegate {
   final VoidCallback removeFromAbsorbing;
   final VoidCallback? onRemoveExtra;
   final void Function(List<String>, int) onReorder;
-  final bool hasEbook;
   final bool isEbookPdf;
   final VoidCallback? onEbookTap;
 
@@ -1423,7 +1422,6 @@ class CardActionDelegate {
     required this.removeFromAbsorbing,
     this.onRemoveExtra,
     required this.onReorder,
-    this.hasEbook = false,
     this.isEbookPdf = false,
     this.onEbookTap,
   });
@@ -1660,13 +1658,9 @@ class CardActionDelegate {
           icon: isEbookPdf ? Icons.picture_as_pdf_rounded : Icons.menu_book_rounded,
           label: 'Read',
           accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
-          onTap: () {
-            if (hasEbook) {
-              onEbookTap?.call();
-            } else {
-              showOverlayToast(context, 'No ebook file for this book', icon: Icons.menu_book_outlined);
-            }
-          },
+          // The card handles the no-ebook case itself (it retries the item
+          // fetch before toasting).
+          onTap: () => onEbookTap?.call(),
         );
       default:
         return const SizedBox.shrink();
@@ -1839,11 +1833,7 @@ class CardActionDelegate {
           label: 'Read', accent: accent,
           onTap: () {
             Navigator.pop(ctx);
-            if (hasEbook) {
-              onEbookTap?.call();
-            } else {
-              showOverlayToast(context, 'No ebook file for this book', icon: Icons.menu_book_outlined);
-            }
+            onEbookTap?.call();
           },
         );
       default:

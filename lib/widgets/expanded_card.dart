@@ -15,6 +15,8 @@ import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
 import 'card_buttons.dart';
 import 'ebook_router.dart';
+import 'overlay_toast.dart';
+import '../services/ebook_cache.dart';
 import '../main.dart' show colorSourceNotifier, useColorEverywhereNotifier, manualSeedNotifier, manualColorScheme;
 
 // ─── Custom route: slide-up + fade ────────────────────────────
@@ -457,8 +459,10 @@ class _ExpandedCardState extends State<ExpandedCard> {
       final fullItem = await api.getLibraryItem(_itemId);
       if (fullItem != null && mounted) {
         final media = fullItem['media'] as Map<String, dynamic>? ?? {};
+        // resolveEbookFile also covers supplementary-only books
+        // (audiobooks-only libraries never set media.ebookFile).
         if (inlineEbook == null) {
-          final ef = media['ebookFile'] as Map<String, dynamic>?;
+          final ef = resolveEbookFile(fullItem);
           if (ef != null) setState(() => _fetchedEbookFile = ef);
         }
         // Books: chapters at media level
@@ -1157,7 +1161,6 @@ class _ExpandedCardState extends State<ExpandedCard> {
       PlayerSettings.setCardButtonOrder(newOrder);
       PlayerSettings.setCardButtonVisibleCount(newCount);
     },
-    hasEbook: _ebookFile != null,
     isEbookPdf: _ebookExt == 'pdf',
     onEbookTap: _openReader,
   );
@@ -1169,9 +1172,19 @@ class _ExpandedCardState extends State<ExpandedCard> {
     return ext.isEmpty ? null : ext;
   }
 
-  void _openReader() {
-    final ef = _ebookFile;
-    if (ef == null) return;
+  void _openReader() async {
+    var ef = _ebookFile;
+    if (ef == null) {
+      // The initState fetch is one-shot and can fail silently (network blip),
+      // so give it another chance before declaring there's no ebook.
+      await _fetchChaptersIfNeeded();
+      ef = _ebookFile;
+    }
+    if (!mounted) return;
+    if (ef == null) {
+      showOverlayToast(context, 'No ebook file for this book', icon: Icons.menu_book_outlined);
+      return;
+    }
     openEbookReader(context, itemId: _itemId, title: _title, ebookFile: ef);
   }
 

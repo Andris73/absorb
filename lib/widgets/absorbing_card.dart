@@ -12,6 +12,8 @@ import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import 'absorbing_shared.dart';
 import 'ebook_router.dart';
+import 'overlay_toast.dart';
+import '../services/ebook_cache.dart';
 import 'card_edge_progress_bar.dart';
 import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
@@ -249,9 +251,11 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       final fullItem = await api.getLibraryItem(_itemId);
       if (fullItem != null && mounted) {
         final media = fullItem['media'] as Map<String, dynamic>? ?? {};
-        // Cache ebookFile if the inline item didn't have it
+        // Cache ebookFile if the inline item didn't have it. resolveEbookFile
+        // also covers supplementary-only books (audiobooks-only libraries
+        // never set media.ebookFile).
         if (inlineEbook == null) {
-          final ef = media['ebookFile'] as Map<String, dynamic>?;
+          final ef = resolveEbookFile(fullItem);
           if (ef != null) setState(() => _fetchedEbookFile = ef);
         }
         // Books: chapters at media level
@@ -1044,9 +1048,19 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     );
   }
 
-  void _openEbookReader() {
-    final ebookFile = _ebookFile;
-    if (ebookFile == null) return; // CardButtons already toasts when no ebook
+  void _openEbookReader() async {
+    var ebookFile = _ebookFile;
+    if (ebookFile == null) {
+      // The initState fetch is one-shot and can fail silently (network blip),
+      // so give it another chance before declaring there's no ebook.
+      await _fetchChaptersIfNeeded();
+      ebookFile = _ebookFile;
+    }
+    if (!mounted) return;
+    if (ebookFile == null) {
+      showOverlayToast(context, 'No ebook file for this book', icon: Icons.menu_book_outlined);
+      return;
+    }
     openEbookReader(context, itemId: _itemId, title: _title, ebookFile: ebookFile);
   }
 
@@ -1181,7 +1195,6 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       PlayerSettings.setCardButtonOrder(newOrder);
       PlayerSettings.setCardButtonVisibleCount(newCount);
     },
-    hasEbook: _ebookFile != null,
     isEbookPdf: _ebookExt == 'pdf',
     onEbookTap: _openEbookReader,
   );
