@@ -338,18 +338,18 @@ class HomeWidgetService {
       'Caller:\n${StackTrace.current}',
     );
 
-    // When there's an active session the widget uses a MediaSession media button
-    // instead of launching the app, so this path is only hit for cold resume.
+    // A session can already be loaded when this fires: iOS always routes
+    // widget links here, and on Android the launch path races the session
+    // restore (or arrives from stale widget wiring after a process death).
+    // A play tap must never be a silent no-op, so toggle rather than assume
+    // the MediaSession broadcast handled it.
     if (player.hasBook) {
-      // On iOS, widget links always come through here (no MediaSession shortcut).
-      if (Platform.isIOS) {
-        if (player.isPlaying) {
-          debugPrint('[WidgetDebug]   -> pause()');
-          player.pause();
-        } else {
-          debugPrint('[WidgetDebug]   -> play()');
-          player.play();
-        }
+      if (player.isPlaying) {
+        debugPrint('[WidgetDebug]   -> pause()');
+        player.pause();
+      } else {
+        debugPrint('[WidgetDebug]   -> play()');
+        player.play();
       }
       return;
     }

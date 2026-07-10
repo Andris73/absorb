@@ -3,16 +3,20 @@ package com.barnabas.absorb
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.view.KeyEvent
 import android.widget.RemoteViews
 import com.ryanheise.audioservice.AudioServicePlugin
+import es.antonborri.home_widget.HomeWidgetLaunchIntent
 import es.antonborri.home_widget.HomeWidgetPlugin
 import io.flutter.embedding.engine.FlutterEngineCache
 import org.json.JSONArray
@@ -38,6 +42,101 @@ internal object WidgetClock {
     // "just stale prefs" and fall back to a normal cold-start app launch.
     fun isEngineAlive(): Boolean =
         FlutterEngineCache.getInstance().get(AudioServicePlugin.getFlutterEngineId()) != null
+
+    // The widgets' play/pause tap, shared by all three sizes. While the engine
+    // is alive the MediaSession broadcast toggles playback without opening the
+    // app. When the process died since the button was wired (nothing re-renders
+    // widgets at engine death, so the wiring goes stale), that broadcast is a
+    // dead end - AudioService never creates an engine - and the tap used to do
+    // nothing until a second tap hit the re-wired button. Fall back to the same
+    // cold-start launch the render-time wiring uses when it knows the app is
+    // dead: open the app with the play deep link.
+    fun sendPlayPause(context: Context) {
+        if (isEngineAlive()) {
+            val mediaIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                component = ComponentName(context, "com.ryanheise.audioservice.MediaButtonReceiver")
+                putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
+            }
+            context.sendBroadcast(mediaIntent)
+            return
+        }
+        try {
+            HomeWidgetLaunchIntent.getActivity(
+                context, MainActivity::class.java,
+                Uri.parse("absorb://widget/play_pause")
+            ).send()
+        } catch (e: Exception) {
+            android.util.Log.e("WidgetClock", "cold-start launch from widget tap failed", e)
+        }
+    }
+
+    // A play tap can take seconds to produce audio (a cold start boots the
+    // whole app first), and a button that doesn't react reads as dead. Taps
+    // that should START playback stamp this; renders show a spinner on the
+    // play pill until real state arrives or the window expires.
+    private const val PENDING_PLAY_WINDOW_MS = 15_000L
+    private const val PENDING_TAP_DEBOUNCE_MS = 2_500L
+
+    fun pendingPlay(widgetData: SharedPreferences, isPlaying: Boolean): Boolean {
+        val at = widgetData.getLong("widget_pending_play_at", 0L)
+        if (at == 0L) return false
+        if (isPlaying || System.currentTimeMillis() - at > PENDING_PLAY_WINDOW_MS) {
+            widgetData.edit().remove("widget_pending_play_at").apply()
+            return false
+        }
+        return true
+    }
+
+    fun renderAllNowPlaying(context: Context) {
+        val mgr = AppWidgetManager.getInstance(context)
+        for (id in ids(context, mgr, NowPlayingWidget::class.java)) {
+            try { NowPlayingWidget.updateWidget(context, mgr, id) } catch (e: Exception) {
+                android.util.Log.e("WidgetClock", "render failed", e)
+            }
+        }
+        for (id in ids(context, mgr, NowPlayingWidgetCompact::class.java)) {
+            try { NowPlayingWidgetCompact.updateWidget(context, mgr, id) } catch (e: Exception) {
+                android.util.Log.e("WidgetClock", "render failed", e)
+            }
+        }
+        for (id in ids(context, mgr, NowPlayingWidgetTiny::class.java)) {
+            try { NowPlayingWidgetTiny.updateWidget(context, mgr, id) } catch (e: Exception) {
+                android.util.Log.e("WidgetClock", "render failed", e)
+            }
+        }
+    }
+
+    // Shared ACTION_TOGGLE_PLAYBACK handler for all three widget sizes.
+    // Optimistic UI for pause only - never mark the widget playing before the
+    // audio service confirms there is actually audio. Resume taps show the
+    // pending spinner immediately and are debounced so mashing a slow-to-
+    // react button doesn't queue extra toggles that pause it again.
+    fun handleToggleTap(context: Context) {
+        val widgetData = HomeWidgetPlugin.getData(context)
+        val now = System.currentTimeMillis()
+        val wasPlaying = widgetData.getBoolean("widget_is_playing", false)
+        if (!wasPlaying &&
+            now - widgetData.getLong("widget_pending_play_at", 0L) < PENDING_TAP_DEBOUNCE_MS) {
+            return
+        }
+        val edit = widgetData.edit().putBoolean("widget_is_playing", false)
+        if (!wasPlaying) {
+            edit.putLong("widget_pending_play_at", now)
+        } else {
+            edit.remove("widget_pending_play_at")
+        }
+        edit.apply()
+        renderAllNowPlaying(context)
+        if (!wasPlaying) {
+            // Self-heal: if playback never materialises, a re-render after the
+            // window clears the spinner instead of leaving it forever.
+            val app = context.applicationContext
+            tickHandler.postDelayed({
+                try { renderAllNowPlaying(app) } catch (_: Exception) {}
+            }, PENDING_PLAY_WINDOW_MS + 500L)
+        }
+        sendPlayPause(context)
+    }
 
     // Width gate for the tiny widget's clocks beside the progress bar.
     // Measured: 2 real cells report 171dp (Pixel) / 201dp (One UI), 3 cells
@@ -169,15 +268,12 @@ internal object WidgetClock {
     // Bar bitmap width estimates per widget. The bars are stretched with
     // fitXY, so these only need to be close: the tiny widget's row padding
     // eats ~36dp and its two clocks ~110dp; the big widget loses its cover
-    // and text padding; the compact its cover.
+    // and text padding.
     fun tinyBarWidthPx(widthDp: Int, showTimes: Boolean, density: Float): Int =
         ((widthDp - 36 - if (showTimes) 110 else 0).coerceAtLeast(40) * density).toInt()
 
     fun bigBarWidthPx(widthDp: Int, density: Float): Int =
         ((widthDp - 160).coerceAtLeast(60) * density).toInt()
-
-    fun compactBarWidthPx(widthDp: Int, density: Float): Int =
-        ((widthDp - 110).coerceAtLeast(60) * density).toInt()
 
     // ── Per-second ticker ──
 
@@ -213,9 +309,10 @@ internal object WidgetClock {
         var shouldTick = hasPlayableItem &&
             widgetData.getBoolean("widget_is_playing", false)
         if (shouldTick) {
+            // The compact widget shows no clocks or progress, so it never
+            // needs ticks - only the big and (2+ cells wide) tiny widgets do.
             val mgr = AppWidgetManager.getInstance(app)
             shouldTick = ids(app, mgr, NowPlayingWidget::class.java).isNotEmpty() ||
-                ids(app, mgr, NowPlayingWidgetCompact::class.java).isNotEmpty() ||
                 ids(app, mgr, NowPlayingWidgetTiny::class.java).any { cellsFor(minWidthDp(mgr, it)) >= 2 }
         }
         if (shouldTick && !ticking) {
@@ -273,19 +370,6 @@ internal object WidgetClock {
                 partial.setImageViewBitmap(
                     R.id.widget_progress,
                     drawProgressBar(bigBarWidthPx(minWidthDp(mgr, id), density), (12 * density).toInt(), times.fraction, true, density)
-                )
-            }
-            mgr.partiallyUpdateAppWidget(id, partial)
-        }
-
-        for (id in ids(context, mgr, NowPlayingWidgetCompact::class.java)) {
-            val partial = RemoteViews(context.packageName, R.layout.now_playing_widget_compact)
-            partial.setTextViewText(R.id.widget_time_elapsed, elapsed)
-            partial.setTextViewText(R.id.widget_time_remaining, remaining)
-            if (refreshBar) {
-                partial.setImageViewBitmap(
-                    R.id.widget_progress,
-                    drawProgressBar(compactBarWidthPx(minWidthDp(mgr, id), density), (8 * density).toInt(), times.fraction, true, density)
                 )
             }
             mgr.partiallyUpdateAppWidget(id, partial)

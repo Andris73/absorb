@@ -49,37 +49,7 @@ class NowPlayingWidget : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == ACTION_TOGGLE_PLAYBACK) {
-            // Optimistic UI for pause only. Never mark the widget playing
-            // before the audio service confirms there is actually audio.
-            val widgetData = HomeWidgetPlugin.getData(context)
-            widgetData.edit().putBoolean("widget_is_playing", false).apply()
-
-            // Re-render every now-playing widget size so they stay in sync.
-            // A render failure here must not stop the broadcast below, or the
-            // tap silently does nothing instead of toggling playback.
-            val mgr = AppWidgetManager.getInstance(context)
-            for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidget::class.java))) {
-                try { updateWidget(context, mgr, id) } catch (e: Exception) {
-                    android.util.Log.e("NowPlayingWidget", "toggle update failed", e)
-                }
-            }
-            for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidgetCompact::class.java))) {
-                try { NowPlayingWidgetCompact.updateWidget(context, mgr, id) } catch (e: Exception) {
-                    android.util.Log.e("NowPlayingWidget", "toggle update failed", e)
-                }
-            }
-            for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidgetTiny::class.java))) {
-                try { NowPlayingWidgetTiny.updateWidget(context, mgr, id) } catch (e: Exception) {
-                    android.util.Log.e("NowPlayingWidget", "toggle update failed", e)
-                }
-            }
-
-            // Forward to MediaButtonReceiver for the actual playback toggle.
-            val mediaIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
-                component = ComponentName(context, "com.ryanheise.audioservice.MediaButtonReceiver")
-                putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
-            }
-            context.sendBroadcast(mediaIntent)
+            WidgetClock.handleToggleTap(context)
             return
         }
         super.onReceive(context, intent)
@@ -188,10 +158,18 @@ class NowPlayingWidget : AppWidgetProvider() {
                 views.setViewVisibility(R.id.widget_progress_row, View.VISIBLE)
                 views.setViewVisibility(R.id.widget_controls, View.VISIBLE)
 
-                if (isPlaying) {
-                    views.setImageViewResource(R.id.widget_play_pause, R.drawable.ic_widget_pause_dark)
+                if (WidgetClock.pendingPlay(widgetData, isPlaying)) {
+                    // Tap registered, audio not started yet (cold start can
+                    // take seconds) - spin instead of looking dead.
+                    views.setImageViewResource(R.id.widget_play_pause, android.R.color.transparent)
+                    views.setViewVisibility(R.id.widget_play_pending, View.VISIBLE)
                 } else {
-                    views.setImageViewResource(R.id.widget_play_pause, R.drawable.ic_widget_play_dark)
+                    views.setViewVisibility(R.id.widget_play_pending, View.GONE)
+                    if (isPlaying) {
+                        views.setImageViewResource(R.id.widget_play_pause, R.drawable.ic_widget_pause_dark)
+                    } else {
+                        views.setImageViewResource(R.id.widget_play_pause, R.drawable.ic_widget_play_dark)
+                    }
                 }
 
                 // Cover art from file (rounded corners)
@@ -225,6 +203,7 @@ class NowPlayingWidget : AppWidgetProvider() {
                 views.setViewVisibility(R.id.widget_progress_row, View.INVISIBLE)
                 views.setViewVisibility(R.id.widget_controls, View.GONE)
                 views.setViewVisibility(R.id.widget_chapter, View.GONE)
+                views.setViewVisibility(R.id.widget_play_pending, View.GONE)
                 views.setImageViewResource(R.id.widget_cover, R.mipmap.ic_launcher)
             }
 

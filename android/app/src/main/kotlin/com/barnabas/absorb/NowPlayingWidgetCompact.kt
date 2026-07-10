@@ -49,33 +49,7 @@ class NowPlayingWidgetCompact : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == ACTION_TOGGLE_PLAYBACK) {
-            val widgetData = HomeWidgetPlugin.getData(context)
-            widgetData.edit().putBoolean("widget_is_playing", false).apply()
-
-            // A render failure here must not stop the broadcast below, or the
-            // tap silently does nothing instead of toggling playback.
-            val mgr = AppWidgetManager.getInstance(context)
-            for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidgetCompact::class.java))) {
-                try { updateWidget(context, mgr, id) } catch (e: Exception) {
-                    android.util.Log.e("NowPlayingWidgetCompact", "toggle update failed", e)
-                }
-            }
-            for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidget::class.java))) {
-                try { NowPlayingWidget.updateWidget(context, mgr, id) } catch (e: Exception) {
-                    android.util.Log.e("NowPlayingWidgetCompact", "toggle update failed", e)
-                }
-            }
-            for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidgetTiny::class.java))) {
-                try { NowPlayingWidgetTiny.updateWidget(context, mgr, id) } catch (e: Exception) {
-                    android.util.Log.e("NowPlayingWidgetCompact", "toggle update failed", e)
-                }
-            }
-
-            val mediaIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
-                component = ComponentName(context, "com.ryanheise.audioservice.MediaButtonReceiver")
-                putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
-            }
-            context.sendBroadcast(mediaIntent)
+            WidgetClock.handleToggleTap(context)
             return
         }
         super.onReceive(context, intent)
@@ -139,7 +113,6 @@ class NowPlayingWidgetCompact : AppWidgetProvider() {
             val title = widgetData.getString("widget_title", null)
             val hasBook = widgetData.getBoolean("widget_has_book", false)
             val canControl = (hasBook || !title.isNullOrEmpty()) && WidgetClock.isEngineAlive()
-            val author = widgetData.getString("widget_author", null)
             val isPlaying = widgetData.getBoolean("widget_is_playing", false)
             val coverPath = widgetData.getString("widget_cover_path", null)
             val skipBack = widgetData.getInt("widget_skip_back", 10)
@@ -149,36 +122,25 @@ class NowPlayingWidgetCompact : AppWidgetProvider() {
             views.setTextViewText(R.id.widget_skip_forward_text, skipForward.toString())
 
             if (!title.isNullOrEmpty()) {
+                // Just the title and the transport row - no author/progress/
+                // clocks, so the card fits the shorter 1-cell heights on
+                // Samsung-style launchers.
                 views.setTextViewText(R.id.widget_title, title)
-                views.setTextViewText(R.id.widget_author, author ?: "")
+                views.setViewVisibility(R.id.widget_author, View.GONE)
                 views.setViewVisibility(R.id.widget_controls, View.VISIBLE)
 
-                // Squiggle strip + elapsed/remaining clocks at the ends of the
-                // controls row; the WidgetClock ticker keeps them live.
-                val times = WidgetClock.computeTimes(widgetData)
-                val fraction = times?.fraction ?: (widgetData.getInt("widget_progress", 0) / 1000f)
-                val density = context.resources.displayMetrics.density
-                val widthDp = appWidgetManager.getAppWidgetOptions(appWidgetId)
-                    .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 250)
-                views.setImageViewBitmap(
-                    R.id.widget_progress,
-                    WidgetClock.drawProgressBar(WidgetClock.compactBarWidthPx(widthDp, density), (8 * density).toInt(), fraction, isPlaying, density)
-                )
-                views.setViewVisibility(R.id.widget_progress, View.VISIBLE)
-                if (times != null) {
-                    views.setTextViewText(R.id.widget_time_elapsed, WidgetClock.fmtTime(times.elapsedMs))
-                    views.setTextViewText(R.id.widget_time_remaining, "-" + WidgetClock.fmtTime(times.remainingMs))
-                    views.setViewVisibility(R.id.widget_time_elapsed, View.VISIBLE)
-                    views.setViewVisibility(R.id.widget_time_remaining, View.VISIBLE)
+                if (WidgetClock.pendingPlay(widgetData, isPlaying)) {
+                    // Tap registered, audio not started yet (cold start can
+                    // take seconds) - spin instead of looking dead.
+                    views.setImageViewResource(R.id.widget_play_pause, android.R.color.transparent)
+                    views.setViewVisibility(R.id.widget_play_pending, View.VISIBLE)
                 } else {
-                    views.setViewVisibility(R.id.widget_time_elapsed, View.GONE)
-                    views.setViewVisibility(R.id.widget_time_remaining, View.GONE)
-                }
-
-                if (isPlaying) {
-                    views.setImageViewResource(R.id.widget_play_pause, R.drawable.ic_widget_pause_dark)
-                } else {
-                    views.setImageViewResource(R.id.widget_play_pause, R.drawable.ic_widget_play_dark)
+                    views.setViewVisibility(R.id.widget_play_pending, View.GONE)
+                    if (isPlaying) {
+                        views.setImageViewResource(R.id.widget_play_pause, R.drawable.ic_widget_pause_dark)
+                    } else {
+                        views.setImageViewResource(R.id.widget_play_pause, R.drawable.ic_widget_play_dark)
+                    }
                 }
 
                 // Cover art from file (rounded corners)
@@ -209,10 +171,9 @@ class NowPlayingWidgetCompact : AppWidgetProvider() {
                 // Idle state
                 views.setTextViewText(R.id.widget_title, "Absorb")
                 views.setTextViewText(R.id.widget_author, "Not playing")
+                views.setViewVisibility(R.id.widget_author, View.VISIBLE)
                 views.setViewVisibility(R.id.widget_controls, View.GONE)
-                views.setViewVisibility(R.id.widget_progress, View.GONE)
-                views.setViewVisibility(R.id.widget_time_elapsed, View.GONE)
-                views.setViewVisibility(R.id.widget_time_remaining, View.GONE)
+                views.setViewVisibility(R.id.widget_play_pending, View.GONE)
                 views.setImageViewResource(R.id.widget_cover, R.mipmap.ic_launcher)
             }
 

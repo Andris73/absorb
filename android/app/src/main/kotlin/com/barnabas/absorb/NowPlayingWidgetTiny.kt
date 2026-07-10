@@ -70,35 +70,7 @@ class NowPlayingWidgetTiny : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == ACTION_TOGGLE_PLAYBACK) {
-            // Optimistic UI for pause only. Never mark the widget playing
-            // before the audio service confirms there is actually audio.
-            val widgetData = HomeWidgetPlugin.getData(context)
-            widgetData.edit().putBoolean("widget_is_playing", false).apply()
-
-            // A render failure here must not stop the broadcast below, or the
-            // tap silently does nothing instead of toggling playback.
-            val mgr = AppWidgetManager.getInstance(context)
-            for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidgetTiny::class.java))) {
-                try { updateWidget(context, mgr, id) } catch (e: Exception) {
-                    android.util.Log.e("NowPlayingWidgetTiny", "toggle update failed", e)
-                }
-            }
-            for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidget::class.java))) {
-                try { NowPlayingWidget.updateWidget(context, mgr, id) } catch (e: Exception) {
-                    android.util.Log.e("NowPlayingWidgetTiny", "toggle update failed", e)
-                }
-            }
-            for (id in mgr.getAppWidgetIds(ComponentName(context, NowPlayingWidgetCompact::class.java))) {
-                try { NowPlayingWidgetCompact.updateWidget(context, mgr, id) } catch (e: Exception) {
-                    android.util.Log.e("NowPlayingWidgetTiny", "toggle update failed", e)
-                }
-            }
-
-            val mediaIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
-                component = ComponentName(context, "com.ryanheise.audioservice.MediaButtonReceiver")
-                putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
-            }
-            context.sendBroadcast(mediaIntent)
+            WidgetClock.handleToggleTap(context)
             return
         }
         super.onReceive(context, intent)
@@ -230,6 +202,9 @@ class NowPlayingWidgetTiny : AppWidgetProvider() {
             }
 
             val playPauseIcon = if (isPlaying) R.drawable.ic_widget_pause_dark else R.drawable.ic_widget_play_dark
+            // Tap registered, audio not started yet (cold start can take
+            // seconds) - spin instead of looking dead.
+            val pendingPlay = WidgetClock.pendingPlay(widgetData, isPlaying)
 
             if (showPanel) {
                 // Larger size: hide the centered dot, show the player panel.
@@ -259,7 +234,14 @@ class NowPlayingWidgetTiny : AppWidgetProvider() {
                 // compact notification).
                 views.setTextViewText(R.id.widget_skip_back_text, widgetData.getInt("widget_skip_back", 10).toString())
                 views.setTextViewText(R.id.widget_skip_forward_text, widgetData.getInt("widget_skip_forward", 30).toString())
-                views.setImageViewResource(R.id.widget_pp, playPauseIcon)
+                if (pendingPlay) {
+                    views.setImageViewResource(R.id.widget_pp, android.R.color.transparent)
+                    views.setViewVisibility(R.id.widget_play_pending, View.VISIBLE)
+                } else {
+                    views.setViewVisibility(R.id.widget_play_pending, View.GONE)
+                    views.setImageViewResource(R.id.widget_pp, playPauseIcon)
+                }
+                views.setViewVisibility(R.id.widget_play_pending_tile, View.GONE)
 
                 val times = WidgetClock.computeTimes(widgetData)
                 val fraction = times?.fraction ?: (widgetData.getInt("widget_progress", 0) / 1000f)
@@ -326,9 +308,16 @@ class NowPlayingWidgetTiny : AppWidgetProvider() {
                 views.setViewVisibility(R.id.widget_panel, View.GONE)
                 if (canControl) {
                     views.setViewVisibility(R.id.widget_play_pause, View.VISIBLE)
-                    views.setImageViewResource(R.id.widget_play_pause, playPauseIcon)
+                    if (pendingPlay) {
+                        views.setImageViewResource(R.id.widget_play_pause, android.R.color.transparent)
+                        views.setViewVisibility(R.id.widget_play_pending_tile, View.VISIBLE)
+                    } else {
+                        views.setViewVisibility(R.id.widget_play_pending_tile, View.GONE)
+                        views.setImageViewResource(R.id.widget_play_pause, playPauseIcon)
+                    }
                 } else {
                     views.setViewVisibility(R.id.widget_play_pause, View.GONE)
+                    views.setViewVisibility(R.id.widget_play_pending_tile, View.GONE)
                 }
 
                 val tapIntent = if (canControl) {

@@ -39,6 +39,16 @@
         android:scaleType="centerInside"
         android:contentDescription="Play or pause" />
 
+    <ProgressBar
+        android:id="@+id/widget_play_pending_tile"
+        style="?android:attr/progressBarStyleSmall"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_gravity="center"
+        android:indeterminate="true"
+        android:indeterminateTint="#1A1A1A"
+        android:visibility="gone" />
+
     <!-- Player panel pinned to the bottom of the cover. The scrim is the panel's
          own background so it always wraps whatever rows are visible. -->
     <LinearLayout
@@ -177,15 +187,28 @@
             </FrameLayout>
 
             <!-- Play/pause: white circle with dark icon -->
-            <ImageButton
-                android:id="@+id/widget_pp"
-                android:layout_width="72dp"
-                android:layout_height="52dp"
-                android:padding="12dp"
-                android:src="@drawable/ic_widget_play_dark"
-                android:background="@drawable/widget_play_btn_bg"
-                android:contentDescription="Play or pause"
-                android:scaleType="centerInside" />
+            <FrameLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content">
+                <ImageButton
+                    android:id="@+id/widget_pp"
+                    android:layout_width="72dp"
+                    android:layout_height="52dp"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_widget_play_dark"
+                    android:background="@drawable/widget_play_btn_bg"
+                    android:contentDescription="Play or pause"
+                    android:scaleType="centerInside" />
+                <ProgressBar
+                    android:id="@+id/widget_play_pending"
+                    style="?android:attr/progressBarStyleSmall"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_gravity="center"
+                    android:indeterminate="true"
+                    android:indeterminateTint="#1A1A1A"
+                    android:visibility="gone" />
+            </FrameLayout>
 
             <!-- Skip forward: arrow icon with duration overlay -->
             <FrameLayout

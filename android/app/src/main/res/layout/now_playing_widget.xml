@@ -122,15 +122,28 @@
             </FrameLayout>
 
             <!-- Play/pause: white circle with dark icon -->
-            <ImageButton
-                android:id="@+id/widget_play_pause"
-                android:layout_width="56dp"
-                android:layout_height="40dp"
-                android:padding="8dp"
-                android:src="@drawable/ic_widget_play_dark"
-                android:background="@drawable/widget_play_btn_bg"
-                android:contentDescription="Play or pause"
-                android:scaleType="centerInside" />
+            <FrameLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content">
+                <ImageButton
+                    android:id="@+id/widget_play_pause"
+                    android:layout_width="56dp"
+                    android:layout_height="40dp"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_widget_play_dark"
+                    android:background="@drawable/widget_play_btn_bg"
+                    android:contentDescription="Play or pause"
+                    android:scaleType="centerInside" />
+                <ProgressBar
+                    android:id="@+id/widget_play_pending"
+                    style="?android:attr/progressBarStyleSmall"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_gravity="center"
+                    android:indeterminate="true"
+                    android:indeterminateTint="#1A1A1A"
+                    android:visibility="gone" />
+            </FrameLayout>
 
             <!-- Skip forward: arrow icon with duration overlay -->
             <FrameLayout
