@@ -557,9 +557,12 @@ class _AuthGateState extends State<AuthGate> {
     classicWordingNotifier.value = await PlayerSettings.getClassicWording();
     PlayerSettings.showExplicitBadge = await PlayerSettings.getShowExplicitBadge();
     // Rotation lock: main() applied it before scope was active, so that pass
-    // read the never-written unscoped key and always came up unlocked.
+    // read the never-written unscoped key and always came up unlocked. The
+    // timeout matters: on a headless boot (Android Auto bind) there is no
+    // activity, the orientation channel never answers, and a bare await here
+    // wedges the entire init - the browse tree never builds.
     try {
-      await applyOrientationLock();
+      await applyOrientationLock().timeout(const Duration(seconds: 2));
     } catch (_) {}
     // Background new-episode notifications: re-register the periodic job
     // (self-healing after OEM kills) and wire up notification taps.

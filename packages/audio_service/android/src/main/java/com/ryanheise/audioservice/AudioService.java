@@ -290,6 +290,12 @@ public class AudioService extends MediaBrowserServiceCompat {
         return processingState;
     }
 
+    // Absorb patch: playback state for code outside this package (MainActivity
+    // decides whether a headless-born engine is safe to tear down on attach).
+    public static boolean isInstancePlaying() {
+        return instance != null && instance.isPlaying();
+    }
+
     public boolean isPlaying() {
         return playing;
     }
@@ -350,15 +356,15 @@ public class AudioService extends MediaBrowserServiceCompat {
             }
         };
 
-        // Absorb patch: only adopt an engine that already exists - never
-        // create one here. A headless service start (widget media-button
-        // press or the system's media resumption bind after the process died,
-        // e.g. an app update installed mid-listen) would run the app's full
-        // main() with no activity, and that half-initialized engine gets
-        // cached: the next app launch attaches to it and freezes on the
-        // splash screen until the user force-stops the app. Real launches
-        // create the engine through the activity before connecting.
-        flutterEngine = FlutterEngineCache.getInstance().get(AudioServicePlugin.getFlutterEngineId());
+        // Absorb patch v2: create the engine when it's missing so headless
+        // starts (Android Auto browse binds, media buttons, media resumption)
+        // boot the app and can serve the browse tree - the cache-only version
+        // of this patch left Android Auto with an empty library whenever the
+        // process was dead. The old poisoned-cache problem (a headless-born
+        // engine froze the next real launch on the splash screen) is handled
+        // on the other side now: MainActivity tears down an idle headless-born
+        // engine and boots fresh instead of attaching to it.
+        flutterEngine = AudioServicePlugin.getFlutterEngine(this);
     }
 
     @Override

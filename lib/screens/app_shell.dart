@@ -589,6 +589,12 @@ class _AppShellState extends State<AppShell>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
       case AppLifecycleState.resumed:
+        // Before the backgrounded guard: when the activity attaches to an
+        // engine that has never drawn (born from a headless Android Auto /
+        // media-button start, kept alive because audio is playing), nothing
+        // schedules a frame for the new surface and the launch sits on the
+        // splash screen - and that engine never saw a backgrounded state.
+        WidgetsBinding.instance.scheduleForcedFrame();
         _handleAppForegrounded();
         break;
       case AppLifecycleState.hidden:

@@ -67,9 +67,19 @@ public class AudioServicePlugin implements FlutterPlugin, ActivityAware {
     public static String getFlutterEngineId() {
         return flutterEngineId;
     }
+    // Absorb patch: true when the cached engine was created by a headless
+    // service start (Android Auto bind, media button on a dead process).
+    // MainActivity uses this to replace such an engine with a fresh one
+    // instead of attaching to it - a never-rendered engine sticks the launch
+    // on the splash screen.
+    private static boolean engineBornHeadless = false;
+    public static boolean wasEngineBornHeadless() {
+        return engineBornHeadless;
+    }
     public static synchronized FlutterEngine getFlutterEngine(Context context) {
         FlutterEngine flutterEngine = FlutterEngineCache.getInstance().get(flutterEngineId);
         if (flutterEngine == null) {
+            engineBornHeadless = !(context instanceof Activity);
             // XXX: The constructor triggers onAttachedToEngine so this variable doesn't help us.
             // Maybe need a boolean flag to tell us we're currently loading the main flutter engine.
             flutterEngine = new FlutterEngine(context.getApplicationContext());

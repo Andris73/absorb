@@ -19,9 +19,12 @@ import android.os.StatFs
 
 import android.util.Log
 import android.view.KeyEvent
+import com.ryanheise.audioservice.AudioService
 import com.ryanheise.audioservice.AudioServiceActivity
+import com.ryanheise.audioservice.AudioServicePlugin
 import com.ryanheise.just_audio.MonoController
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
@@ -46,6 +49,27 @@ class MainActivity : AudioServiceActivity() {
     // playback can crash the process natively, which Kotlin can't catch. Once
     // init proves the engine is unavailable, skip attaching native effects.
     private var effectsAvailable: Boolean = true
+
+    override fun provideFlutterEngine(context: Context): FlutterEngine? {
+        // Headless service starts (Android Auto binds, media buttons on a
+        // dead process) boot the engine with no activity so the browse tree
+        // works. Never attach the UI to such an engine unless it's actually
+        // mid-playback - it has never rendered a frame and the launch sticks
+        // on the splash screen. Tear it down and boot fresh instead.
+        val cache = FlutterEngineCache.getInstance()
+        val cached = cache.get(AudioServicePlugin.getFlutterEngineId())
+        if (cached != null && AudioServicePlugin.wasEngineBornHeadless() &&
+            !AudioService.isInstancePlaying()) {
+            try {
+                cache.remove(AudioServicePlugin.getFlutterEngineId())
+                cached.destroy()
+                Log.d(TAG, "Replaced idle headless-born engine with a fresh launch")
+            } catch (e: Exception) {
+                Log.e(TAG, "Headless engine teardown failed", e)
+            }
+        }
+        return super.provideFlutterEngine(context)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
