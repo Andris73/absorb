@@ -554,6 +554,48 @@ class ApiService {
     return null;
   }
 
+  Future<List<Map<String, dynamic>>?> getItemListeningSessions(
+    String libraryItemId, {
+    String? episodeId,
+  }) async {
+    const itemsPerPage = 100;
+    final itemPath = Uri.encodeComponent(libraryItemId);
+    final episodePath = episodeId == null
+        ? ''
+        : '/${Uri.encodeComponent(episodeId)}';
+    final endpoint =
+        '$_cleanBaseUrl/api/me/item/listening-sessions/$itemPath$episodePath';
+    final sessions = <Map<String, dynamic>>[];
+    var page = 0;
+
+    try {
+      while (true) {
+        final uri = Uri.parse(endpoint).replace(queryParameters: {
+          'itemsPerPage': '$itemsPerPage',
+          'page': '$page',
+        });
+        final response = await _authGet(
+          uri,
+          timeout: const Duration(seconds: 10),
+        );
+        if (response.statusCode != 200) return null;
+
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final pageSessions = (data['sessions'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+        sessions.addAll(pageSessions);
+
+        final numPages = (data['numPages'] as num?)?.toInt() ?? 1;
+        if (pageSessions.isEmpty || page + 1 >= numPages) break;
+        page++;
+      }
+      return sessions;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Get a specific user's listening sessions (admin, paginated).
   Future<Map<String, dynamic>?> getUserListeningSessions(String userId, {int page = 0, int itemsPerPage = 10}) async {
     try {

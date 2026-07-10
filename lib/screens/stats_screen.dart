@@ -10,8 +10,7 @@ import '../services/audio_player_service.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/finished_books_this_year_sheet.dart';
 import '../widgets/stats_charts.dart';
-import '../widgets/absorb_wave_icon.dart';
-import '../widgets/card_buttons.dart';
+import '../widgets/listening_session_card.dart';
 import '../widgets/overlay_toast.dart';
 import '../main.dart' show flatNotifier, gradientIntensityNotifier;
 import 'app_shell.dart';
@@ -586,7 +585,7 @@ class _StatsScreenState extends State<StatsScreen>
         if (_sessions.isNotEmpty) ...[
           _sectionTitle(tt, cs, l.statsRecentSessions),
           const SizedBox(height: 10),
-          ..._buildSessions(tt, cs, l),
+          ..._buildSessions(),
           if (_isLoadingMoreSessions)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1456,103 +1455,12 @@ class _StatsScreenState extends State<StatsScreen>
 
   // --- SESSIONS ---
 
-  List<Widget> _buildSessions(TextTheme tt, ColorScheme cs, AppLocalizations l) {
+  List<Widget> _buildSessions() {
     return _sessions.map((s) {
       if (s is! Map<String, dynamic>) return const SizedBox.shrink();
-      final rawTitle = s['displayTitle'] as String?;
-      final rawAuthor = s['displayAuthor'] as String?;
-      final meta = s['mediaMetadata'] as Map<String, dynamic>?;
-      final title = (rawTitle != null && !_looksLikeId(rawTitle))
-          ? rawTitle
-          : meta?['title'] as String? ?? l.unknown;
-      final author = (rawAuthor != null && !_looksLikeId(rawAuthor))
-          ? rawAuthor
-          : meta?['authorName'] as String? ?? '';
-      final duration = _safeNum(s['timeListening']);
-      final updatedAt = s['updatedAt'] is num
-          ? DateTime.fromMillisecondsSinceEpoch((s['updatedAt'] as num).toInt())
-          : null;
-
-      final deviceInfo = s['deviceInfo'] as Map<String, dynamic>? ?? {};
-      final clientName = deviceInfo['clientName'] as String? ??
-          deviceInfo['deviceName'] as String? ??
-          '';
-      final isAbsorb = clientName.toLowerCase().contains('absorb');
-
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => _showSessionDetails(s),
-            borderRadius: BorderRadius.circular(12),
-            child: Ink(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: cs.onSurface.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
-              ),
-              child: Row(children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: (isAbsorb ? Colors.tealAccent : cs.onSurfaceVariant)
-                    .withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: Center(
-                child: isAbsorb
-                    ? AbsorbWaveIcon(
-                        size: 18,
-                        color: Colors.tealAccent.withValues(alpha: 0.9))
-                    : Icon(_clientIcon(clientName),
-                        size: 17,
-                        color: cs.onSurfaceVariant.withValues(alpha: 0.85)),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                  Text(title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tt.bodyMedium?.copyWith(
-                          color: cs.onSurface,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14)),
-                  if (author.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(author,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: cs.onSurface.withValues(alpha: 0.6),
-                            fontSize: 12)),
-                  ],
-                ])),
-            const SizedBox(width: 10),
-            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text(_formatDuration(duration),
-                  style: tt.labelMedium?.copyWith(
-                      color: cs.onSurface.withValues(alpha: 0.85),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13)),
-              if (updatedAt != null) ...[
-                const SizedBox(height: 2),
-                Text(_relativeDate(updatedAt),
-                    style: TextStyle(
-                        color: cs.onSurface.withValues(alpha: 0.5),
-                        fontSize: 11)),
-              ],
-            ]),
-          ]),
-            ),
-          ),
-        ),
+      return ListeningSessionCard(
+        session: s,
+        onTap: () => _showSessionDetails(s),
       );
     }).toList();
   }
@@ -1568,20 +1476,6 @@ class _StatsScreenState extends State<StatsScreen>
       setState(() => _isLoading = true);
       await _loadStats();
     }
-  }
-
-  IconData _clientIcon(String clientName) {
-    final lower = clientName.toLowerCase();
-    if (lower.contains('audiobookshelf') || lower.contains('abs'))
-      return Icons.headphones_rounded;
-    if (lower.contains('web') || lower.contains('browser'))
-      return Icons.language_rounded;
-    if (lower.contains('ios') || lower.contains('apple'))
-      return Icons.phone_iphone_rounded;
-    if (lower.contains('android')) return Icons.phone_android_rounded;
-    if (lower.contains('sonos') || lower.contains('cast'))
-      return Icons.speaker_rounded;
-    return Icons.devices_rounded;
   }
 
   // --- HELPERS ---
@@ -1738,14 +1632,6 @@ class _StatsScreenState extends State<StatsScreen>
     return l.statsScreenDurationShortM(m);
   }
 
-  String _relativeDate(DateTime date) {
-    final l = AppLocalizations.of(context)!;
-    final diff = DateTime.now().difference(date);
-    if (diff.inMinutes < 60) return l.minutesAgo(diff.inMinutes);
-    if (diff.inHours < 24) return l.hoursAgo(diff.inHours);
-    if (diff.inDays < 7) return l.daysAgo(diff.inDays);
-    return '${date.month}/${date.day}';
-  }
 }
 
 class _DayData {
@@ -1774,7 +1660,13 @@ class SessionDetailsSheet extends StatefulWidget {
   /// viewing another user's session (the only edit path would write to the
   /// admin's own progress).
   final bool allowEdit;
-  const SessionDetailsSheet({super.key, required this.session, this.allowEdit = true});
+  final VoidCallback? onJumped;
+  const SessionDetailsSheet({
+    super.key,
+    required this.session,
+    this.allowEdit = true,
+    this.onJumped,
+  });
 
   @override
   State<SessionDetailsSheet> createState() => SessionDetailsSheetState();
@@ -2006,8 +1898,8 @@ class SessionDetailsSheetState extends State<SessionDetailsSheet> {
         player.currentEpisodeId == episodeId) {
       await player.seekTo(Duration(seconds: startTime.round()));
       if (!player.isPlaying) player.play();
-      if (mounted) Navigator.pop(context);
-      AppShell.goToAbsorbingGlobal();
+      if (!mounted) return;
+      _finishJump();
       return;
     }
 
@@ -2107,10 +1999,19 @@ class SessionDetailsSheetState extends State<SessionDetailsSheet> {
     if (!mounted) return;
     if (error != null) {
       setState(() => _jumping = false);
-      showErrorSnackBar(context, error);
+      showOverlayToast(
+        context,
+        error,
+        icon: Icons.error_outline_rounded,
+      );
       return;
     }
+    _finishJump();
+  }
+
+  void _finishJump() {
     Navigator.pop(context);
+    widget.onJumped?.call();
     AppShell.goToAbsorbingGlobal();
   }
 

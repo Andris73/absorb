@@ -2668,6 +2668,18 @@ class AppLocalizationsRu extends AppLocalizations {
   String get playbackHistory => 'Playback History';
 
   @override
+  String get historyLocalTab => 'History';
+
+  @override
+  String get historyServerTab => 'Sessions';
+
+  @override
+  String get historyNoServerSessions => 'No server sessions for this item yet';
+
+  @override
+  String get historyServerLoadFailed => 'Could not load server sessions';
+
+  @override
   String get clearHistoryTooltip => 'Clear history';
 
   @override

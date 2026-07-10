@@ -7,6 +7,8 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../screens/app_shell.dart';
 import '../screens/car_mode_screen.dart';
+import '../screens/stats_screen.dart';
+import '../services/api_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/bookmark_service.dart';
 import '../services/chromecast_service.dart';
@@ -26,6 +28,7 @@ import 'episode_detail_sheet.dart';
 import 'episode_list_sheet.dart';
 import 'equalizer_sheet.dart';
 import 'feature_hint.dart';
+import 'listening_session_card.dart';
 import 'notes_sheet.dart';
 import 'overlay_toast.dart';
 import 'sleep_timer_sheet.dart';
@@ -915,23 +918,19 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
                               ],
                             ])),
                             const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: () async {
-                                final confirmed = await showDialog<bool>(context: context, builder: (dlg) => AlertDialog(
-                                  title: Text(l.deleteBookmarkQuestion),
-                                  content: Text(l.bookmarksJumpShortContent(bm.title, bm.formattedPosition)),
-                                  actions: [
-                                    TextButton(onPressed: () => Navigator.pop(dlg, false), child: Text(l.cancel)),
-                                    TextButton(onPressed: () => Navigator.pop(dlg, true), child: Text(l.delete, style: TextStyle(color: Colors.red.shade300))),
-                                  ],
-                                ));
-                                if (confirmed != true) return;
-                                await BookmarkService().deleteBookmark(itemId: widget.itemId, bookmarkId: bm.id, api: AudioPlayerService().currentApi);
-                                _load();
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.all(10),
-                                child: Icon(Icons.delete_outline_rounded, size: 22, color: cs.onSurface.withValues(alpha: 0.35)),
+                            IconButton(
+                              key: ValueKey('bookmark-delete-${bm.id}'),
+                              tooltip: l.delete,
+                              onPressed: () => _confirmDeleteBookmark(bm),
+                              padding: const EdgeInsets.all(12),
+                              constraints: const BoxConstraints.tightFor(
+                                width: 48,
+                                height: 48,
+                              ),
+                              icon: Icon(
+                                Icons.delete_outline_rounded,
+                                size: 22,
+                                color: cs.onSurface.withValues(alpha: 0.35),
                               ),
                             ),
                           ]),
@@ -940,6 +939,37 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
                     })),
       ]),
     );
+  }
+
+  Future<void> _confirmDeleteBookmark(Bookmark bookmark) async {
+    final l = AppLocalizations.of(context)!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l.deleteBookmarkQuestion),
+        content: Text(l.bookmarksJumpShortContent(
+          bookmark.title,
+          bookmark.formattedPosition,
+        )),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(l.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(l.delete, style: TextStyle(color: Colors.red.shade300)),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    await BookmarkService().deleteBookmark(
+      itemId: widget.itemId,
+      bookmarkId: bookmark.id,
+      api: AudioPlayerService().currentApi,
+    );
+    if (mounted) await _load();
   }
 
   bool get _isCasting {
@@ -1935,22 +1965,16 @@ class CardActionDelegate {
   }
 
   void showHistory(BuildContext ctx, Color accent, TextTheme tt) {
-    showModalBottomSheet(
-      context: ctx, isScrollControlled: true, useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) => DraggableScrollableSheet(
-        expand: false, initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.9,
-        builder: (_, sc) => _PlaybackHistoryBody(
-          itemId: itemId,
-          accent: accent,
-          tt: tt,
-          isActive: isActive,
-          player: player,
-          parentCtx: ctx,
-          sheetCtx: sheetCtx,
-          scrollController: sc,
-        ),
-      ),
+    final historyEpisodeId = episodeId ??
+        (isPodcastEpisode ? player.currentEpisodeId : null);
+    showPlaybackHistorySheet(
+      ctx,
+      itemId: itemId,
+      episodeId: historyEpisodeId,
+      accent: accent,
+      textTheme: tt,
+      player: player,
+      isActive: isActive,
     );
   }
 
@@ -1969,6 +1993,11 @@ class CardActionDelegate {
     for (final ep in episodes) {
       if (ep is Map<String, dynamic> && ep['id'] == epId) return ep;
     }
+    final cachedEpisode = recentEpisode;
+    if (cachedEpisode != null &&
+        (epId == null || cachedEpisode['id'] == epId)) {
+      return cachedEpisode;
+    }
     final api = context.read<AuthProvider>().apiService;
     if (api != null) {
       final fullItem = await api.getLibraryItem(itemId);
@@ -1980,7 +2009,7 @@ class CardActionDelegate {
         }
       }
     }
-    if (recentEpisode != null) return recentEpisode!;
+    if (cachedEpisode != null) return cachedEpisode;
     return {
       'id': epId,
       'title': player.currentEpisodeTitle,
@@ -1989,45 +2018,142 @@ class CardActionDelegate {
   }
 }
 
+enum PlaybackHistoryTab { history, sessions }
+
+void showPlaybackHistorySheet(
+  BuildContext context, {
+  required String itemId,
+  String? episodeId,
+  PlaybackHistoryTab initialTab = PlaybackHistoryTab.history,
+  Color? accent,
+  TextTheme? textTheme,
+  AudioPlayerService? player,
+  bool? isActive,
+}) {
+  final resolvedPlayer = player ?? AudioPlayerService();
+  final resolvedIsActive = isActive ??
+      (resolvedPlayer.currentItemId == itemId &&
+          (episodeId == null ||
+              resolvedPlayer.currentEpisodeId == episodeId));
+  final theme = Theme.of(context);
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      minChildSize: 0.05,
+      snap: true,
+      maxChildSize: 0.9,
+      builder: (_, scrollController) => _PlaybackHistoryBody(
+        itemId: itemId,
+        episodeId: episodeId,
+        api: context.read<AuthProvider>().apiService,
+        accent: accent ?? theme.colorScheme.primary,
+        tt: textTheme ?? theme.textTheme,
+        isActive: resolvedIsActive,
+        player: resolvedPlayer,
+        parentCtx: context,
+        scrollController: scrollController,
+        initialTab: initialTab,
+      ),
+    ),
+  );
+}
+
 const String _kAdvancedHistoryPrefKey = 'playback_history_advanced';
 
 class _PlaybackHistoryBody extends StatefulWidget {
   final String itemId;
+  final String? episodeId;
+  final ApiService? api;
   final Color accent;
   final TextTheme tt;
   final bool isActive;
   final AudioPlayerService player;
   final BuildContext parentCtx;
-  final BuildContext sheetCtx;
   final ScrollController scrollController;
+  final PlaybackHistoryTab initialTab;
 
   const _PlaybackHistoryBody({
     required this.itemId,
+    this.episodeId,
+    required this.api,
     required this.accent,
     required this.tt,
     required this.isActive,
     required this.player,
     required this.parentCtx,
-    required this.sheetCtx,
     required this.scrollController,
+    required this.initialTab,
   });
 
   @override
-  State<_PlaybackHistoryBody> createState() => _PlaybackHistoryBodyState();
+  State<_PlaybackHistoryBody> createState() =>
+      _PlaybackHistorySheetBodyState();
 }
 
-class _PlaybackHistoryBodyState extends State<_PlaybackHistoryBody> {
+class _PlaybackHistorySheetBodyState extends State<_PlaybackHistoryBody>
+    with SingleTickerProviderStateMixin {
   bool _advanced = false;
-  Future<List<PlaybackEvent>>? _future;
+  late int _selectedTab;
+  late final TabController _tabController;
+  late final Future<List<PlaybackEvent>> _localFuture;
+  Future<List<Map<String, dynamic>>?>? _serverFuture;
 
   @override
   void initState() {
     super.initState();
-    _future = PlaybackHistoryService().getHistory(widget.itemId);
+    _selectedTab = widget.initialTab.index;
+    _tabController = TabController(
+      length: 2,
+      initialIndex: _selectedTab,
+      vsync: this,
+    )
+      ..addListener(_onTabChanged);
+    _localFuture = PlaybackHistoryService().getHistory(widget.itemId);
+    if (_selectedTab == PlaybackHistoryTab.sessions.index) {
+      _serverFuture = _fetchServerSessions();
+    }
     ScopedPrefs.getBool(_kAdvancedHistoryPrefKey).then((v) {
       if (!mounted) return;
       setState(() => _advanced = v ?? false);
     });
+  }
+
+  @override
+  void dispose() {
+    _tabController
+      ..removeListener(_onTabChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onTabChanged() {
+    final selected = _tabController.index;
+    if (selected == _selectedTab) return;
+    final serverFuture = selected == 1 && _serverFuture == null
+        ? _fetchServerSessions()
+        : null;
+    setState(() {
+      _selectedTab = selected;
+      if (serverFuture != null) _serverFuture = serverFuture;
+    });
+  }
+
+  Future<List<Map<String, dynamic>>?> _fetchServerSessions() {
+    final api = widget.api;
+    if (api == null) return Future.value(null);
+    return api.getItemListeningSessions(
+      widget.itemId,
+      episodeId: widget.episodeId,
+    );
+  }
+
+  void _retryServerSessions() {
+    setState(() => _serverFuture = _fetchServerSessions());
   }
 
   Future<void> _toggleAdvanced() async {
@@ -2038,11 +2164,11 @@ class _PlaybackHistoryBodyState extends State<_PlaybackHistoryBody> {
 
   @override
   Widget build(BuildContext context) {
-    final l = AppLocalizations.of(widget.parentCtx)!;
-    final cs = Theme.of(widget.parentCtx).colorScheme;
+    final l = AppLocalizations.of(context)!;
+    final cs = Theme.of(context).colorScheme;
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(widget.parentCtx).bottomSheetTheme.backgroundColor,
+        color: Theme.of(context).bottomSheetTheme.backgroundColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         border: Border(top: BorderSide(color: widget.accent.withValues(alpha: 0.2), width: 1)),
       ),
@@ -2060,140 +2186,308 @@ class _PlaybackHistoryBodyState extends State<_PlaybackHistoryBody> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(children: [
-            const Spacer(),
-            Text(
-              l.playbackHistory,
-              style: widget.tt.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            const SizedBox(width: 48),
+            Expanded(
+              child: Text(
+                l.playbackHistory,
+                textAlign: TextAlign.center,
+                style: widget.tt.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
-            const Spacer(),
-            IconButton(
-              icon: Icon(Icons.delete_outline_rounded, size: 20, color: cs.onSurfaceVariant),
-              onPressed: () async {
-                await PlaybackHistoryService().clearHistory(widget.itemId);
-                if (widget.sheetCtx.mounted) Navigator.pop(widget.sheetCtx);
-              },
-              tooltip: l.clearHistoryTooltip,
+            SizedBox.square(
+              dimension: 48,
+              child: _selectedTab == 0
+                  ? IconButton(
+                      icon: Icon(
+                        Icons.delete_outline_rounded,
+                        size: 20,
+                        color: cs.onSurfaceVariant,
+                      ),
+                      onPressed: () async {
+                        await PlaybackHistoryService()
+                            .clearHistory(widget.itemId);
+                        if (context.mounted) Navigator.maybePop(context);
+                      },
+                      tooltip: l.clearHistoryTooltip,
+                    )
+                  : null,
             ),
           ]),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-          child: Row(children: [
-            if (widget.isActive)
-              Expanded(
-                child: Text(
-                  l.tapEventToJump,
-                  style: widget.tt.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant.withValues(alpha: 0.6),
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              )
-            else
-              const Spacer(),
-            Text(
-              'Show more',
-              style: widget.tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-            ),
-            const SizedBox(width: 8),
-            Transform.scale(
-              scale: 0.8,
-              child: Switch(
-                value: _advanced,
-                onChanged: (_) => _toggleAdvanced(),
-                activeThumbColor: widget.accent,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TabBar(
+            controller: _tabController,
+            indicatorColor: widget.accent,
+            labelColor: widget.accent,
+            unselectedLabelColor: cs.onSurfaceVariant,
+            dividerColor: cs.onSurface.withValues(alpha: 0.08),
+            tabs: [
+              Tab(
+                key: const ValueKey('playback-history-local-tab'),
+                text: l.historyLocalTab,
+              ),
+              Tab(
+                key: const ValueKey('playback-history-server-tab'),
+                text: l.historyServerTab,
+              ),
+            ],
+          ),
+        ),
+        if (_selectedTab == 0) _buildLocalOptions(l, cs),
+        Expanded(
+          child: _selectedTab == 0
+              ? _buildLocalHistory(l, cs)
+              : _buildServerHistory(l, cs),
+        ),
+      ]),
+    );
+  }
+
+  Widget _buildLocalOptions(AppLocalizations l, ColorScheme cs) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: Row(children: [
+        if (widget.isActive)
+          Expanded(
+            child: Text(
+              l.tapEventToJump,
+              style: widget.tt.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+                fontStyle: FontStyle.italic,
               ),
             ),
-          ]),
+          )
+        else
+          const Spacer(),
+        Text(
+          'Show more',
+          style: widget.tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
         ),
-        Expanded(
-          child: FutureBuilder<List<PlaybackEvent>>(
-            future: _future,
-            builder: (futureCtx, snap) {
-              if (!snap.hasData) {
-                return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-              }
-              final all = snap.data!;
-              final events = _advanced
-                  ? all
-                  : all.where((e) => !kAdvancedHistoryEvents.contains(e.type)).toList();
-              if (events.isEmpty) {
-                return Center(
-                  child: Text(
-                    l.noHistoryYet,
-                    style: widget.tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
-                  ),
-                );
-              }
-
-              final items = <Widget>[];
-              String? lastDate;
-              for (int i = 0; i < events.length; i++) {
-                final e = events[i];
-                final dl = dateLabel(e.timestamp);
-                if (dl != lastDate) {
-                  lastDate = dl;
-                  items.add(Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                    child: Text(
-                      dl,
-                      style: widget.tt.labelSmall?.copyWith(
-                        color: widget.accent.withValues(alpha: 0.6),
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ));
-                }
-                final posLabel = fmtTime(e.positionSeconds);
-                final timeStr = timeOfDay(e.timestamp);
-                final isAdvancedEvent = kAdvancedHistoryEvents.contains(e.type);
-                items.add(ListTile(
-                  dense: true,
-                  visualDensity: const VisualDensity(vertical: -2),
-                  leading: Icon(
-                    historyIcon(e.type),
-                    size: 18,
-                    color: widget.accent.withValues(alpha: isAdvancedEvent ? 0.45 : 0.7),
-                  ),
-                  title: Text(
-                    e.label,
-                    style: widget.tt.bodySmall?.copyWith(
-                      color: cs.onSurface.withValues(alpha: isAdvancedEvent ? 0.55 : 0.7),
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(
-                    l.atPosition(posLabel),
-                    style: widget.tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
-                  ),
-                  trailing: Text(
-                    timeStr,
-                    style: widget.tt.labelSmall?.copyWith(
-                      color: cs.onSurface.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  onTap: widget.isActive
-                      ? () {
-                          widget.player.seekTo(Duration(seconds: e.positionSeconds.round()));
-                          Navigator.pop(futureCtx);
-                          ScaffoldMessenger.of(widget.parentCtx).showSnackBar(
-                            SnackBar(
-                              duration: const Duration(seconds: 3),
-                              content: Text(l.jumpedToPosition(posLabel)),
-                            ),
-                          );
-                        }
-                      : null,
-                ));
-              }
-
-              return ListView(controller: widget.scrollController, children: items);
-            },
+        const SizedBox(width: 8),
+        Transform.scale(
+          scale: 0.8,
+          child: Switch(
+            value: _advanced,
+            onChanged: (_) => _toggleAdvanced(),
+            activeThumbColor: widget.accent,
           ),
         ),
       ]),
     );
   }
+
+  Widget _buildLocalHistory(AppLocalizations l, ColorScheme cs) {
+    return FutureBuilder<List<PlaybackEvent>>(
+      future: _localFuture,
+      builder: (futureContext, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(strokeWidth: 2),
+          );
+        }
+        final all = snapshot.data!;
+        final events = _advanced
+            ? all
+            : all
+                .where((event) =>
+                    !kAdvancedHistoryEvents.contains(event.type))
+                .toList();
+        if (events.isEmpty) {
+          return Center(
+            child: Text(
+              l.noHistoryYet,
+              style: widget.tt.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          );
+        }
+
+        final items = <Widget>[];
+        String? lastDate;
+        for (final event in events) {
+          final eventDate = dateLabel(event.timestamp, l);
+          if (eventDate != lastDate) {
+            lastDate = eventDate;
+            items.add(_dateHeader(eventDate));
+          }
+          final positionLabel = fmtTime(event.positionSeconds);
+          final isAdvancedEvent =
+              kAdvancedHistoryEvents.contains(event.type);
+          items.add(ListTile(
+            dense: true,
+            visualDensity: const VisualDensity(vertical: -2),
+            leading: Icon(
+              historyIcon(event.type),
+              size: 18,
+              color: widget.accent.withValues(
+                alpha: isAdvancedEvent ? 0.45 : 0.7,
+              ),
+            ),
+            title: Text(
+              event.label,
+              style: widget.tt.bodySmall?.copyWith(
+                color: cs.onSurface.withValues(
+                  alpha: isAdvancedEvent ? 0.55 : 0.7,
+                ),
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              l.atPosition(positionLabel),
+              style: widget.tt.labelSmall?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+            trailing: Text(
+              timeOfDay(event.timestamp, l),
+              style: widget.tt.labelSmall?.copyWith(
+                color: cs.onSurface.withValues(alpha: 0.3),
+              ),
+            ),
+            onTap: widget.isActive
+                ? () {
+                    widget.player.seekTo(
+                      Duration(seconds: event.positionSeconds.round()),
+                    );
+                    Navigator.pop(futureContext);
+                    ScaffoldMessenger.of(widget.parentCtx).showSnackBar(
+                      SnackBar(
+                        duration: const Duration(seconds: 3),
+                        content: Text(l.jumpedToPosition(positionLabel)),
+                      ),
+                    );
+                  }
+                : null,
+          ));
+        }
+
+        return ListView(
+          controller: widget.scrollController,
+          children: items,
+        );
+      },
+    );
+  }
+
+  Widget _buildServerHistory(AppLocalizations l, ColorScheme cs) {
+    final future = _serverFuture;
+    if (future == null) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    return FutureBuilder<List<Map<String, dynamic>>?>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(
+            child: CircularProgressIndicator(strokeWidth: 2),
+          );
+        }
+        final sessions = snapshot.data;
+        if (snapshot.hasError || sessions == null) {
+          return _serverMessage(
+            widget.api == null
+                ? l.bookmarksNotConnected
+                : l.historyServerLoadFailed,
+            l,
+            cs,
+            showRetry: widget.api != null,
+          );
+        }
+        if (sessions.isEmpty) {
+          return _serverMessage(l.historyNoServerSessions, l, cs);
+        }
+
+        return ListView(
+          controller: widget.scrollController,
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          children: [
+            for (final session in sessions)
+              ListeningSessionCard(
+                session: session,
+                onTap: () => _showServerSessionDetails(session),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _showServerSessionDetails(
+    Map<String, dynamic> session,
+  ) async {
+    final changed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => SessionDetailsSheet(
+        session: session,
+        onJumped: () {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) Navigator.maybePop(context);
+          });
+        },
+      ),
+    );
+    if (changed == true && mounted) {
+      setState(() => _serverFuture = _fetchServerSessions());
+    }
+  }
+
+  Widget _serverMessage(
+    String message,
+    AppLocalizations l,
+    ColorScheme cs, {
+    bool showRetry = false,
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.cloud_outlined,
+              size: 36,
+              color: cs.onSurface.withValues(alpha: 0.18),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: widget.tt.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+            if (showRetry) ...[
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: _retryServerSessions,
+                child: Text(l.retry),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dateHeader(String label) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Text(
+        label,
+        style: widget.tt.labelSmall?.copyWith(
+          color: widget.accent.withValues(alpha: 0.6),
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
 }

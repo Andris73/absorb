@@ -21,6 +21,8 @@ import 'episode_list_sheet.dart';
 import '../utils/duration_format.dart';
 
 class EpisodeDetailSheet extends StatefulWidget {
+  static final Set<String> _openEpisodeKeys = <String>{};
+
   final Map<String, dynamic> podcastItem;
   final Map<String, dynamic> episode;
   final ScrollController? scrollController;
@@ -39,7 +41,12 @@ class EpisodeDetailSheet extends StatefulWidget {
   }) : super(key: null);
 
   static void show(BuildContext context, Map<String, dynamic> podcastItem, Map<String, dynamic> episode) {
-    showStackableSheet(
+    final itemKey = podcastItem['id'] ?? identityHashCode(podcastItem);
+    final episodeKey = episode['id'] ?? identityHashCode(episode);
+    final openKey = '$itemKey::$episodeKey';
+    if (!_openEpisodeKeys.add(openKey)) return;
+
+    showStackableSheet<void>(
       context: context,
       useSafeArea: true,
       initialChildSize: 0.75,
@@ -49,7 +56,7 @@ class EpisodeDetailSheet extends StatefulWidget {
         episode: episode,
         scrollController: scrollController,
       ),
-    );
+    ).whenComplete(() => _openEpisodeKeys.remove(openKey));
   }
 
   /// Long-press shortcut: a compact quick-actions sheet for one episode.
@@ -664,6 +671,20 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
               episodeId: widget.episode['id'] as String?,
             );
           }),
+      if (!includeOpenDetails && !lib.isOffline)
+        ActionPillData(
+          icon: Icons.history_rounded,
+          label: l.historyServerTab,
+          onTap: () {
+            dismiss();
+            showPlaybackHistorySheet(
+              context,
+              itemId: _itemId,
+              episodeId: _episodeId,
+              initialTab: PlaybackHistoryTab.sessions,
+            );
+          },
+        ),
       if (progress > 0 || isFinished)
         ActionPillData(icon: Icons.restart_alt_rounded, label: l.resetProgress,
           onTap: () { dismiss(); _resetProgress(context); }),

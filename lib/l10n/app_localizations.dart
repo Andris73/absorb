@@ -4876,6 +4876,30 @@ abstract class AppLocalizations {
   /// **'Playback History'**
   String get playbackHistory;
 
+  /// No description provided for @historyLocalTab.
+  ///
+  /// In en, this message translates to:
+  /// **'History'**
+  String get historyLocalTab;
+
+  /// No description provided for @historyServerTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Sessions'**
+  String get historyServerTab;
+
+  /// No description provided for @historyNoServerSessions.
+  ///
+  /// In en, this message translates to:
+  /// **'No server sessions for this item yet'**
+  String get historyNoServerSessions;
+
+  /// No description provided for @historyServerLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load server sessions'**
+  String get historyServerLoadFailed;
+
   /// No description provided for @clearHistoryTooltip.
   ///
   /// In en, this message translates to:

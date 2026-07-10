@@ -948,6 +948,18 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         if (!lib.isOffline) {
           add(Icons.playlist_add_rounded, l.addToPlaylist, () => PlaylistPickerSheet.show(context, widget.itemId));
         }
+        if (!includeOpenDetails && !lib.isOffline) {
+          add(
+            Icons.history_rounded,
+            l.historyServerTab,
+            () => showPlaybackHistorySheet(
+              context,
+              itemId: widget.itemId,
+              initialTab: PlaybackHistoryTab.sessions,
+              accent: _coverScheme?.primary ?? cs.primary,
+            ),
+          );
+        }
         if (!lib.isOffline && !lib.isPodcastLibrary && auth.isAdmin) {
           add(Icons.collections_bookmark_rounded, l.addToCollection, () => CollectionPickerSheet.show(context, widget.itemId));
         }
