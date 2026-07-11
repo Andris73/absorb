@@ -14,6 +14,12 @@ typedef MediaUploader =
       MediaUploadRequest request, {
       void Function(int sentBytes, int totalBytes)? onProgress,
     });
+typedef BookMetadataSearcher =
+    Future<List<Map<String, dynamic>>> Function({
+      required String title,
+      String? author,
+      required String provider,
+    });
 
 class AdminUploadScreen extends StatefulWidget {
   static const titleFieldKey = Key('adminUploadTitleField');
@@ -22,6 +28,8 @@ class AdminUploadScreen extends StatefulWidget {
   static const libraryFieldKey = Key('adminUploadLibraryField');
   static const folderFieldKey = Key('adminUploadFolderField');
   static const mediaTypeKey = Key('adminUploadMediaType');
+  static const autoMetadataKey = Key('adminUploadAutoMetadata');
+  static const metadataProviderKey = Key('adminUploadMetadataProvider');
   static const chooseFilesKey = Key('adminUploadChooseFiles');
   static const submitKey = Key('adminUploadSubmit');
 
@@ -31,6 +39,7 @@ class AdminUploadScreen extends StatefulWidget {
   final UploadFilePicker? filePicker;
   final UploadPathChecker? pathChecker;
   final MediaUploader? uploader;
+  final BookMetadataSearcher? metadataSearcher;
 
   const AdminUploadScreen({
     super.key,
@@ -40,6 +49,7 @@ class AdminUploadScreen extends StatefulWidget {
     this.filePicker,
     this.pathChecker,
     this.uploader,
+    this.metadataSearcher,
   });
 
   @override
@@ -105,6 +115,12 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
   String? _selectedFolderId;
   List<MediaUploadFile> _files = [];
   bool _uploading = false;
+  bool _autoFetchMetadata = false;
+  bool _metadataSearching = false;
+  List<String> _metadataProviders = [];
+  String _metadataProvider = 'audible';
+  String? _lastMetadataQuery;
+  int _metadataRequestId = 0;
   double? _progress;
   DateTime _lastProgressUpdate = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -130,6 +146,9 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
     _selectedFolderId = _foldersFor(
       initialLibrary,
     ).firstOrNull?['id']?.toString();
+    _metadataProvider = _providerFor(initialLibrary);
+    _metadataProviders = [_metadataProvider];
+    _loadMetadataProviders();
   }
 
   @override
@@ -163,6 +182,24 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
       _selectedFolder?['path']?.toString() ??
       '';
 
+  String _providerFor(Map<String, dynamic>? library) {
+    final provider = library?['provider']?.toString().trim() ?? '';
+    return provider.isEmpty ? 'audible' : provider;
+  }
+
+  Future<void> _loadMetadataProviders() async {
+    final api = widget.apiService;
+    if (api == null) return;
+    final providers = await api.getMetadataProviders();
+    if (!mounted) return;
+    setState(() {
+      _metadataProviders = {
+        _metadataProvider,
+        ...providers.where((provider) => provider.isNotEmpty),
+      }.toList();
+    });
+  }
+
   List<Map<String, dynamic>> _foldersFor(Map<String, dynamic>? library) {
     final folders = library?['folders'] as List? ?? const [];
     return folders
@@ -173,9 +210,23 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
 
   void _selectLibrary(String? id) {
     if (id == null) return;
+    Map<String, dynamic>? library;
+    for (final candidate in _libraries) {
+      if (candidate['id']?.toString() == id) {
+        library = candidate;
+        break;
+      }
+    }
     setState(() {
       _selectedLibraryId = id;
       _selectedFolderId = _folders.firstOrNull?['id']?.toString();
+      _metadataProvider = _providerFor(library);
+      if (!_metadataProviders.contains(_metadataProvider)) {
+        _metadataProviders = [_metadataProvider, ..._metadataProviders];
+      }
+      _lastMetadataQuery = null;
+      _metadataSearching = false;
+      _metadataRequestId++;
     });
   }
 
@@ -192,6 +243,129 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
     final extension = _extension(file.name);
     return _audioExtensions.contains(extension) ||
         (!_isPodcast && _ebookExtensions.contains(extension));
+  }
+
+  String _metadataValue(dynamic value) {
+    if (value is String) return value.trim();
+    if (value is num) return value.toString();
+    return '';
+  }
+
+  String _seriesValue(dynamic value) {
+    if (value is List && value.isNotEmpty) return _seriesValue(value.first);
+    if (value is Map) {
+      return _metadataValue(value['series'] ?? value['name']);
+    }
+    return _metadataValue(value);
+  }
+
+  String get _metadataQuery => [
+    _metadataProvider,
+    _title.text.trim(),
+    _author.text.trim(),
+  ].join('\u0000');
+
+  void _detailsChanged() {
+    setState(() {
+      _lastMetadataQuery = null;
+      if (_metadataSearching) {
+        _metadataRequestId++;
+        _metadataSearching = false;
+      }
+    });
+  }
+
+  Future<void> _setAutoFetchMetadata(bool value) async {
+    setState(() {
+      _autoFetchMetadata = value;
+      _lastMetadataQuery = null;
+      if (!value) {
+        _metadataRequestId++;
+        _metadataSearching = false;
+      }
+    });
+    if (value) await _fetchMetadata();
+  }
+
+  Future<void> _selectMetadataProvider(String? provider) async {
+    if (provider == null || provider == _metadataProvider) return;
+    setState(() {
+      _metadataProvider = provider;
+      _lastMetadataQuery = null;
+      _metadataRequestId++;
+      _metadataSearching = false;
+    });
+    if (_autoFetchMetadata) await _fetchMetadata();
+  }
+
+  Future<void> _fetchMetadata({bool showNoResults = true}) async {
+    if (!_autoFetchMetadata || _isPodcast || _metadataSearching) return;
+    final title = _title.text.trim();
+    if (title.isEmpty) return;
+
+    final searcher = widget.metadataSearcher;
+    final api = widget.apiService;
+    if (searcher == null && api == null) return;
+
+    final query = _metadataQuery;
+    final requestId = ++_metadataRequestId;
+    setState(() => _metadataSearching = true);
+
+    List<Map<String, dynamic>> results;
+    try {
+      results = searcher != null
+          ? await searcher(
+              title: title,
+              author: _author.text.trim(),
+              provider: _metadataProvider,
+            )
+          : await api!.searchBooks(
+              title: title,
+              author: _author.text.trim(),
+              provider: _metadataProvider,
+            );
+    } catch (_) {
+      if (!mounted || requestId != _metadataRequestId) return;
+      setState(() {
+        _metadataSearching = false;
+        _lastMetadataQuery = query;
+      });
+      _showError(AppLocalizations.of(context)!.adminUploadMetadataFailed);
+      return;
+    }
+
+    if (!mounted || requestId != _metadataRequestId) return;
+    if (results.isEmpty) {
+      setState(() {
+        _metadataSearching = false;
+        _lastMetadataQuery = query;
+      });
+      if (showNoResults) {
+        showOverlayToast(
+          context,
+          AppLocalizations.of(context)!.adminUploadMetadataNoResults,
+          icon: Icons.search_off_rounded,
+        );
+      }
+      return;
+    }
+
+    final result = results.first;
+    final nestedBook = result['book'];
+    final book = nestedBook is Map
+        ? Map<String, dynamic>.from(nestedBook)
+        : result;
+    final matchedTitle = _metadataValue(book['title']);
+    final matchedAuthor = _metadataValue(book['author'] ?? book['authorName']);
+    final matchedSeries = _seriesValue(book['series']);
+
+    setState(() {
+      if (matchedTitle.isNotEmpty) _title.text = matchedTitle;
+      if (matchedAuthor.isNotEmpty) _author.text = matchedAuthor;
+      if (matchedSeries.isNotEmpty) _series.text = matchedSeries;
+      _metadataSearching = false;
+      _lastMetadataQuery = _metadataQuery;
+    });
   }
 
   Future<List<MediaUploadFile>?> _pickWithFilePicker() async {
@@ -246,6 +420,7 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
           _title.text = dot > 0 ? filename.substring(0, dot) : filename;
         }
       });
+      if (_autoFetchMetadata) await _fetchMetadata();
     } catch (_) {
       if (!mounted) return;
       showOverlayToast(
@@ -301,6 +476,13 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
             : l.adminUploadBookFileRequired,
       );
       return;
+    }
+
+    if (_autoFetchMetadata &&
+        !_isPodcast &&
+        _lastMetadataQuery != _metadataQuery) {
+      await _fetchMetadata();
+      if (!mounted) return;
     }
 
     final request = MediaUploadRequest(
@@ -372,6 +554,7 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
         _author.clear();
         _series.clear();
         _files = [];
+        _lastMetadataQuery = null;
       } else if (mustReselectFiles) {
         _files = [];
       }
@@ -497,7 +680,9 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
                                   ],
                                   FilledButton.icon(
                                     key: AdminUploadScreen.submitKey,
-                                    onPressed: _uploading ? null : _submit,
+                                    onPressed: _uploading || _metadataSearching
+                                        ? null
+                                        : _submit,
                                     icon: _uploading
                                         ? SizedBox(
                                             width: 18,
@@ -637,7 +822,7 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
             validator: (value) => value == null || value.trim().isEmpty
                 ? l.adminUploadTitleRequired
                 : null,
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) => _detailsChanged(),
           ),
           if (!_isPodcast) ...[
             const SizedBox(height: 12),
@@ -652,7 +837,7 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
                     labelText: l.author,
                     hintText: l.adminUploadOptional,
                   ),
-                  onChanged: (_) => setState(() {}),
+                  onChanged: (_) => _detailsChanged(),
                 );
                 final series = TextFormField(
                   key: AdminUploadScreen.seriesFieldKey,
@@ -662,7 +847,7 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
                     labelText: l.seriesLabel,
                     hintText: l.adminUploadOptional,
                   ),
-                  onChanged: (_) => setState(() {}),
+                  onChanged: (_) => _detailsChanged(),
                 );
                 if (constraints.maxWidth < 560) {
                   return Column(
@@ -678,6 +863,8 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
                 );
               },
             ),
+            const SizedBox(height: 16),
+            _metadataControls(cs, tt, l),
           ],
           if (destination != null) ...[
             const SizedBox(height: 14),
@@ -704,6 +891,74 @@ class _AdminUploadScreenState extends State<AdminUploadScreen> {
                   ),
                 ],
               ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _metadataControls(ColorScheme cs, TextTheme tt, AppLocalizations l) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l.adminUploadAutoMetadata,
+                      style: tt.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _metadataSearching
+                          ? l.adminUploadMetadataSearching
+                          : l.adminUploadAutoMetadataSubtitle,
+                      style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              if (_metadataSearching) ...[
+                const SizedBox(width: 12),
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ],
+              Switch(
+                key: AdminUploadScreen.autoMetadataKey,
+                value: _autoFetchMetadata,
+                onChanged: _uploading
+                    ? null
+                    : (value) async => _setAutoFetchMetadata(value),
+              ),
+            ],
+          ),
+          if (_autoFetchMetadata) ...[
+            const SizedBox(height: 10),
+            _dropdown<String>(
+              key: AdminUploadScreen.metadataProviderKey,
+              cs: cs,
+              label: l.adminUploadMetadataProvider,
+              value: _metadataProvider,
+              enabled: !_uploading && !_metadataSearching,
+              items: [
+                for (final provider in _metadataProviders)
+                  DropdownMenuItem(value: provider, child: Text(provider)),
+              ],
+              onChanged: (provider) async => _selectMetadataProvider(provider),
             ),
           ],
         ],

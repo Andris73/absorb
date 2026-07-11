@@ -6536,6 +6536,27 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get adminUploadBookFilesHint =>
+  @override
+  String get adminUploadAutoMetadata => 'Auto-fetch metadata';
+
+  @override
+  String get adminUploadAutoMetadataSubtitle =>
+      'Fill title, author and series from the best match';
+
+  @override
+  String get adminUploadMetadataProvider => 'Metadata provider';
+
+  @override
+  String get adminUploadMetadataSearching => 'Searching for metadata...';
+
+  @override
+  String get adminUploadMetadataNoResults =>
+      'No metadata match found. You can still upload this item.';
+
+  @override
+  String get adminUploadMetadataFailed =>
+      'Couldn\'t search for metadata. You can still upload this item.';
+
       'Choose audio or ebook files. You can also include covers and metadata files.';
 
   @override

@@ -3900,6 +3900,12 @@
   "adminUploadPathCheckFailed": "Couldn't check the destination folder. Nothing was uploaded.",
   "adminUploadDestinationExists": "That destination folder already exists on the server.",
   "adminUploadDestinationUsedBy": "That destination is already used by \"{title}\".",
+  "adminUploadAutoMetadata": "Auto-fetch metadata",
+  "adminUploadAutoMetadataSubtitle": "Fill title, author and series from the best match",
+  "adminUploadMetadataProvider": "Metadata provider",
+  "adminUploadMetadataSearching": "Searching for metadata...",
+  "adminUploadMetadataNoResults": "No metadata match found. You can still upload this item.",
+  "adminUploadMetadataFailed": "Couldn't search for metadata. You can still upload this item.",
   "@adminUploadDestinationUsedBy": {
     "placeholders": {
       "title": {

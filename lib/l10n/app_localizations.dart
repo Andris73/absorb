@@ -11355,6 +11355,42 @@ abstract class AppLocalizations {
   /// **'Add files'**
   String get adminUploadAddFiles;
 
+  /// No description provided for @adminUploadAutoMetadata.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-fetch metadata'**
+  String get adminUploadAutoMetadata;
+
+  /// No description provided for @adminUploadAutoMetadataSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Fill title, author and series from the best match'**
+  String get adminUploadAutoMetadataSubtitle;
+
+  /// No description provided for @adminUploadMetadataProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Metadata provider'**
+  String get adminUploadMetadataProvider;
+
+  /// No description provided for @adminUploadMetadataSearching.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching for metadata...'**
+  String get adminUploadMetadataSearching;
+
+  /// No description provided for @adminUploadMetadataNoResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No metadata match found. You can still upload this item.'**
+  String get adminUploadMetadataNoResults;
+
+  /// No description provided for @adminUploadMetadataFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t search for metadata. You can still upload this item.'**
+  String get adminUploadMetadataFailed;
+
   /// No description provided for @adminUploadBookFilesHint.
   ///
   /// In en, this message translates to:
