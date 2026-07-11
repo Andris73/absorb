@@ -1502,6 +1502,38 @@ class LibraryScreenState extends State<LibraryScreen>
   }
 
   // ── Search ──
+  void _openPodcastLookup() {
+    final lib = context.read<LibraryProvider>();
+    final library = lib.selectedLibrary;
+    final libraryId = lib.selectedLibraryId;
+    if (library == null || libraryId == null) return;
+
+    final folders = library['folders'];
+    final firstFolder = folders is List && folders.isNotEmpty
+        ? folders.first
+        : null;
+    final folderId = firstFolder is Map
+        ? firstFolder['id'] as String? ?? ''
+        : '';
+
+    _focusNode.unfocus();
+    showAddPodcastSheet(
+      context,
+      libraryId: libraryId,
+      folderId: folderId,
+      initialQuery: _searchController.text.trim(),
+      onAdded: _onPodcastAdded,
+    );
+  }
+
+  void _onPodcastAdded() {
+    unawaited(_refreshAll());
+    final query = _searchController.text.trim();
+    if (query.isNotEmpty) {
+      unawaited(_performSearch(query));
+    }
+  }
+
   void _onSearchChanged(String query) {
     _debounce?.cancel();
     // Always show bars when entering/exiting search
@@ -2760,6 +2792,10 @@ class LibraryScreenState extends State<LibraryScreen>
         ],
       );
     }
+    final auth = context.read<AuthProvider>();
+    final libProv = context.read<LibraryProvider>();
+    final isPodcast = libProv.isPodcastLibrary;
+    final showPodcastLookup = isPodcast && auth.isAdmin;
     if (_searchBookResults.isEmpty &&
         _searchSeriesResults.isEmpty &&
         _searchAuthorResults.isEmpty &&
@@ -2767,7 +2803,6 @@ class LibraryScreenState extends State<LibraryScreen>
         _searchEpisodeResults.isEmpty &&
         _searchTagResults.isEmpty &&
         _searchGenreResults.isEmpty) {
-      final libProv = context.read<LibraryProvider>();
       final showRmabCta = _rmabConfigured && !libProv.isPodcastLibrary;
       return CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -2789,7 +2824,18 @@ class LibraryScreenState extends State<LibraryScreen>
                     l.libraryNoResults,
                     style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant),
                   ),
-                  if (showRmabCta) ...[
+                  if (showPodcastLookup) ...[
+                    const SizedBox(height: 20),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.podcasts_rounded, size: 18),
+                      label: Text(
+                        l.adminPodcastsSearchItunesFor(
+                          _searchController.text.trim(),
+                        ),
+                      ),
+                      onPressed: _openPodcastLookup,
+                    ),
+                  ] else if (showRmabCta) ...[
                     const SizedBox(height: 20),
                     OutlinedButton.icon(
                       icon: const Icon(Icons.menu_book_rounded, size: 18),
@@ -2808,9 +2854,6 @@ class LibraryScreenState extends State<LibraryScreen>
         ],
       );
     }
-
-    final auth = context.read<AuthProvider>();
-    final isPodcast = context.read<LibraryProvider>().isPodcastLibrary;
 
     final children = <Widget>[
       // ─── BOOKS / SHOWS (only title matches) ───
@@ -3020,7 +3063,7 @@ class LibraryScreenState extends State<LibraryScreen>
         ),
       ],
       // ─── RMAB FOOTER (when results exist + RMAB configured) ───
-      if (_rmabConfigured && !isPodcast) ...[
+      if (showPodcastLookup || (_rmabConfigured && !isPodcast)) ...[
         Padding(
           padding: const EdgeInsets.only(top: 28),
           child: Divider(color: cs.outlineVariant.withValues(alpha: 0.4)),
@@ -3036,20 +3079,34 @@ class LibraryScreenState extends State<LibraryScreen>
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(10),
-            onTap: () {
-              final q = _searchController.text.trim();
-              debugPrint('[RMAB] library footer CTA tapped (query="$q")');
-              showRmabSearchResultsSheet(context, initialQuery: q);
-            },
+            onTap: showPodcastLookup
+                ? _openPodcastLookup
+                : () {
+                    final q = _searchController.text.trim();
+                    debugPrint('[RMAB] library footer CTA tapped (query="$q")');
+                    showRmabSearchResultsSheet(context, initialQuery: q);
+                  },
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
               child: Row(
                 children: [
-                  Icon(Icons.menu_book_rounded, size: 20, color: cs.primary),
+                  Icon(
+                    showPodcastLookup
+                        ? Icons.podcasts_rounded
+                        : Icons.menu_book_rounded,
+                    size: 20,
+                    color: cs.primary,
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      l.rmabSearchFooterCta(_searchController.text.trim()),
+                      showPodcastLookup
+                          ? l.adminPodcastsSearchItunesFor(
+                              _searchController.text.trim(),
+                            )
+                          : l.rmabSearchFooterCta(
+                              _searchController.text.trim(),
+                            ),
                       style: tt.bodyMedium?.copyWith(
                         color: cs.primary,
                         fontWeight: FontWeight.w600,

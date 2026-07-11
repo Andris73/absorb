@@ -4050,6 +4050,11 @@ class AppLocalizationsFr extends AppLocalizations {
   String get adminPodcastsSearchItunesHint => 'Search iTunes...';
 
   @override
+  String adminPodcastsSearchItunesFor(String query) {
+    return 'Search iTunes for \"$query\"';
+  }
+
+  @override
   String get adminPodcastsNoPodcastsFound => 'No podcasts found';
 
   @override
@@ -4468,6 +4473,9 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get episodeListHideFinishedEpisodes => 'Hide Finished Episodes';
+
+  @override
+  String get episodeListShowSettings => 'Show Settings';
 
   @override
   String get episodeListPlaysNewerToOlder => 'Plays newer to older episodes';
@@ -6507,14 +6515,6 @@ class AppLocalizationsFr extends AppLocalizations {
   String get adminLibrariesManageSubtitle => 'Create, edit and reorder';
 
   @override
-  String get adminServerSettings => 'Server settings';
-
-  @override
-  String get adminServerSettingsSubtitle => 'Scanner, storage and sorting';
-
-  @override
-  String get adminStats => 'Statistics';
-  @override
   String get adminUploadTitle => 'Upload media';
 
   @override
@@ -6535,6 +6535,27 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get adminUploadOptional => 'Optional';
+
+  @override
+  String get adminUploadAutoMetadata => 'Auto-fetch metadata';
+
+  @override
+  String get adminUploadAutoMetadataSubtitle =>
+      'Fill title, author and series from the best match';
+
+  @override
+  String get adminUploadMetadataProvider => 'Metadata provider';
+
+  @override
+  String get adminUploadMetadataSearching => 'Searching for metadata...';
+
+  @override
+  String get adminUploadMetadataNoResults =>
+      'No metadata match found. You can still upload this item.';
+
+  @override
+  String get adminUploadMetadataFailed =>
+      'Couldn\'t search for metadata. You can still upload this item.';
 
   @override
   String get adminUploadDestinationPreview => 'Server destination';
@@ -6561,27 +6582,6 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get adminUploadBookFilesHint =>
-  @override
-  String get adminUploadAutoMetadata => 'Auto-fetch metadata';
-
-  @override
-  String get adminUploadAutoMetadataSubtitle =>
-      'Fill title, author and series from the best match';
-
-  @override
-  String get adminUploadMetadataProvider => 'Metadata provider';
-
-  @override
-  String get adminUploadMetadataSearching => 'Searching for metadata...';
-
-  @override
-  String get adminUploadMetadataNoResults =>
-      'No metadata match found. You can still upload this item.';
-
-  @override
-  String get adminUploadMetadataFailed =>
-      'Couldn\'t search for metadata. You can still upload this item.';
-
       'Choose audio or ebook files. You can also include covers and metadata files.';
 
   @override
@@ -6657,6 +6657,14 @@ class AppLocalizationsFr extends AppLocalizations {
   String get adminUploadReselectFiles =>
       'Choose the files again before retrying.';
 
+  @override
+  String get adminServerSettings => 'Server settings';
+
+  @override
+  String get adminServerSettingsSubtitle => 'Scanner, storage and sorting';
+
+  @override
+  String get adminStats => 'Statistics';
 
   @override
   String get adminStatsSubtitle => 'Library and listening totals';

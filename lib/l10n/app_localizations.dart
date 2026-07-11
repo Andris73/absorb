@@ -7298,6 +7298,12 @@ abstract class AppLocalizations {
   /// **'Search iTunes...'**
   String get adminPodcastsSearchItunesHint;
 
+  /// No description provided for @adminPodcastsSearchItunesFor.
+  ///
+  /// In en, this message translates to:
+  /// **'Search iTunes for \"{query}\"'**
+  String adminPodcastsSearchItunesFor(String query);
+
   /// No description provided for @adminPodcastsNoPodcastsFound.
   ///
   /// In en, this message translates to:
@@ -7999,6 +8005,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Hide Finished Episodes'**
   String get episodeListHideFinishedEpisodes;
+
+  /// No description provided for @episodeListShowSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Show Settings'**
+  String get episodeListShowSettings;
 
   /// No description provided for @episodeListPlaysNewerToOlder.
   ///
@@ -11301,18 +11313,6 @@ abstract class AppLocalizations {
   /// **'Create, edit and reorder'**
   String get adminLibrariesManageSubtitle;
 
-  /// No description provided for @adminServerSettings.
-  ///
-  /// In en, this message translates to:
-  /// **'Server settings'**
-  String get adminServerSettings;
-
-  /// No description provided for @adminServerSettingsSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Scanner, storage and sorting'**
-  String get adminServerSettingsSubtitle;
-
   /// No description provided for @adminUploadTitle.
   ///
   /// In en, this message translates to:
@@ -11355,36 +11355,6 @@ abstract class AppLocalizations {
   /// **'Optional'**
   String get adminUploadOptional;
 
-  /// No description provided for @adminUploadDestinationPreview.
-  ///
-  /// In en, this message translates to:
-  /// **'Server destination'**
-  String get adminUploadDestinationPreview;
-
-  /// No description provided for @adminUploadFiles.
-  ///
-  /// In en, this message translates to:
-  /// **'Files'**
-  String get adminUploadFiles;
-
-  /// No description provided for @adminUploadSelectedFiles.
-  ///
-  /// In en, this message translates to:
-  /// **'{count, plural, =1{1 file} other{{count} files}}'**
-  String adminUploadSelectedFiles(int count);
-
-  /// No description provided for @adminUploadChooseFiles.
-  ///
-  /// In en, this message translates to:
-  /// **'Choose files'**
-  String get adminUploadChooseFiles;
-
-  /// No description provided for @adminUploadAddFiles.
-  ///
-  /// In en, this message translates to:
-  /// **'Add files'**
-  String get adminUploadAddFiles;
-
   /// No description provided for @adminUploadAutoMetadata.
   ///
   /// In en, this message translates to:
@@ -11420,6 +11390,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t search for metadata. You can still upload this item.'**
   String get adminUploadMetadataFailed;
+
+  /// No description provided for @adminUploadDestinationPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Server destination'**
+  String get adminUploadDestinationPreview;
+
+  /// No description provided for @adminUploadFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Files'**
+  String get adminUploadFiles;
+
+  /// No description provided for @adminUploadSelectedFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file} other{{count} files}}'**
+  String adminUploadSelectedFiles(int count);
+
+  /// No description provided for @adminUploadChooseFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose files'**
+  String get adminUploadChooseFiles;
+
+  /// No description provided for @adminUploadAddFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Add files'**
+  String get adminUploadAddFiles;
 
   /// No description provided for @adminUploadBookFilesHint.
   ///
@@ -11540,6 +11540,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Choose the files again before retrying.'**
   String get adminUploadReselectFiles;
+
+  /// No description provided for @adminServerSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Server settings'**
+  String get adminServerSettings;
+
+  /// No description provided for @adminServerSettingsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanner, storage and sorting'**
+  String get adminServerSettingsSubtitle;
 
   /// No description provided for @adminStats.
   ///

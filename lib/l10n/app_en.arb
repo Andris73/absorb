@@ -2196,6 +2196,14 @@
   "adminPodcastsCouldNotFindFeed": "Could not find podcast feed",
   "adminPodcastsSearchHint": "Search for podcasts…",
   "adminPodcastsSearchItunesHint": "Search iTunes...",
+  "adminPodcastsSearchItunesFor": "Search iTunes for \"{query}\"",
+  "@adminPodcastsSearchItunesFor": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
   "adminPodcastsNoPodcastsFound": "No podcasts found",
   "adminPodcastsRelToday": "Today",
   "adminPodcastsWeeksAgo": "{count}w ago",
@@ -2481,6 +2489,7 @@
   "episodeListSubscribe": "Subscribe",
   "episodeListShowFinishedEpisodes": "Show Finished Episodes",
   "episodeListHideFinishedEpisodes": "Hide Finished Episodes",
+  "episodeListShowSettings": "Show Settings",
   "episodeListPlaysNewerToOlder": "Plays newer to older episodes",
   "episodeListPlaysOlderToNewer": "Plays older to newer episodes",
   "episodeListEpisodeCount": "{count, plural, =1{1 episode} other{{count} episodes}}",
@@ -3884,15 +3893,6 @@
 
   "adminLibrariesManage": "Libraries",
   "adminLibrariesManageSubtitle": "Create, edit and reorder",
-  "adminServerSettings": "Server settings",
-  "adminServerSettingsSubtitle": "Scanner, storage and sorting",
-  "adminStats": "Statistics",
-  "adminStatsSubtitle": "Library and listening totals",
-  "adminAllSessions": "All sessions",
-  "adminAllSessionsSubtitle": "View and manage all listening sessions",
-  "adminSessionsAllUsers": "All users",
-  "adminSessionsEmpty": "No sessions",
-
   "adminUploadTitle": "Upload media",
   "adminUploadSubtitle": "Add books and podcasts from files",
   "adminUploadNoLibraries": "Create a library before uploading media.",
@@ -3900,6 +3900,12 @@
   "adminUploadFolder": "Library folder",
   "adminUploadDetails": "Item details",
   "adminUploadOptional": "Optional",
+  "adminUploadAutoMetadata": "Auto-fetch metadata",
+  "adminUploadAutoMetadataSubtitle": "Fill title, author and series from the best match",
+  "adminUploadMetadataProvider": "Metadata provider",
+  "adminUploadMetadataSearching": "Searching for metadata...",
+  "adminUploadMetadataNoResults": "No metadata match found. You can still upload this item.",
+  "adminUploadMetadataFailed": "Couldn't search for metadata. You can still upload this item.",
   "adminUploadDestinationPreview": "Server destination",
   "adminUploadFiles": "Files",
   "adminUploadSelectedFiles": "{count, plural, =1{1 file} other{{count} files}}",
@@ -3925,12 +3931,6 @@
   "adminUploadPathCheckFailed": "Couldn't check the destination folder. Nothing was uploaded.",
   "adminUploadDestinationExists": "That destination folder already exists on the server.",
   "adminUploadDestinationUsedBy": "That destination is already used by \"{title}\".",
-  "adminUploadAutoMetadata": "Auto-fetch metadata",
-  "adminUploadAutoMetadataSubtitle": "Fill title, author and series from the best match",
-  "adminUploadMetadataProvider": "Metadata provider",
-  "adminUploadMetadataSearching": "Searching for metadata...",
-  "adminUploadMetadataNoResults": "No metadata match found. You can still upload this item.",
-  "adminUploadMetadataFailed": "Couldn't search for metadata. You can still upload this item.",
   "@adminUploadDestinationUsedBy": {
     "placeholders": {
       "title": {
@@ -3966,6 +3966,15 @@
     }
   },
   "adminUploadReselectFiles": "Choose the files again before retrying.",
+  "adminServerSettings": "Server settings",
+  "adminServerSettingsSubtitle": "Scanner, storage and sorting",
+  "adminStats": "Statistics",
+  "adminStatsSubtitle": "Library and listening totals",
+  "adminAllSessions": "All sessions",
+  "adminAllSessionsSubtitle": "View and manage all listening sessions",
+  "adminSessionsAllUsers": "All users",
+  "adminSessionsEmpty": "No sessions",
+
   "statsLibraryTotals": "Library totals",
   "statsTotalItems": "Items",
   "statsAudioFiles": "Audio files",

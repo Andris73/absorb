@@ -13,6 +13,7 @@ import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import '../services/chromecast_service.dart';
 import '../providers/auth_provider.dart';
+import '../screens/admin_podcasts_screen.dart';
 import '../services/socket_service.dart';
 import 'card_buttons.dart';
 import 'html_description.dart';
@@ -54,6 +55,7 @@ class EpisodeListSheet extends StatefulWidget {
 }
 
 class _EpisodeListSheetState extends State<EpisodeListSheet> {
+  late Map<String, dynamic> _podcastItem;
   List<dynamic> _episodes = [];
   bool _isLoading = true;
   bool _isDownloadingAll = false;
@@ -66,10 +68,10 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
   final Set<String> _selectedEpisodeIds = {};
   bool _isBatchUpdating = false;
 
-  String get _itemId => widget.podcastItem['id'] as String? ?? '';
+  String get _itemId => _podcastItem['id'] as String? ?? '';
 
   Map<String, dynamic> get _media =>
-      widget.podcastItem['media'] as Map<String, dynamic>? ?? {};
+      _podcastItem['media'] as Map<String, dynamic>? ?? {};
 
   Map<String, dynamic> get _metadata =>
       _media['metadata'] as Map<String, dynamic>? ?? {};
@@ -96,6 +98,7 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
   @override
   void initState() {
     super.initState();
+    _podcastItem = Map<String, dynamic>.from(widget.podcastItem);
     _loadSortOrder();
     _loadHideFinished();
     _loadEpisodes();
@@ -119,16 +122,23 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
   void _onSocketItemUpdated(Map<String, dynamic> data) {
     if (!mounted || data['id'] != _itemId) return;
     _liveRefreshDebounce?.cancel();
-    _liveRefreshDebounce = Timer(const Duration(milliseconds: 800), () async {
-      if (!mounted) return;
-      final lib = context.read<LibraryProvider>();
-      final api = context.read<AuthProvider>().apiService;
-      if (api == null || lib.isOffline) return;
-      final fullItem = await api.getLibraryItem(_itemId);
-      if (fullItem == null || !mounted) return;
-      final media = fullItem['media'] as Map<String, dynamic>? ?? {};
-      final episodes = media['episodes'] as List<dynamic>? ?? [];
-      setState(() => _episodes = _sortEpisodes(episodes));
+    _liveRefreshDebounce = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) unawaited(_refreshShowFromServer());
+    });
+  }
+
+  Future<void> _refreshShowFromServer() async {
+    final lib = context.read<LibraryProvider>();
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null || lib.isOffline) return;
+    final fullItem = await api.getLibraryItem(_itemId);
+    if (fullItem == null || !mounted) return;
+    final media = fullItem['media'] as Map<String, dynamic>? ?? {};
+    final episodes = media['episodes'] as List<dynamic>? ?? [];
+    setState(() {
+      _podcastItem = Map<String, dynamic>.from(fullItem);
+      _episodes = _sortEpisodes(episodes);
+      _isLoading = false;
     });
   }
 
@@ -330,7 +340,7 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
       // libraries on, this sheet can open shows from other libraries and the
       // selected library would pin the wrong per-library skip amounts. Null
       // is fine: the player resolves it from the session/server.
-      libraryId: widget.podcastItem['libraryId'] as String?,
+      libraryId: _podcastItem['libraryId'] as String?,
     );
     if (mounted) {
       if (error != null) showErrorSnackBar(context, error);
@@ -441,6 +451,7 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
 
   void _showPodcastMoreSheet(ColorScheme cs, bool allDownloaded, int downloaded) {
     final l = AppLocalizations.of(context)!;
+    final isAdmin = context.read<AuthProvider>().isAdmin;
     showModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
@@ -513,6 +524,22 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
                   icon: _hideFinished ? Icons.visibility_rounded : Icons.visibility_off_rounded,
                   label: _hideFinished ? l.episodeListShowFinishedEpisodes : l.episodeListHideFinishedEpisodes,
                   onTap: () { Navigator.pop(ctx); _toggleHideFinished(); }),
+                if (isAdmin && _itemId.isNotEmpty)
+                  ActionPillData(
+                    icon: Icons.settings_rounded,
+                    label: l.episodeListShowSettings,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      final libraryId = _podcastItem['libraryId'] as String? ??
+                          context.read<LibraryProvider>().selectedLibraryId ??
+                          '';
+                      unawaited(showPodcastAdminSettings(
+                        context,
+                        item: _podcastItem,
+                        libraryId: libraryId,
+                        onChanged: () => unawaited(_refreshShowFromServer()),
+                      ));
+                    }),
               ]),
             ]),
           ),
@@ -825,7 +852,7 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
                               direction: isOnAbsorbing ? DismissDirection.none : DismissDirection.startToEnd,
                               confirmDismiss: (_) async {
                                 await lib.addToAbsorbingQueue(absorbKey);
-                                final cached = Map<String, dynamic>.from(widget.podcastItem);
+                                final cached = Map<String, dynamic>.from(_podcastItem);
                                 cached['recentEpisode'] = Map<String, dynamic>.from(ep);
                                 cached['_absorbingKey'] = absorbKey;
                                 lib.absorbingItemCache[absorbKey] = cached;
@@ -846,7 +873,7 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
                               ),
                               child: EpisodeRow(
                                 episode: ep,
-                                podcastItem: widget.podcastItem,
+                                podcastItem: _podcastItem,
                                 itemId: _itemId,
                                 podcastTitle: _title,
                                 onPlay: () => _playEpisode(ep),

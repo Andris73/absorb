@@ -11,6 +11,50 @@ import '../widgets/html_description.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/duration_format.dart';
 
+/// Opens the podcast lookup used by the admin podcast manager.
+///
+/// When [initialQuery] is provided, the sheet carries it into the search field
+/// and runs the lookup immediately.
+Future<void> showAddPodcastSheet(
+  BuildContext context, {
+  required String libraryId,
+  required String folderId,
+  required VoidCallback onAdded,
+  String initialQuery = '',
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _PodcastSearchSheet(
+      libraryId: libraryId,
+      folderId: folderId,
+      initialQuery: initialQuery,
+      onAdded: onAdded,
+    ),
+  );
+}
+
+Future<void> showPodcastAdminSettings(
+  BuildContext context, {
+  required Map<String, dynamic> item,
+  required String libraryId,
+  required VoidCallback onChanged,
+}) async {
+  if (!context.read<AuthProvider>().isAdmin) return;
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => _PodcastDetailScreen(
+        item: item,
+        libraryId: libraryId,
+        initialTab: 2,
+        onChanged: onChanged,
+      ),
+    ),
+  );
+}
+
 class AdminPodcastsScreen extends StatefulWidget {
   final Map<String, dynamic> library;
   const AdminPodcastsScreen({super.key, required this.library});
@@ -182,9 +226,12 @@ class _AdminPodcastsScreenState extends State<AdminPodcastsScreen> {
   // ─── Search Sheet ───────────────────────────────────────────
 
   void _showSearchSheet() {
-    showModalBottomSheet(
-      context: context, isScrollControlled: true, useSafeArea: true, backgroundColor: Colors.transparent,
-      builder: (_) => _PodcastSearchSheet(libraryId: _libraryId, folderId: _folderId, onAdded: _loadShows));
+    showAddPodcastSheet(
+      context,
+      libraryId: _libraryId,
+      folderId: _folderId,
+      onAdded: _loadShows,
+    );
   }
 
   // ─── Show Detail ────────────────────────────────────────────
@@ -203,13 +250,19 @@ class _AdminPodcastsScreenState extends State<AdminPodcastsScreen> {
 class _PodcastSearchSheet extends StatefulWidget {
   final String libraryId;
   final String folderId;
+  final String initialQuery;
   final VoidCallback onAdded;
-  const _PodcastSearchSheet({required this.libraryId, required this.folderId, required this.onAdded});
+  const _PodcastSearchSheet({
+    required this.libraryId,
+    required this.folderId,
+    required this.initialQuery,
+    required this.onAdded,
+  });
   @override State<_PodcastSearchSheet> createState() => _PodcastSearchSheetState();
 }
 
 class _PodcastSearchSheetState extends State<_PodcastSearchSheet> {
-  final _ctrl = TextEditingController();
+  late final TextEditingController _ctrl;
   bool _searching = false;
   List<dynamic> _results = [];
 
@@ -245,7 +298,16 @@ class _PodcastSearchSheetState extends State<_PodcastSearchSheet> {
   final Set<String> _lookingUp = {};
 
   @override
-  void initState() { super.initState(); _loadChart(); }
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.initialQuery);
+    _loadChart();
+    if (widget.initialQuery.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _search();
+      });
+    }
+  }
 
   @override
   void dispose() { _ctrl.dispose(); super.dispose(); }
@@ -915,8 +977,14 @@ class _PodcastPreviewScreenState extends State<_PodcastPreviewScreen> {
 class _PodcastDetailScreen extends StatefulWidget {
   final Map<String, dynamic> item;
   final String libraryId;
+  final int initialTab;
   final VoidCallback onChanged;
-  const _PodcastDetailScreen({required this.item, required this.libraryId, required this.onChanged});
+  const _PodcastDetailScreen({
+    required this.item,
+    required this.libraryId,
+    this.initialTab = 0,
+    required this.onChanged,
+  });
   @override State<_PodcastDetailScreen> createState() => _PodcastDetailScreenState();
 }
 
@@ -948,7 +1016,11 @@ class _PodcastDetailScreenState extends State<_PodcastDetailScreen> with SingleT
   void initState() {
     super.initState();
     _item = jsonDecode(jsonEncode(widget.item)) as Map<String, dynamic>;
-    _tabCtrl = TabController(length: 3, vsync: this)
+    final initialTab = widget.initialTab >= 0 && widget.initialTab < 3
+        ? widget.initialTab
+        : 0;
+    _lastTabIndex = initialTab;
+    _tabCtrl = TabController(length: 3, initialIndex: initialTab, vsync: this)
       ..addListener(_onTabChanged);
     _initCheckDate();
     _reloadItem(); // Load full item with episodes
