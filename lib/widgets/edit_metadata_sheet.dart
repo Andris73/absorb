@@ -133,6 +133,9 @@ class _MetadataEditViewState extends State<MetadataEditView>
       ..addTaskStartedListener(_onTaskStarted)
       ..addTaskProgressListener(_onTaskProgress)
       ..addTaskFinishedListener(_onTaskFinished);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_restoreRunningTask());
+    });
     _loadFilterSuggestions();
     final m = widget.metadata;
     _titleCtrl = TextEditingController(text: m['title'] as String? ?? '');
@@ -897,6 +900,29 @@ class _MetadataEditViewState extends State<MetadataEditView>
     setState(() {
       _runningAction = action;
       _taskProgress = 0;
+    });
+  }
+
+  Future<void> _restoreRunningTask() async {
+    if (!mounted) return;
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) return;
+    final tasks = await api.getServerTasks();
+    if (!mounted || _runningAction != null || tasks == null) return;
+    final matching = tasks.where((task) {
+      final itemId = (task['data'] as Map?)?['libraryItemId']?.toString();
+      final action = task['action'] as String?;
+      return itemId == widget.itemId &&
+          task['isFinished'] != true &&
+          (action == 'encode-m4b' || action == 'embed-metadata');
+    }).toList()
+      ..sort((a, b) =>
+          ((b['startedAt'] as num?)?.toInt() ?? 0)
+              .compareTo((a['startedAt'] as num?)?.toInt() ?? 0));
+    if (matching.isEmpty || !mounted || _runningAction != null) return;
+    setState(() {
+      _runningAction = matching.first['action'] as String?;
+      _taskProgress = null;
     });
   }
 

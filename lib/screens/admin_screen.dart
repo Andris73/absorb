@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/scoped_prefs.dart';
+import '../services/server_task_tracker.dart';
 import '../services/socket_service.dart';
+import '../widgets/admin_task_indicator.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/rmab_config_sheet.dart';
 import '../l10n/app_localizations.dart';
@@ -23,7 +25,7 @@ class AdminScreen extends StatefulWidget {
   @override State<AdminScreen> createState() => _AdminScreenState();
 }
 
-class _AdminScreenState extends State<AdminScreen> {
+class _AdminScreenState extends State<AdminScreen> with WidgetsBindingObserver {
   bool _loading = true;
   List<dynamic> _users = [];
   List<dynamic> _onlineUsers = [];
@@ -40,21 +42,59 @@ class _AdminScreenState extends State<AdminScreen> {
   final Set<String> _matchingLibraries = {};
   bool _creatingBackup = false;
   bool _purgingCache = false;
+  late final ServerTaskTracker _taskTracker;
 
   Timer? _issuesDebounce;
+  Timer? _taskRefreshTimer;
+  bool _refreshingTasks = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _taskTracker = ServerTaskTracker();
+    _startTaskRefreshTimer();
     _loadAll();
     SocketService().addItemsChangedListener(_onItemsChanged);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     SocketService().removeItemsChangedListener(_onItemsChanged);
     _issuesDebounce?.cancel();
+    _taskRefreshTimer?.cancel();
+    _taskTracker.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startTaskRefreshTimer();
+      unawaited(_refreshServerTasks());
+    } else {
+      _taskRefreshTimer?.cancel();
+    }
+  }
+
+  void _startTaskRefreshTimer() {
+    _taskRefreshTimer?.cancel();
+    _taskRefreshTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      unawaited(_refreshServerTasks());
+    });
+  }
+
+  Future<void> _refreshServerTasks() async {
+    if (!mounted || _refreshingTasks) return;
+    final service = context.read<AuthProvider>().apiService;
+    if (service == null) return;
+    _refreshingTasks = true;
+    try {
+      await _taskTracker.refresh(service);
+    } finally {
+      _refreshingTasks = false;
+    }
   }
 
   // Scans flag items missing/invalid server-side and stream items_updated
@@ -82,9 +122,11 @@ class _AdminScreenState extends State<AdminScreen> {
     if (api == null) return;
     setState(() => _loading = true);
 
+    final taskRefresh = _refreshServerTasks();
     final futures = await Future.wait([
       api.getUsers(), api.getOnlineUsers(), api.getLibraries(), api.getBackups(), api.getAllSessions(limit: 10),
     ]);
+    await taskRefresh;
     _users = futures[0];
     _onlineUsers = futures[1];
     _libraries = futures[2];
@@ -137,6 +179,13 @@ class _AdminScreenState extends State<AdminScreen> {
                       padding: const EdgeInsets.fromLTRB(20, 12, 8, 0),
                       child: Row(children: [
                         Expanded(child: AbsorbPageHeader(title: l.adminTitle, padding: EdgeInsets.zero)),
+                        ListenableBuilder(
+                          listenable: _taskTracker,
+                          builder: (_, __) => AdminTaskIndicator(
+                            tasks: _taskTracker.visibleTasks,
+                            onPressed: () => showAdminTasksSheet(context, _taskTracker),
+                          ),
+                        ),
                         IconButton(icon: Icon(Icons.close_rounded, color: cs.onSurfaceVariant), onPressed: () => Navigator.pop(context)),
                       ]),
                     ),
@@ -289,7 +338,14 @@ class _AdminScreenState extends State<AdminScreen> {
 
                     // ── Libraries ──
                     _section(cs, tt, l.adminLibraries),
-                    ..._libraries.map((lib) => _libraryCard(cs, tt, lib)),
+                    ListenableBuilder(
+                      listenable: _taskTracker,
+                      builder: (_, __) => Column(
+                        children: _libraries
+                            .map((lib) => _libraryCard(cs, tt, lib))
+                            .toList(),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -404,8 +460,10 @@ class _AdminScreenState extends State<AdminScreen> {
     final totalItems = stats?['totalItems'] ?? 0;
     final totalSize = stats?['totalSize'] as num?;
     final totalDur = stats?['totalDuration'] as num?;
-    final isScanning = _scanningLibraries.contains(id);
-    final isMatching = _matchingLibraries.contains(id);
+    final isScanning = _scanningLibraries.contains(id) ||
+        _taskTracker.isLibraryActionRunning('library-scan', id);
+    final isMatching = _matchingLibraries.contains(id) ||
+        _taskTracker.isLibraryActionRunning('library-match-all', id);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
@@ -542,6 +600,7 @@ class _AdminScreenState extends State<AdminScreen> {
     final api = context.read<AuthProvider>().apiService; if (api == null) return;
     setState(() => _scanningLibraries.add(id));
     final ok = await api.scanLibrary(id);
+    if (ok) await _refreshServerTasks();
     if (mounted) {
       final l = AppLocalizations.of(context)!;
       setState(() => _scanningLibraries.remove(id));
@@ -561,6 +620,7 @@ class _AdminScreenState extends State<AdminScreen> {
     if (yes != true) return;
     setState(() => _matchingLibraries.add(id));
     final ok = await api.matchLibrary(id);
+    if (ok) await _refreshServerTasks();
     if (mounted) {
       final l2 = AppLocalizations.of(context)!;
       setState(() => _matchingLibraries.remove(id));

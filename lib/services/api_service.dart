@@ -2157,6 +2157,27 @@ class ApiService {
     return [];
   }
 
+  /// Get the server's currently running background tasks.
+  Future<List<Map<String, dynamic>>?> getServerTasks() async {
+    try {
+      final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/tasks'));
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        final rawTasks = data is Map ? data['tasks'] : data;
+        if (rawTasks is List) {
+          return rawTasks
+              .whereType<Map>()
+              .map((task) => Map<String, dynamic>.from(task))
+              .toList();
+        }
+      }
+      debugPrint('[API] getServerTasks failed: ${r.statusCode}');
+    } catch (e) {
+      debugPrint('[API] getServerTasks error: $e');
+    }
+    return null;
+  }
+
   /// Check whether Audiobookshelf's destination directory for an upload is
   /// already in use. The web client performs this check before POST /api/upload
   /// so files are not merged into an existing library item directory.

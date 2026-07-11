@@ -1045,6 +1045,31 @@
   "tipsAndHiddenFeatures": "Tips & Hidden Features",
   "tipsSubtitle": "Get the most out of Absorb",
   "adminTitle": "Server Admin",
+  "adminTasksTitle": "Server activity",
+  "adminTasksRunning": "{count, plural, =1{1 task running} other{{count} tasks running}}",
+  "@adminTasksRunning": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "adminTasksRecent": "Recent server activity",
+  "adminTasksEmpty": "No server tasks are running",
+  "adminTaskScanSummary": "{added} added - {updated} updated - {missing} missing",
+  "@adminTaskScanSummary": {
+    "placeholders": {
+      "added": {
+        "type": "int"
+      },
+      "updated": {
+        "type": "int"
+      },
+      "missing": {
+        "type": "int"
+      }
+    }
+  },
   "adminServer": "Server",
   "adminVersion": "Version",
   "adminUsers": "Users",

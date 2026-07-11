@@ -2020,6 +2020,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get adminTitle => '服务器管理';
 
   @override
+  String get adminTasksTitle => 'Server activity';
+
+  @override
+  String adminTasksRunning(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tasks running',
+      one: '1 task running',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get adminTasksRecent => 'Recent server activity';
+
+  @override
+  String get adminTasksEmpty => 'No server tasks are running';
+
+  @override
+  String adminTaskScanSummary(int added, int updated, int missing) {
+    return '$added added - $updated updated - $missing missing';
+  }
+
+  @override
   String get adminServer => '服务器';
 
   @override

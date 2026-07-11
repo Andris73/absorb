@@ -59,9 +59,10 @@ class SocketService {
   /// Payload: serialized Task object including action and data.libraryItemId.
   void Function(Map<String, dynamic> data)? onEncodeFinished;
 
-  // Task (encode-m4b / embed-metadata) event fan-out so screens can subscribe
-  // alongside the library provider's onEncodeFinished above. task_started and
-  // task_finished carry the action; task_progress is generic {libraryItemId, progress}.
+  // Server task event fan-out so admin and item screens can subscribe alongside
+  // the library provider's onEncodeFinished above. task_started and
+  // task_finished carry the action; task_progress is generic
+  // {libraryItemId, progress}.
   final List<void Function(Map<String, dynamic>)> _taskStartedListeners = [];
   final List<void Function(Map<String, dynamic>)> _taskProgressListeners = [];
   final List<void Function(Map<String, dynamic>)> _taskFinishedListeners = [];
@@ -98,6 +99,35 @@ class SocketService {
     for (final fn in List.of(_taskFinishedListeners)) {
       fn(data);
     }
+  }
+
+  @visibleForTesting
+  static Map<String, dynamic>? normalizeSocketMap(Object? data) {
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) {
+      return data.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return null;
+  }
+
+  void _handleTaskStarted(dynamic data) {
+    final task = normalizeSocketMap(data);
+    if (task == null) return;
+    debugPrint('[Socket] Task started: ${task['action'] ?? task['id']}');
+    _emitTaskStarted(task);
+  }
+
+  void _handleTaskProgress(dynamic data) {
+    final progress = normalizeSocketMap(data);
+    if (progress != null) _emitTaskProgress(progress);
+  }
+
+  void _handleTaskFinished(dynamic data) {
+    final task = normalizeSocketMap(data);
+    if (task == null) return;
+    debugPrint('[Socket] Task finished: ${task['action'] ?? task['id']}');
+    if (task['action'] == 'encode-m4b') onEncodeFinished?.call(task);
+    _emitTaskFinished(task);
   }
 
   // Library-item change fan-out so screens can react to scan/watcher-driven
@@ -311,22 +341,11 @@ class SocketService {
         if (data is Map<String, dynamic>) onUserUpdated?.call(data);
       });
 
-      // Task lifecycle (encode-m4b / embed-metadata). task_started + finished
-      // carry the action; task_progress is generic {libraryItemId, progress}.
-      _socket!.on('task_started', (data) {
-        if (data is Map<String, dynamic>) _emitTaskStarted(data);
-      });
-      _socket!.on('task_progress', (data) {
-        if (data is Map<String, dynamic>) _emitTaskProgress(data);
-      });
-      _socket!.on('task_finished', (data) {
-        if (data is! Map<String, dynamic>) return;
-        if (data['action'] == 'encode-m4b') {
-          debugPrint('[Socket] Encode finished');
-          onEncodeFinished?.call(data);
-        }
-        _emitTaskFinished(data);
-      });
+      // Server task lifecycle. task_started + finished carry the action;
+      // task_progress is generic {libraryItemId, progress}.
+      _socket!.on('task_started', _handleTaskStarted);
+      _socket!.on('task_progress', _handleTaskProgress);
+      _socket!.on('task_finished', _handleTaskFinished);
 
       // Ereader device list changed (admin-wide or per-user). Payload carries
       // the list already filtered for this connection's user.
@@ -483,17 +502,9 @@ class SocketService {
         if (data is Map<String, dynamic>) onUserUpdated?.call(data);
       });
 
-      _socket!.on('task_started', (data) {
-        if (data is Map<String, dynamic>) _emitTaskStarted(data);
-      });
-      _socket!.on('task_progress', (data) {
-        if (data is Map<String, dynamic>) _emitTaskProgress(data);
-      });
-      _socket!.on('task_finished', (data) {
-        if (data is! Map<String, dynamic>) return;
-        if (data['action'] == 'encode-m4b') onEncodeFinished?.call(data);
-        _emitTaskFinished(data);
-      });
+      _socket!.on('task_started', _handleTaskStarted);
+      _socket!.on('task_progress', _handleTaskProgress);
+      _socket!.on('task_finished', _handleTaskFinished);
 
       _socket!.on('ereader-devices-updated', (data) {
         if (data is! Map) return;

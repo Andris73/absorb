@@ -3796,6 +3796,36 @@ abstract class AppLocalizations {
   /// **'Server Admin'**
   String get adminTitle;
 
+  /// No description provided for @adminTasksTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Server activity'**
+  String get adminTasksTitle;
+
+  /// No description provided for @adminTasksRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 task running} other{{count} tasks running}}'**
+  String adminTasksRunning(int count);
+
+  /// No description provided for @adminTasksRecent.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent server activity'**
+  String get adminTasksRecent;
+
+  /// No description provided for @adminTasksEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No server tasks are running'**
+  String get adminTasksEmpty;
+
+  /// No description provided for @adminTaskScanSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{added} added - {updated} updated - {missing} missing'**
+  String adminTaskScanSummary(int added, int updated, int missing);
+
   /// No description provided for @adminServer.
   ///
   /// In en, this message translates to:
