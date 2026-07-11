@@ -345,6 +345,15 @@ class AndroidAutoService {
       _downloadsReady = true;
     }
 
+    // Provisional Continue shelf from in-progress downloads, so it's useful
+    // the moment the head unit queries it. The server fetch below can sit on
+    // a 15s timeout when the server is unreachable, and by then the user is
+    // already staring at an empty Continue tab. Server data replaces this
+    // when (and if) it arrives.
+    if (_continueListening.isEmpty) {
+      await _buildOfflineContinueFromDownloads();
+    }
+
     if (_isRefreshing) return;
     if (!force && _lastRefresh != null &&
         DateTime.now().difference(_lastRefresh!) < const Duration(seconds: 30)) {
@@ -382,10 +391,15 @@ class AndroidAutoService {
       _isRefreshing = false;
       _invalidateRefreshSensitiveChildren();
       if (Platform.isAndroid) {
-        try {
-          // ignore: deprecated_member_use
-          await AudioServiceBackground.notifyChildrenChanged(AutoMediaIds.root);
-        } catch (_) {}
+        // Notify every refresh-sensitive tab, not just root: the head unit
+        // only re-queries nodes it's told about, so a root-only notify left
+        // the Continue tab showing its pre-refresh (often empty) contents.
+        for (final id in _refreshSensitiveParents) {
+          try {
+            // ignore: deprecated_member_use
+            await AudioServiceBackground.notifyChildrenChanged(id);
+          } catch (_) {}
+        }
       }
       try {
         onServerDataChanged?.call();
@@ -558,6 +572,17 @@ class AndroidAutoService {
     try {
       // ── Fetch all libraries (books + podcasts) ──
       final libs = await api.getLibraries();
+      if (libs.isEmpty) {
+        // ApiService swallows network errors and returns an empty list, so
+        // an unreachable server never reaches the catch below. A real ABS
+        // account always has at least one library - treat empty as offline
+        // and keep the downloads-based Continue shelf instead of wiping it.
+        await _buildOfflineContinueFromDownloads();
+        _recentlyAdded = [];
+        _libraries = [];
+        debugPrint('[AutoBrowse] getLibraries empty - treating as offline');
+        return;
+      }
       _libraries = libs.map((l) {
         final m = l as Map<String, dynamic>;
         return AutoLibraryEntry(
