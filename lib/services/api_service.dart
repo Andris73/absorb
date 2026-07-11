@@ -14,6 +14,73 @@ class LocalSessionResult {
   const LocalSessionResult({required this.ok, required this.serverTooOld});
 }
 
+class MediaUploadFile {
+  final String name;
+  final int size;
+  final String? path;
+  final Uint8List? bytes;
+  final Stream<List<int>>? readStream;
+
+  const MediaUploadFile({
+    required this.name,
+    required this.size,
+    this.path,
+    this.bytes,
+    this.readStream,
+  });
+}
+
+class MediaUploadRequest {
+  final String libraryId;
+  final String folderId;
+  final String mediaType;
+  final String title;
+  final String? author;
+  final String? series;
+  final List<MediaUploadFile> files;
+
+  const MediaUploadRequest({
+    required this.libraryId,
+    required this.folderId,
+    required this.mediaType,
+    required this.title,
+    this.author,
+    this.series,
+    required this.files,
+  });
+
+  String get directory {
+    final parts = mediaType == 'podcast'
+        ? <String?>[title]
+        : <String?>[author, series, title];
+    return parts
+        .map((part) => part?.trim() ?? '')
+        .where((part) => part.isNotEmpty)
+        .join('/');
+  }
+}
+
+class UploadPathCheckResult {
+  final bool success;
+  final bool exists;
+  final String? libraryItemTitle;
+  final String? error;
+
+  const UploadPathCheckResult({
+    required this.success,
+    this.exists = false,
+    this.libraryItemTitle,
+    this.error,
+  });
+}
+
+class MediaUploadResult {
+  final bool success;
+  final String? error;
+
+  const MediaUploadResult({required this.success, this.error});
+}
+
 class ApiService {
   static String appVersion = '1.3.0'; // fallback; overwritten by initVersion()
   static String appBuild = ''; // build number; set by initVersion()
@@ -2088,6 +2155,128 @@ class ApiService {
       }
     } catch (e) { debugPrint('getBackups error: $e'); }
     return [];
+  }
+
+  /// Check whether Audiobookshelf's destination directory for an upload is
+  /// already in use. The web client performs this check before POST /api/upload
+  /// so files are not merged into an existing library item directory.
+  Future<UploadPathCheckResult> checkUploadPathExists({
+    required String directory,
+    required String folderPath,
+  }) async {
+    try {
+      final response = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/filesystem/pathexists'),
+        body: jsonEncode({
+          'directory': directory,
+          'folderPath': folderPath,
+        }),
+        timeout: const Duration(seconds: 20),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return UploadPathCheckResult(
+          success: true,
+          exists: data['exists'] == true,
+          libraryItemTitle: data['libraryItemTitle'] as String?,
+        );
+      }
+      final error = response.body.trim();
+      return UploadPathCheckResult(
+        success: false,
+        error: error.isEmpty ? 'HTTP ${response.statusCode}' : error,
+      );
+    } catch (e) {
+      debugPrint('[API] checkUploadPathExists error: $e');
+      return UploadPathCheckResult(success: false, error: '$e');
+    }
+  }
+
+  /// Upload one book or podcast and its related files to Audiobookshelf.
+  /// File fields are numbered to match the server's web uploader.
+  Future<MediaUploadResult> uploadMedia(
+    MediaUploadRequest upload, {
+    void Function(int sentBytes, int totalBytes)? onProgress,
+  }) async {
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$_cleanBaseUrl/api/upload'),
+      );
+      request.headers.addAll(mediaHeaders);
+      request.fields.addAll({
+        'title': upload.title.trim(),
+        'library': upload.libraryId,
+        'folder': upload.folderId,
+        if (upload.mediaType != 'podcast') ...{
+          'author': upload.author?.trim() ?? '',
+          'series': upload.series?.trim() ?? '',
+        },
+      });
+
+      final totalBytes = upload.files.fold<int>(
+        0,
+        (total, file) => total + file.size,
+      );
+      var sentBytes = 0;
+
+      for (var i = 0; i < upload.files.length; i++) {
+        final file = upload.files[i];
+        if (file.bytes != null) {
+          final source = Stream<List<int>>.value(file.bytes!);
+          final tracked = source.map((chunk) {
+            sentBytes += chunk.length;
+            onProgress?.call(sentBytes, totalBytes);
+            return chunk;
+          });
+          request.files.add(http.MultipartFile(
+            '$i',
+            tracked,
+            file.size > 0 ? file.size : file.bytes!.length,
+            filename: file.name,
+          ));
+        } else if (file.path != null && file.path!.isNotEmpty) {
+          request.files.add(await http.MultipartFile.fromPath(
+            '$i',
+            file.path!,
+            filename: file.name,
+          ));
+        } else if (file.readStream != null) {
+          final tracked = file.readStream!.map((chunk) {
+            sentBytes += chunk.length;
+            onProgress?.call(sentBytes, totalBytes);
+            return chunk;
+          });
+          request.files.add(http.MultipartFile(
+            '$i',
+            tracked,
+            file.size,
+            filename: file.name,
+          ));
+        } else {
+          return MediaUploadResult(
+            success: false,
+            error: 'Unable to read ${file.name}',
+          );
+        }
+      }
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      if (response.statusCode == 200) {
+        onProgress?.call(totalBytes, totalBytes);
+        return const MediaUploadResult(success: true);
+      }
+
+      final error = response.body.trim();
+      return MediaUploadResult(
+        success: false,
+        error: error.isEmpty ? 'HTTP ${response.statusCode}' : error,
+      );
+    } catch (e) {
+      debugPrint('[API] uploadMedia error: $e');
+      return MediaUploadResult(success: false, error: '$e');
+    }
   }
 
   /// Create a backup (admin only)

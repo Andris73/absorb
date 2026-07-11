@@ -3868,6 +3868,73 @@
   "adminSessionsAllUsers": "All users",
   "adminSessionsEmpty": "No sessions",
 
+  "adminUploadTitle": "Upload media",
+  "adminUploadSubtitle": "Add books and podcasts from files",
+  "adminUploadNoLibraries": "Create a library before uploading media.",
+  "adminUploadDestination": "Destination",
+  "adminUploadFolder": "Library folder",
+  "adminUploadDetails": "Item details",
+  "adminUploadOptional": "Optional",
+  "adminUploadDestinationPreview": "Server destination",
+  "adminUploadFiles": "Files",
+  "adminUploadSelectedFiles": "{count, plural, =1{1 file} other{{count} files}}",
+  "@adminUploadSelectedFiles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "adminUploadChooseFiles": "Choose files",
+  "adminUploadAddFiles": "Add files",
+  "adminUploadBookFilesHint": "Choose audio or ebook files. You can also include covers and metadata files.",
+  "adminUploadPodcastFilesHint": "Choose one or more audio files. You can also include covers and metadata files.",
+  "adminUploadUnsupportedFiles": "Some selected files are not supported by Audiobookshelf.",
+  "adminUploadFilePickerFailed": "Couldn't open the selected files.",
+  "adminUploadTitleRequired": "Enter a title",
+  "adminUploadLibraryRequired": "Choose a library",
+  "adminUploadFolderRequired": "Choose a library folder",
+  "adminUploadFilesRequired": "Choose at least one file",
+  "adminUploadPodcastFileRequired": "Choose at least one audio file for this podcast.",
+  "adminUploadBookFileRequired": "Choose at least one audio or ebook file for this book.",
+  "adminUploadPathCheckFailed": "Couldn't check the destination folder. Nothing was uploaded.",
+  "adminUploadDestinationExists": "That destination folder already exists on the server.",
+  "adminUploadDestinationUsedBy": "That destination is already used by \"{title}\".",
+  "@adminUploadDestinationUsedBy": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "adminUploadUploading": "Uploading...",
+  "adminUploadProgress": "Uploading {percent}%",
+  "@adminUploadProgress": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "adminUploadButton": "Upload",
+  "adminUploadComplete": "Uploaded \"{title}\"",
+  "@adminUploadComplete": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "adminUploadFailed": "Upload failed",
+  "adminUploadFailedReason": "Upload failed: {error}",
+  "@adminUploadFailedReason": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "adminUploadReselectFiles": "Choose the files again before retrying.",
   "statsLibraryTotals": "Library totals",
   "statsTotalItems": "Items",
   "statsAudioFiles": "Audio files",

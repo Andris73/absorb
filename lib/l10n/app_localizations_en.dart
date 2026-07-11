@@ -6487,6 +6487,128 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get adminStats => 'Statistics';
+  @override
+  String get adminUploadTitle => 'Upload media';
+
+  @override
+  String get adminUploadSubtitle => 'Add books and podcasts from files';
+
+  @override
+  String get adminUploadNoLibraries =>
+      'Create a library before uploading media.';
+
+  @override
+  String get adminUploadDestination => 'Destination';
+
+  @override
+  String get adminUploadFolder => 'Library folder';
+
+  @override
+  String get adminUploadDetails => 'Item details';
+
+  @override
+  String get adminUploadOptional => 'Optional';
+
+  @override
+  String get adminUploadDestinationPreview => 'Server destination';
+
+  @override
+  String get adminUploadFiles => 'Files';
+
+  @override
+  String adminUploadSelectedFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files',
+      one: '1 file',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get adminUploadChooseFiles => 'Choose files';
+
+  @override
+  String get adminUploadAddFiles => 'Add files';
+
+  @override
+  String get adminUploadBookFilesHint =>
+      'Choose audio or ebook files. You can also include covers and metadata files.';
+
+  @override
+  String get adminUploadPodcastFilesHint =>
+      'Choose one or more audio files. You can also include covers and metadata files.';
+
+  @override
+  String get adminUploadUnsupportedFiles =>
+      'Some selected files are not supported by Audiobookshelf.';
+
+  @override
+  String get adminUploadFilePickerFailed =>
+      'Couldn\'t open the selected files.';
+
+  @override
+  String get adminUploadTitleRequired => 'Enter a title';
+
+  @override
+  String get adminUploadLibraryRequired => 'Choose a library';
+
+  @override
+  String get adminUploadFolderRequired => 'Choose a library folder';
+
+  @override
+  String get adminUploadFilesRequired => 'Choose at least one file';
+
+  @override
+  String get adminUploadPodcastFileRequired =>
+      'Choose at least one audio file for this podcast.';
+
+  @override
+  String get adminUploadBookFileRequired =>
+      'Choose at least one audio or ebook file for this book.';
+
+  @override
+  String get adminUploadPathCheckFailed =>
+      'Couldn\'t check the destination folder. Nothing was uploaded.';
+
+  @override
+  String get adminUploadDestinationExists =>
+      'That destination folder already exists on the server.';
+
+  @override
+  String adminUploadDestinationUsedBy(String title) {
+    return 'That destination is already used by \"$title\".';
+  }
+
+  @override
+  String get adminUploadUploading => 'Uploading...';
+
+  @override
+  String adminUploadProgress(int percent) {
+    return 'Uploading $percent%';
+  }
+
+  @override
+  String get adminUploadButton => 'Upload';
+
+  @override
+  String adminUploadComplete(String title) {
+    return 'Uploaded \"$title\"';
+  }
+
+  @override
+  String get adminUploadFailed => 'Upload failed';
+
+  @override
+  String adminUploadFailedReason(String error) {
+    return 'Upload failed: $error';
+  }
+
+  @override
+  String get adminUploadReselectFiles =>
+      'Choose the files again before retrying.';
+
 
   @override
   String get adminStatsSubtitle => 'Library and listening totals';

@@ -8,6 +8,7 @@ import '../widgets/absorb_page_header.dart';
 import '../widgets/rmab_config_sheet.dart';
 import '../l10n/app_localizations.dart';
 import 'admin_users_screen.dart';
+import 'admin_upload_screen.dart';
 import 'admin_podcasts_screen.dart';
 import 'admin_missing_items_screen.dart';
 import 'admin_email_screen.dart';
@@ -180,6 +181,21 @@ class _AdminScreenState extends State<AdminScreen> {
                             await Navigator.push(context, MaterialPageRoute(
                               builder: (_) => AdminUsersScreen(users: _users, onlineUsers: _onlineUsers, libraries: _libraries)));
                             _loadAll();
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        _navButton(cs, tt,
+                          icon: Icons.cloud_upload_rounded,
+                          label: l.adminUploadTitle,
+                          subtitle: l.adminUploadSubtitle,
+                          onTap: () {
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => AdminUploadScreen(
+                                libraries: _libraries,
+                                initialLibraryId: context.read<AuthProvider>().defaultLibraryId,
+                                apiService: context.read<AuthProvider>().apiService,
+                              ),
+                            ));
                           },
                         ),
                         const SizedBox(height: 10),

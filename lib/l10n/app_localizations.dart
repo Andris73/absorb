@@ -11283,6 +11283,198 @@ abstract class AppLocalizations {
   /// **'Scanner, storage and sorting'**
   String get adminServerSettingsSubtitle;
 
+  /// No description provided for @adminUploadTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload media'**
+  String get adminUploadTitle;
+
+  /// No description provided for @adminUploadSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add books and podcasts from files'**
+  String get adminUploadSubtitle;
+
+  /// No description provided for @adminUploadNoLibraries.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a library before uploading media.'**
+  String get adminUploadNoLibraries;
+
+  /// No description provided for @adminUploadDestination.
+  ///
+  /// In en, this message translates to:
+  /// **'Destination'**
+  String get adminUploadDestination;
+
+  /// No description provided for @adminUploadFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Library folder'**
+  String get adminUploadFolder;
+
+  /// No description provided for @adminUploadDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Item details'**
+  String get adminUploadDetails;
+
+  /// No description provided for @adminUploadOptional.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional'**
+  String get adminUploadOptional;
+
+  /// No description provided for @adminUploadDestinationPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Server destination'**
+  String get adminUploadDestinationPreview;
+
+  /// No description provided for @adminUploadFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Files'**
+  String get adminUploadFiles;
+
+  /// No description provided for @adminUploadSelectedFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file} other{{count} files}}'**
+  String adminUploadSelectedFiles(int count);
+
+  /// No description provided for @adminUploadChooseFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose files'**
+  String get adminUploadChooseFiles;
+
+  /// No description provided for @adminUploadAddFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Add files'**
+  String get adminUploadAddFiles;
+
+  /// No description provided for @adminUploadBookFilesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose audio or ebook files. You can also include covers and metadata files.'**
+  String get adminUploadBookFilesHint;
+
+  /// No description provided for @adminUploadPodcastFilesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose one or more audio files. You can also include covers and metadata files.'**
+  String get adminUploadPodcastFilesHint;
+
+  /// No description provided for @adminUploadUnsupportedFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Some selected files are not supported by Audiobookshelf.'**
+  String get adminUploadUnsupportedFiles;
+
+  /// No description provided for @adminUploadFilePickerFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open the selected files.'**
+  String get adminUploadFilePickerFailed;
+
+  /// No description provided for @adminUploadTitleRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a title'**
+  String get adminUploadTitleRequired;
+
+  /// No description provided for @adminUploadLibraryRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a library'**
+  String get adminUploadLibraryRequired;
+
+  /// No description provided for @adminUploadFolderRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a library folder'**
+  String get adminUploadFolderRequired;
+
+  /// No description provided for @adminUploadFilesRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose at least one file'**
+  String get adminUploadFilesRequired;
+
+  /// No description provided for @adminUploadPodcastFileRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose at least one audio file for this podcast.'**
+  String get adminUploadPodcastFileRequired;
+
+  /// No description provided for @adminUploadBookFileRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose at least one audio or ebook file for this book.'**
+  String get adminUploadBookFileRequired;
+
+  /// No description provided for @adminUploadPathCheckFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check the destination folder. Nothing was uploaded.'**
+  String get adminUploadPathCheckFailed;
+
+  /// No description provided for @adminUploadDestinationExists.
+  ///
+  /// In en, this message translates to:
+  /// **'That destination folder already exists on the server.'**
+  String get adminUploadDestinationExists;
+
+  /// No description provided for @adminUploadDestinationUsedBy.
+  ///
+  /// In en, this message translates to:
+  /// **'That destination is already used by \"{title}\".'**
+  String adminUploadDestinationUsedBy(String title);
+
+  /// No description provided for @adminUploadUploading.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploading...'**
+  String get adminUploadUploading;
+
+  /// No description provided for @adminUploadProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploading {percent}%'**
+  String adminUploadProgress(int percent);
+
+  /// No description provided for @adminUploadButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload'**
+  String get adminUploadButton;
+
+  /// No description provided for @adminUploadComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploaded \"{title}\"'**
+  String adminUploadComplete(String title);
+
+  /// No description provided for @adminUploadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload failed'**
+  String get adminUploadFailed;
+
+  /// No description provided for @adminUploadFailedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload failed: {error}'**
+  String adminUploadFailedReason(String error);
+
+  /// No description provided for @adminUploadReselectFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the files again before retrying.'**
+  String get adminUploadReselectFiles;
+
   /// No description provided for @adminStats.
   ///
   /// In en, this message translates to:
