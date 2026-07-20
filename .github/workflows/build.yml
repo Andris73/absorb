@@ -1,0 +1,98 @@
+# Fork build: unsigned IPA on every push to main, published to the combined
+# AltStore source (Andris73/altstore). Mirrors the build.yml pattern used by
+# the other Andris73 apps, adapted for Flutter.
+
+name: Build and publish
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Serialise publishes: parallel runs race on the central altstore repo and can
+# land versions out of order.
+concurrency:
+  group: publish-absorb
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build unsigned IPA
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.6
+          channel: stable
+          cache: true
+
+      - name: Pub get
+        run: flutter pub get
+
+      # Scoped to lib/: the vendored packages/ ship broken example code.
+      # lib/ itself carries pre-existing upstream infos+warnings, so only
+      # errors gate.
+      - name: Analyze
+        run: flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings lib
+
+      - name: Read version
+        id: version
+        run: |
+          RAW=$(grep '^version:' pubspec.yaml | sed 's/version: *//' | tr -d '\r')
+          echo "version=${RAW%%+*}" >> "$GITHUB_OUTPUT"
+          echo "build=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build iOS (unsigned)
+        env:
+          BUILD: ${{ steps.version.outputs.build }}
+        run: flutter build ios --release --no-codesign --build-number="$BUILD"
+
+      - name: Package IPA
+        run: |
+          cd build/ios/iphoneos
+          mkdir Payload
+          cp -R Runner.app Payload/
+          zip -qry absorb.ipa Payload
+          ls -la absorb.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: absorb-ipa
+          path: build/ios/iphoneos/absorb.ipa
+
+      - name: Publish to combined AltStore source
+        if: github.ref_name == 'main' && env.ALTSTORE_TOKEN != ''
+        env:
+          ALTSTORE_TOKEN: ${{ secrets.ALTSTORE_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD: ${{ steps.version.outputs.build }}
+        run: |
+          git clone "https://x-access-token:${ALTSTORE_TOKEN}@github.com/Andris73/altstore.git" central
+          cp build/ios/iphoneos/absorb.ipa central/ipas/absorb.ipa
+          cp icon.png central/icons/absorb.png
+          cp altstore/absorb.json central/tools/apps/absorb.json
+          cd central
+          export APP_ID=absorb
+          export SIZE=$(stat -f%z ipas/absorb.ipa)
+          export SHA_SHORT=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          export DATE=$(date +%Y-%m-%d)
+          python3 tools/update_app.py
+          git config user.name "absorb-ci"
+          git config user.email "absorb-ci@users.noreply.github.com"
+          git add apps.json ipas/absorb.ipa icons/absorb.png tools/apps/absorb.json
+          git commit -m "Absorb ${VERSION} (build ${BUILD})"
+          pushed=
+          for i in 1 2 3; do
+            if git push; then pushed=1; break; fi
+            git pull --rebase || { git rebase --abort; break; }
+          done
+          if [ -z "$pushed" ]; then
+            echo "push failed after 3 attempts" >&2
+            exit 1
+          fi
