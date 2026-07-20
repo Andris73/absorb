@@ -16,6 +16,9 @@ dependencies:
   # Networking
   http: ^1.1.0
   socket_io_client: ^3.0.2
+
+  # Discover tab: AudiobookBay page scraping
+  html: ^0.15.4
   
   # State Management
   provider: ^6.1.1
