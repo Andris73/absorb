@@ -12368,6 +12368,306 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No matches for \"{query}\".'**
   String readerSearchNoResults(String query);
+
+  /// Settings toggle that shows the Discover tab in the bottom bar
+  ///
+  /// In en, this message translates to:
+  /// **'Discover tab'**
+  String get settingsDiscoverTab;
+
+  /// Subtitle for the Discover tab settings toggle
+  ///
+  /// In en, this message translates to:
+  /// **'Show a Discover tab for finding and downloading audiobooks via AudiobookBay and Transmission'**
+  String get settingsDiscoverTabDesc;
+
+  /// Headline of the Discover tab empty state shown before configuration
+  ///
+  /// In en, this message translates to:
+  /// **'Discover Audiobooks'**
+  String get discoverNotConfiguredTitle;
+
+  /// Body of the Discover tab empty state shown before configuration
+  ///
+  /// In en, this message translates to:
+  /// **'Connect an AudiobookBay source and a Transmission client to search for and download audiobooks straight to your server.'**
+  String get discoverNotConfiguredBody;
+
+  /// Button opening the AudiobookBay config sheet
+  ///
+  /// In en, this message translates to:
+  /// **'Configure AudiobookBay'**
+  String get discoverConfigureAbb;
+
+  /// Button opening the Transmission config sheet
+  ///
+  /// In en, this message translates to:
+  /// **'Configure Transmission'**
+  String get discoverConfigureTransmission;
+
+  /// Hint text of the Discover search bar
+  ///
+  /// In en, this message translates to:
+  /// **'Search AudiobookBay…'**
+  String get discoverSearchHint;
+
+  /// Shown when an AudiobookBay search returns nothing
+  ///
+  /// In en, this message translates to:
+  /// **'No results for \"{query}\"'**
+  String discoverSearchNoResults(String query);
+
+  /// Title of a per-genre trending shelf on the Discover tab
+  ///
+  /// In en, this message translates to:
+  /// **'Trending in {genre}'**
+  String discoverTrendingIn(String genre);
+
+  /// Title of the shelf showing books missing from tracked series
+  ///
+  /// In en, this message translates to:
+  /// **'New in Your Series'**
+  String get discoverNewInSeries;
+
+  /// Empty state of the New in Your Series shelf
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re all caught up'**
+  String get discoverCaughtUp;
+
+  /// Prompt shown on the New in Your Series shelf when no Hardcover token is set
+  ///
+  /// In en, this message translates to:
+  /// **'Add a Hardcover API token in the AudiobookBay settings to see new books from series you\'re listening to.'**
+  String get discoverHardcoverPrompt;
+
+  /// Title of the active Transmission downloads section
+  ///
+  /// In en, this message translates to:
+  /// **'Active Downloads'**
+  String get discoverActiveDownloads;
+
+  /// Status label for a torrent that is downloading
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading'**
+  String get discoverStatusDownloading;
+
+  /// Status label for a torrent that is seeding
+  ///
+  /// In en, this message translates to:
+  /// **'Seeding'**
+  String get discoverStatusSeeding;
+
+  /// Status label for a stopped torrent
+  ///
+  /// In en, this message translates to:
+  /// **'Paused'**
+  String get discoverStatusPaused;
+
+  /// Menu entry opening the AudiobookBay config sheet
+  ///
+  /// In en, this message translates to:
+  /// **'AudiobookBay settings'**
+  String get discoverAbbSettings;
+
+  /// Menu entry opening the Transmission config sheet
+  ///
+  /// In en, this message translates to:
+  /// **'Transmission settings'**
+  String get discoverTransmissionSettings;
+
+  /// Empty state of the genre grid and series pages
+  ///
+  /// In en, this message translates to:
+  /// **'No books found'**
+  String get discoverNoBooks;
+
+  /// Generic load failure on Discover pages
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load: {error}'**
+  String discoverLoadFailed(String error);
+
+  /// Narrator line on the book detail page
+  ///
+  /// In en, this message translates to:
+  /// **'Read by {narrator}'**
+  String discoverReadBy(String narrator);
+
+  /// Chip marking explicit content on the book detail page
+  ///
+  /// In en, this message translates to:
+  /// **'Explicit'**
+  String get discoverExplicitChip;
+
+  /// Card on the book detail page linking to the series page
+  ///
+  /// In en, this message translates to:
+  /// **'View Series'**
+  String get discoverViewSeries;
+
+  /// Series page header when every result has a known position
+  ///
+  /// In en, this message translates to:
+  /// **'Books in this Series'**
+  String get discoverSeriesBooksIn;
+
+  /// Series page header when result order is incomplete
+  ///
+  /// In en, this message translates to:
+  /// **'More in this Series'**
+  String get discoverSeriesMoreIn;
+
+  /// Series page description section header
+  ///
+  /// In en, this message translates to:
+  /// **'About'**
+  String get discoverAbout;
+
+  /// Book detail description section header
+  ///
+  /// In en, this message translates to:
+  /// **'Description'**
+  String get discoverDescription;
+
+  /// Book detail comments section header
+  ///
+  /// In en, this message translates to:
+  /// **'Comments'**
+  String get discoverComments;
+
+  /// Idle label of the download button on the book detail page
+  ///
+  /// In en, this message translates to:
+  /// **'Download to Transmission'**
+  String get discoverDownloadButton;
+
+  /// Done label of the download button after the torrent was added
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded ✓'**
+  String get discoverDownloaded;
+
+  /// SnackBar shown when adding a torrent to Transmission fails
+  ///
+  /// In en, this message translates to:
+  /// **'Download failed: {error}'**
+  String discoverDownloadFailed(String error);
+
+  /// Title of the AudiobookBay config sheet
+  ///
+  /// In en, this message translates to:
+  /// **'AudiobookBay'**
+  String get discoverAbbSheetTitle;
+
+  /// Label of the AudiobookBay mirror URL field
+  ///
+  /// In en, this message translates to:
+  /// **'Server URL'**
+  String get discoverAbbUrlLabel;
+
+  /// Label of the Hardcover token field in the AudiobookBay config sheet
+  ///
+  /// In en, this message translates to:
+  /// **'Hardcover API token'**
+  String get discoverHardcoverTokenLabel;
+
+  /// Button that validates the Hardcover token
+  ///
+  /// In en, this message translates to:
+  /// **'Verify token'**
+  String get discoverVerifyToken;
+
+  /// Shown when the Hardcover token verifies successfully
+  ///
+  /// In en, this message translates to:
+  /// **'Connected as {username}'**
+  String discoverTokenValid(String username);
+
+  /// Shown when the Hardcover token fails to verify
+  ///
+  /// In en, this message translates to:
+  /// **'Token invalid'**
+  String get discoverTokenInvalid;
+
+  /// Toggle hiding explicit AudiobookBay results
+  ///
+  /// In en, this message translates to:
+  /// **'Hide explicit content'**
+  String get discoverHideExplicit;
+
+  /// Toggle hiding results already in the ABS library
+  ///
+  /// In en, this message translates to:
+  /// **'Hide owned titles'**
+  String get discoverHideOwned;
+
+  /// Button that tests the entered server and persists it on success
+  ///
+  /// In en, this message translates to:
+  /// **'Save & Test'**
+  String get discoverSaveAndTest;
+
+  /// Error when the AudiobookBay test search fails
+  ///
+  /// In en, this message translates to:
+  /// **'Could not fetch results from this server. Check the URL or try another mirror.'**
+  String get discoverAbbTestFailed;
+
+  /// Error when an AudiobookBay mirror returns a Cloudflare challenge
+  ///
+  /// In en, this message translates to:
+  /// **'This mirror is behind a Cloudflare challenge. Try another mirror.'**
+  String get discoverAbbCloudflare;
+
+  /// Title of the Transmission config sheet
+  ///
+  /// In en, this message translates to:
+  /// **'Transmission'**
+  String get discoverTransmissionSheetTitle;
+
+  /// Label of the Transmission daemon URL field
+  ///
+  /// In en, this message translates to:
+  /// **'Server URL'**
+  String get discoverTransmissionUrlLabel;
+
+  /// Label of the Transmission username field
+  ///
+  /// In en, this message translates to:
+  /// **'Username'**
+  String get discoverUsernameLabel;
+
+  /// Label of the Transmission password field
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get discoverPasswordLabel;
+
+  /// Label of the download path template field
+  ///
+  /// In en, this message translates to:
+  /// **'Download path template'**
+  String get discoverPathTemplateLabel;
+
+  /// Helper text prefix before the literal template placeholder tokens, which are appended in code
+  ///
+  /// In en, this message translates to:
+  /// **'Available placeholders:'**
+  String get discoverPathTemplateHelp;
+
+  /// Error when Transmission rejects the credentials
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid username or password'**
+  String get discoverTransmissionAuthFailed;
+
+  /// Error when the Transmission connection test fails
+  ///
+  /// In en, this message translates to:
+  /// **'Connection failed: {error}'**
+  String discoverTransmissionTestFailed(String error);
 }
 
 class _AppLocalizationsDelegate

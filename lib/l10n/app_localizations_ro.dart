@@ -7097,4 +7097,173 @@ class AppLocalizationsRo extends AppLocalizations {
   String readerSearchNoResults(String query) {
     return 'No matches for \"$query\".';
   }
+
+  @override
+  String get settingsDiscoverTab => 'Discover tab';
+
+  @override
+  String get settingsDiscoverTabDesc =>
+      'Show a Discover tab for finding and downloading audiobooks via AudiobookBay and Transmission';
+
+  @override
+  String get discoverNotConfiguredTitle => 'Discover Audiobooks';
+
+  @override
+  String get discoverNotConfiguredBody =>
+      'Connect an AudiobookBay source and a Transmission client to search for and download audiobooks straight to your server.';
+
+  @override
+  String get discoverConfigureAbb => 'Configure AudiobookBay';
+
+  @override
+  String get discoverConfigureTransmission => 'Configure Transmission';
+
+  @override
+  String get discoverSearchHint => 'Search AudiobookBay…';
+
+  @override
+  String discoverSearchNoResults(String query) {
+    return 'No results for \"$query\"';
+  }
+
+  @override
+  String discoverTrendingIn(String genre) {
+    return 'Trending in $genre';
+  }
+
+  @override
+  String get discoverNewInSeries => 'New in Your Series';
+
+  @override
+  String get discoverCaughtUp => 'You\'re all caught up';
+
+  @override
+  String get discoverHardcoverPrompt =>
+      'Add a Hardcover API token in the AudiobookBay settings to see new books from series you\'re listening to.';
+
+  @override
+  String get discoverActiveDownloads => 'Active Downloads';
+
+  @override
+  String get discoverStatusDownloading => 'Downloading';
+
+  @override
+  String get discoverStatusSeeding => 'Seeding';
+
+  @override
+  String get discoverStatusPaused => 'Paused';
+
+  @override
+  String get discoverAbbSettings => 'AudiobookBay settings';
+
+  @override
+  String get discoverTransmissionSettings => 'Transmission settings';
+
+  @override
+  String get discoverNoBooks => 'No books found';
+
+  @override
+  String discoverLoadFailed(String error) {
+    return 'Couldn\'t load: $error';
+  }
+
+  @override
+  String discoverReadBy(String narrator) {
+    return 'Read by $narrator';
+  }
+
+  @override
+  String get discoverExplicitChip => 'Explicit';
+
+  @override
+  String get discoverViewSeries => 'View Series';
+
+  @override
+  String get discoverSeriesBooksIn => 'Books in this Series';
+
+  @override
+  String get discoverSeriesMoreIn => 'More in this Series';
+
+  @override
+  String get discoverAbout => 'About';
+
+  @override
+  String get discoverDescription => 'Description';
+
+  @override
+  String get discoverComments => 'Comments';
+
+  @override
+  String get discoverDownloadButton => 'Download to Transmission';
+
+  @override
+  String get discoverDownloaded => 'Downloaded ✓';
+
+  @override
+  String discoverDownloadFailed(String error) {
+    return 'Download failed: $error';
+  }
+
+  @override
+  String get discoverAbbSheetTitle => 'AudiobookBay';
+
+  @override
+  String get discoverAbbUrlLabel => 'Server URL';
+
+  @override
+  String get discoverHardcoverTokenLabel => 'Hardcover API token';
+
+  @override
+  String get discoverVerifyToken => 'Verify token';
+
+  @override
+  String discoverTokenValid(String username) {
+    return 'Connected as $username';
+  }
+
+  @override
+  String get discoverTokenInvalid => 'Token invalid';
+
+  @override
+  String get discoverHideExplicit => 'Hide explicit content';
+
+  @override
+  String get discoverHideOwned => 'Hide owned titles';
+
+  @override
+  String get discoverSaveAndTest => 'Save & Test';
+
+  @override
+  String get discoverAbbTestFailed =>
+      'Could not fetch results from this server. Check the URL or try another mirror.';
+
+  @override
+  String get discoverAbbCloudflare =>
+      'This mirror is behind a Cloudflare challenge. Try another mirror.';
+
+  @override
+  String get discoverTransmissionSheetTitle => 'Transmission';
+
+  @override
+  String get discoverTransmissionUrlLabel => 'Server URL';
+
+  @override
+  String get discoverUsernameLabel => 'Username';
+
+  @override
+  String get discoverPasswordLabel => 'Password';
+
+  @override
+  String get discoverPathTemplateLabel => 'Download path template';
+
+  @override
+  String get discoverPathTemplateHelp => 'Available placeholders:';
+
+  @override
+  String get discoverTransmissionAuthFailed => 'Invalid username or password';
+
+  @override
+  String discoverTransmissionTestFailed(String error) {
+    return 'Connection failed: $error';
+  }
 }
