@@ -4142,6 +4142,8 @@
       "query": {"type": "String"}
     }
   },
+  "settingsNavBarSection": "Navigation bar",
+  "@settingsNavBarSection": {"description": "Settings section title for customizing the bottom navigation bar tabs"},
   "settingsDiscoverTab": "Discover tab",
   "@settingsDiscoverTab": {"description": "Settings toggle that shows the Discover tab in the bottom bar"},
   "settingsDiscoverTabDesc": "Show a Discover tab for finding and downloading audiobooks via AudiobookBay and Transmission",

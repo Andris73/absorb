@@ -12369,6 +12369,12 @@ abstract class AppLocalizations {
   /// **'No matches for \"{query}\".'**
   String readerSearchNoResults(String query);
 
+  /// Settings section title for customizing the bottom navigation bar tabs
+  ///
+  /// In en, this message translates to:
+  /// **'Navigation bar'**
+  String get settingsNavBarSection;
+
   /// Settings toggle that shows the Discover tab in the bottom bar
   ///
   /// In en, this message translates to:

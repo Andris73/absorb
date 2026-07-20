@@ -7022,6 +7022,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get settingsNavBarSection => 'Navigation bar';
+
+  @override
   String get settingsDiscoverTab => 'Discover tab';
 
   @override

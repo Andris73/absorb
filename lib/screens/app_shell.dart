@@ -138,9 +138,55 @@ class _AppShellState extends State<AppShell>
   // and which one is highlighted is derived from the selected library.
   bool _podcastTabEnabled = false;
   String _podcastTabLibraryId = '';
-  // Dedicated Discover tab (optional destination between Library/Podcasts and
-  // Absorbing) with its own stack page 5.
+  // Dedicated Discover tab (optional destination) with its own stack page 5.
   bool _discoverTabEnabled = false;
+
+  // User-arranged bottom nav. `_tabOrder` is the display order of tab ids and
+  // `_hiddenTabs` the ones hidden from the bar. Podcasts and Discover carry
+  // their own enable flags (above); the rest are governed by `_hiddenTabs`.
+  // Settings is never hidden so the user can always get back here.
+  List<String> _tabOrder = List.of(PlayerSettings.navTabIds);
+  Set<String> _hiddenTabs = {};
+
+  int _stackPageForTab(String id) {
+    switch (id) {
+      case 'home': return 0;
+      case 'library': return 1;
+      case 'podcasts': return 1; // shares the Library page
+      case 'absorbing': return 2;
+      case 'stats': return 3;
+      case 'settings': return 4;
+      case 'discover': return 5;
+    }
+    return 0;
+  }
+
+  bool _tabVisible(String id, LibraryProvider lib) {
+    switch (id) {
+      case 'settings':
+        return true; // always reachable so the user can re-enable tabs
+      case 'podcasts':
+        return _podcastsShown(lib);
+      case 'discover':
+        return _discoverTabEnabled;
+      default:
+        return !_hiddenTabs.contains(id);
+    }
+  }
+
+  List<String> _visibleTabs(LibraryProvider lib) {
+    final merged = PlayerSettings.mergeNavOrder(_tabOrder);
+    final visible = merged.where((id) => _tabVisible(id, lib)).toSet();
+    // NavigationBar needs >= 2 destinations; if a bad import or over-eager
+    // hiding left too few, reveal generic tabs (in order) until we have two.
+    if (visible.length < 2) {
+      for (final id in ['home', 'library', 'stats', 'absorbing']) {
+        visible.add(id);
+        if (visible.length >= 2) break;
+      }
+    }
+    return merged.where(visible.contains).toList();
+  }
   final _homeKey = GlobalKey<HomeScreenState>();
   final _libraryKey = GlobalKey<LibraryScreenState>();
   final _player = AudioPlayerService();
@@ -356,21 +402,33 @@ class _AppShellState extends State<AppShell>
     final enabled = await PlayerSettings.getPodcastTabEnabled();
     final libId = await PlayerSettings.getPodcastTabLibraryId();
     final discover = await PlayerSettings.getDiscoverTabEnabled();
+    final order = await PlayerSettings.getNavTabOrder();
+    final hidden = (await PlayerSettings.getNavHiddenTabs()).toSet();
     if (!mounted) return;
+    final resolvedOrder =
+        order.isEmpty ? List.of(PlayerSettings.navTabIds) : order;
     if (enabled != _podcastTabEnabled ||
         libId != _podcastTabLibraryId ||
-        discover != _discoverTabEnabled) {
-      final leavingDiscover = !discover && _currentIndex == 5;
+        discover != _discoverTabEnabled ||
+        !listEquals(resolvedOrder, _tabOrder) ||
+        !setEquals(hidden, _hiddenTabs)) {
       setState(() {
         _podcastTabEnabled = enabled;
         _podcastTabLibraryId = libId;
         _discoverTabEnabled = discover;
+        _tabOrder = resolvedOrder;
+        _hiddenTabs = hidden;
         // Tear down the Discover page when its tab is switched off so its
         // polling loop and caches don't keep living offstage forever.
         if (!discover) _pages[5] = null;
       });
-      // Don't strand the user on a hidden tab.
-      if (leavingDiscover) _navigateTo(0);
+      // Don't strand the user on a now-hidden tab: if nothing visible maps to
+      // the current page, jump to the first visible tab.
+      final lib = context.read<LibraryProvider>();
+      final visible = _visibleTabs(lib);
+      final stillShown =
+          visible.any((id) => _stackPageForTab(id) == _currentIndex);
+      if (!stillShown) _navigateTo(_stackPageForTab(visible.first));
     }
   }
 
@@ -379,47 +437,43 @@ class _AppShellState extends State<AppShell>
       _podcastTabLibraryId.isNotEmpty &&
       lib.libraries.any((l) => l['id'] == _podcastTabLibraryId);
 
-  // Stack page for each display slot, in display order: Home, Library,
-  // [Podcasts], [Discover], Absorbing, Stats, Settings. Podcasts shares stack
-  // page 1 with Library; Discover has its own stack page 5. All dest<->page
-  // math derives from this single table.
-  List<int> _displayPages(bool podcastsShown, bool discoverShown) => [
-        0,
-        1,
-        if (podcastsShown) 1,
-        if (discoverShown) 5,
-        2,
-        3,
-        4,
-      ];
-
-  int _pageForDest(int dest, bool podcastsShown, bool discoverShown) =>
-      _displayPages(podcastsShown, discoverShown)[dest];
-
-  int _selectedDest(LibraryProvider lib, bool podcastsShown, bool discoverShown) {
-    final pages = _displayPages(podcastsShown, discoverShown);
-    if (_currentIndex == 1 &&
-        podcastsShown &&
-        lib.selectedLibraryId == _podcastTabLibraryId) {
-      return pages.lastIndexOf(1); // Podcasts slot, not Library
+  // Display slot (dest) <-> stack page is derived from the visible tab list:
+  // `_stackPageForTab(_visibleTabs(lib)[dest])`. Library and Podcasts both map
+  // to stack page 1; which one is highlighted is decided by the selected
+  // library.
+  int _selectedDest(LibraryProvider lib) {
+    final tabs = _visibleTabs(lib);
+    String? current;
+    if (_currentIndex == 1) {
+      final onPodcast = _podcastTabLibraryId.isNotEmpty &&
+          lib.selectedLibraryId == _podcastTabLibraryId;
+      current = onPodcast && tabs.contains('podcasts') ? 'podcasts' : 'library';
+    } else {
+      for (final id in tabs) {
+        if (_stackPageForTab(id) == _currentIndex) {
+          current = id;
+          break;
+        }
+      }
     }
-    final dest = pages.indexOf(_currentIndex);
-    // A hidden tab can be current for a frame while _navigateTo(0) lands.
+    final dest = current == null ? -1 : tabs.indexOf(current);
+    // A hidden tab can be current for a frame while _navigateTo lands.
     return dest >= 0 ? dest : 0;
   }
 
-  /// Keep the selected library in step with the destination being entered:
-  /// Podcasts pins its library; Home/Library return to the remembered book
-  /// library. Uses the light switch so playback and cached shelves survive.
-  void _syncTabLibrary(int dest, bool podcastsShown) {
-    if (!podcastsShown) return;
+  /// Keep the selected library in step with the tab being entered: Podcasts
+  /// pins its library; Home/Library return to the remembered book library.
+  /// Uses the light switch so playback and cached shelves survive.
+  void _syncTabLibraryForTab(String tab) {
     final lib = context.read<LibraryProvider>();
-    if (dest == 2) {
-      if (lib.selectedLibraryId != _podcastTabLibraryId) {
+    if (tab == 'podcasts') {
+      if (_podcastTabLibraryId.isNotEmpty &&
+          lib.selectedLibraryId != _podcastTabLibraryId) {
         lib.selectLibraryLight(_podcastTabLibraryId);
       }
-    } else if (dest == 0 || dest == 1) {
-      if (lib.selectedLibraryId == _podcastTabLibraryId) {
+    } else if (tab == 'home' || tab == 'library') {
+      if (_podcastTabLibraryId.isNotEmpty &&
+          lib.selectedLibraryId == _podcastTabLibraryId) {
         lib.lastBookLibraryId().then((bookLib) {
           if (mounted && bookLib != null && bookLib != _podcastTabLibraryId) {
             lib.selectLibraryLight(bookLib);
@@ -468,7 +522,7 @@ class _AppShellState extends State<AppShell>
     if (_currentIndex == 0 &&
         _podcastsShown(lib) &&
         lib.selectedLibraryId == _podcastTabLibraryId) {
-      _syncTabLibrary(0, true);
+      _syncTabLibraryForTab('home');
     }
   }
 
@@ -824,9 +878,8 @@ class _AppShellState extends State<AppShell>
     final isPhoneLandscape =
         !isTablet && mq.orientation == Orientation.landscape;
     final lib = context.watch<LibraryProvider>();
-    final podcastsShown = _podcastsShown(lib);
-    final discoverShown = _discoverTabEnabled;
-    final destinations = _buildDestinations(context, podcastsShown, discoverShown);
+    final tabs = _visibleTabs(lib);
+    final destinations = _buildDestinations(context, tabs);
     return SizeTransition(
       sizeFactor: _navBarAnimController,
       axisAlignment: 1.0,
@@ -834,24 +887,25 @@ class _AppShellState extends State<AppShell>
       // to a destination slot. Plain taps pass through untouched.
       child: GestureDetector(
         onLongPressStart: (details) =>
-            _onNavLongPress(details.localPosition.dx, destinations.length),
+            _onNavLongPress(details.localPosition.dx, tabs),
         child: NavigationBar(
-          selectedIndex: _selectedDest(lib, podcastsShown, discoverShown),
+          selectedIndex: _selectedDest(lib),
           height: isPhoneLandscape ? 56 : null,
           labelBehavior: isPhoneLandscape
               ? NavigationDestinationLabelBehavior.alwaysHide
               : NavigationDestinationLabelBehavior.alwaysShow,
           onDestinationSelected: (dest) {
-            final page = _pageForDest(dest, podcastsShown, discoverShown);
-            // Re-tapping the active library-ish destination clears search
-            if (page == 1 &&
+            final tab = tabs[dest];
+            final page = _stackPageForTab(tab);
+            // Re-tapping the active Library destination clears search
+            if (tab == 'library' &&
                 _currentIndex == 1 &&
-                dest == _selectedDest(lib, podcastsShown, discoverShown) &&
+                dest == _selectedDest(lib) &&
                 _libraryKey.currentState?.isSearchActive == true) {
               _libraryKey.currentState?.clearSearch();
               return;
             }
-            _syncTabLibrary(dest, podcastsShown);
+            _syncTabLibraryForTab(tab);
             _navigateTo(page);
             // Refresh data on switching to Library, Home, Absorbing, or Stats
             if (page == 0 || page == 1 || page == 2 || page == 3) {
@@ -864,27 +918,24 @@ class _AppShellState extends State<AppShell>
     );
   }
 
-  void _onNavLongPress(double dx, int destCount) {
+  void _onNavLongPress(double dx, List<String> tabs) {
     final width = MediaQuery.sizeOf(context).width;
-    if (width <= 0 || destCount <= 0) return;
-    final slot = (dx / (width / destCount)).floor().clamp(0, destCount - 1);
-    final absorbingSlot = _displayPages(
-      _podcastsShown(context.read<LibraryProvider>()),
-      _discoverTabEnabled,
-    ).indexOf(2);
-    if (slot == 0) {
+    final count = tabs.length;
+    if (width <= 0 || count <= 0) return;
+    final slot = (dx / (width / count)).floor().clamp(0, count - 1);
+    final tab = tabs[slot];
+    if (tab == 'home') {
       // Home: quick library switcher.
       final lib = context.read<LibraryProvider>();
       if (lib.libraries.length < 2) return;
       HapticFeedback.mediumImpact();
       showLibraryPickerSheet(context, lib);
-    } else if (slot == 1) {
+    } else if (tab == 'library') {
       // Library: focus search.
       HapticFeedback.mediumImpact();
-      final lib = context.read<LibraryProvider>();
-      if (_podcastsShown(lib)) _syncTabLibrary(1, true);
+      _syncTabLibraryForTab('library');
       _openSearch();
-    } else if (slot == absorbingSlot) {
+    } else if (tab == 'absorbing') {
       // Absorbing: toggle playback without leaving the current tab.
       if (!_player.hasBook) return;
       HapticFeedback.mediumImpact();
@@ -898,72 +949,80 @@ class _AppShellState extends State<AppShell>
 
   List<NavigationDestination> _buildDestinations(
     BuildContext context,
-    bool podcastsShown,
-    bool discoverShown,
+    List<String> tabs,
   ) {
     final l = AppLocalizations.of(context)!;
     final lib = context.watch<LibraryProvider>();
-    // With the dedicated Podcasts tab, Home/Library always wear their book
-    // labels - the podcast library being selected must not morph them. The
-    // same applies with the Discover tab: Home relabelling itself "Discover"
-    // would collide with the real Discover destination.
-    final isPodcast = !podcastsShown && !discoverShown && lib.isPodcastLibrary;
+    // Legacy podcast-library relabel (Home->Discover, Library->Shows) only
+    // applies when neither real optional tab is present, so the label can't
+    // collide with an actual Podcasts/Discover destination.
+    final isPodcast = !tabs.contains('podcasts') &&
+        !tabs.contains('discover') &&
+        lib.isPodcastLibrary;
 
     // tooltip: '' everywhere: the default label Tooltip registers its own
     // long-press recognizer, which silently wins the gesture arena over the
     // bar-level long-press handler (quick actions per slot).
-    return [
-      NavigationDestination(
-        icon: Icon(isPodcast ? Icons.explore_outlined : Icons.home_outlined),
-        selectedIcon: Icon(
-          isPodcast ? Icons.explore_rounded : Icons.home_rounded,
-        ),
-        label: isPodcast ? l.appShellDiscoverTab : l.appShellHomeTab,
-        tooltip: '',
-      ),
-      NavigationDestination(
-        icon: Icon(
-          isPodcast ? Icons.podcasts_outlined : Icons.library_books_outlined,
-        ),
-        selectedIcon: Icon(
-          isPodcast ? Icons.podcasts_rounded : Icons.library_books_rounded,
-        ),
-        label: isPodcast ? l.appShellShowsTab : l.appShellLibraryTab,
-        tooltip: '',
-      ),
-      if (podcastsShown)
-        NavigationDestination(
-          icon: const Icon(Icons.podcasts_outlined),
-          selectedIcon: const Icon(Icons.podcasts_rounded),
-          label: l.appShellPodcastsTab,
-          tooltip: '',
-        ),
-      if (discoverShown)
-        NavigationDestination(
-          icon: const Icon(Icons.travel_explore_outlined),
-          selectedIcon: const Icon(Icons.travel_explore_rounded),
-          label: l.appShellDiscoverTab,
-          tooltip: '',
-        ),
-      NavigationDestination(
-        icon: const _AnimatedWaveIcon(size: 24, active: false),
-        selectedIcon: const _AnimatedWaveIcon(size: 24, active: true),
-        label: Wording.of(context).appShellAbsorbingTab,
-        tooltip: '',
-      ),
-      NavigationDestination(
-        icon: const Icon(Icons.bar_chart_rounded),
-        selectedIcon: const Icon(Icons.bar_chart_rounded),
-        label: l.appShellStatsTab,
-        tooltip: '',
-      ),
-      NavigationDestination(
-        icon: const Icon(Icons.settings_outlined),
-        selectedIcon: const Icon(Icons.settings_rounded),
-        label: l.appShellSettingsTab,
-        tooltip: '',
-      ),
-    ];
+    NavigationDestination dest(String id) {
+      switch (id) {
+        case 'home':
+          return NavigationDestination(
+            icon: Icon(isPodcast ? Icons.explore_outlined : Icons.home_outlined),
+            selectedIcon:
+                Icon(isPodcast ? Icons.explore_rounded : Icons.home_rounded),
+            label: isPodcast ? l.appShellDiscoverTab : l.appShellHomeTab,
+            tooltip: '',
+          );
+        case 'library':
+          return NavigationDestination(
+            icon: Icon(isPodcast
+                ? Icons.podcasts_outlined
+                : Icons.library_books_outlined),
+            selectedIcon: Icon(isPodcast
+                ? Icons.podcasts_rounded
+                : Icons.library_books_rounded),
+            label: isPodcast ? l.appShellShowsTab : l.appShellLibraryTab,
+            tooltip: '',
+          );
+        case 'podcasts':
+          return NavigationDestination(
+            icon: const Icon(Icons.podcasts_outlined),
+            selectedIcon: const Icon(Icons.podcasts_rounded),
+            label: l.appShellPodcastsTab,
+            tooltip: '',
+          );
+        case 'discover':
+          return NavigationDestination(
+            icon: const Icon(Icons.travel_explore_outlined),
+            selectedIcon: const Icon(Icons.travel_explore_rounded),
+            label: l.appShellDiscoverTab,
+            tooltip: '',
+          );
+        case 'absorbing':
+          return NavigationDestination(
+            icon: const _AnimatedWaveIcon(size: 24, active: false),
+            selectedIcon: const _AnimatedWaveIcon(size: 24, active: true),
+            label: Wording.of(context).appShellAbsorbingTab,
+            tooltip: '',
+          );
+        case 'stats':
+          return NavigationDestination(
+            icon: const Icon(Icons.bar_chart_rounded),
+            selectedIcon: const Icon(Icons.bar_chart_rounded),
+            label: l.appShellStatsTab,
+            tooltip: '',
+          );
+        default: // settings
+          return NavigationDestination(
+            icon: const Icon(Icons.settings_outlined),
+            selectedIcon: const Icon(Icons.settings_rounded),
+            label: l.appShellSettingsTab,
+            tooltip: '',
+          );
+      }
+    }
+
+    return [for (final id in tabs) dest(id)];
   }
 }
 

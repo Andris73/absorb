@@ -164,6 +164,54 @@ class PlayerSettings {
   static Future<bool> getMergeAbsorbingLibrariesRaw() => _get('mergeAbsorbingLibraries', false);
   static Future<void> setMergeAbsorbingLibraries(bool value) => _set('mergeAbsorbingLibraries', value);
 
+  // Bottom-nav customization: display order + hidden set of tab ids. Ids are
+  // fixed keywords so a comma-separated encoding is safe.
+  static const navTabIds = [
+    'home', 'library', 'podcasts', 'discover', 'absorbing', 'stats', 'settings',
+  ];
+
+  // Persisted order merged with the canonical set: known saved ids first (in
+  // saved order), then any canonical id the save is missing, inserted at its
+  // canonical index so new/omitted tabs land in a sensible spot rather than
+  // always at the end.
+  static List<String> mergeNavOrder(List<String> saved) {
+    final result = saved.where(navTabIds.contains).toList();
+    for (var i = 0; i < navTabIds.length; i++) {
+      final id = navTabIds[i];
+      if (result.contains(id)) continue;
+      final insertAt = result.indexWhere(
+          (r) => navTabIds.indexOf(r) > i);
+      result.insert(insertAt < 0 ? result.length : insertAt, id);
+    }
+    return result;
+  }
+
+  static List<String> _sanitizeIds(List<String> ids, {bool dropSettings = false}) {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final id in ids) {
+      if (!navTabIds.contains(id)) continue;
+      if (dropSettings && id == 'settings') continue; // never hide Settings
+      if (seen.add(id)) out.add(id);
+    }
+    return out;
+  }
+
+  static Future<List<String>> getNavTabOrder() async {
+    final raw = await _get('navTabOrder', '');
+    if (raw.isEmpty) return const [];
+    return _sanitizeIds(raw.split(','));
+  }
+  static Future<void> setNavTabOrder(List<String> ids) =>
+      _set('navTabOrder', _sanitizeIds(ids).join(','), notify: true);
+  static Future<List<String>> getNavHiddenTabs() async {
+    final raw = await _get('navHiddenTabs', '');
+    if (raw.isEmpty) return const [];
+    return _sanitizeIds(raw.split(','), dropSettings: true);
+  }
+  static Future<void> setNavHiddenTabs(List<String> ids) =>
+      _set('navHiddenTabs', _sanitizeIds(ids, dropSettings: true).join(','), notify: true);
+
   // Dedicated bottom-nav Podcasts tab (pinned to one podcast library).
   static Future<bool> getPodcastTabEnabled() => _get('podcastTabEnabled', false);
   static Future<void> setPodcastTabEnabled(bool value) => _set('podcastTabEnabled', value, notify: true);

@@ -58,6 +58,8 @@ class BackupService {
       'mergeAbsorbingLibraries': await PlayerSettings.getMergeAbsorbingLibrariesRaw(),
       'podcastTabEnabled': await PlayerSettings.getPodcastTabEnabled(),
       'podcastTabLibraryId': await PlayerSettings.getPodcastTabLibraryId(),
+      'navTabOrder': await PlayerSettings.getNavTabOrder(),
+      'navHiddenTabs': await PlayerSettings.getNavHiddenTabs(),
       'discoverTabEnabled': await PlayerSettings.getDiscoverTabEnabled(),
       'discoverAbbServerUrl': await PlayerSettings.getAbbServerUrl(),
       'discoverTransmissionUrl': await PlayerSettings.getTransmissionUrl(),
@@ -459,6 +461,8 @@ class BackupService {
     if (s['mergeAbsorbingLibraries'] != null) PlayerSettings.setMergeAbsorbingLibraries(s['mergeAbsorbingLibraries'] as bool);
     if (s['podcastTabEnabled'] != null) PlayerSettings.setPodcastTabEnabled(s['podcastTabEnabled'] as bool);
     if (s['podcastTabLibraryId'] != null) PlayerSettings.setPodcastTabLibraryId(s['podcastTabLibraryId'] as String);
+    if (s['navTabOrder'] is List) PlayerSettings.setNavTabOrder((s['navTabOrder'] as List).cast<String>());
+    if (s['navHiddenTabs'] is List) PlayerSettings.setNavHiddenTabs((s['navHiddenTabs'] as List).cast<String>());
     if (s['discoverTabEnabled'] != null) PlayerSettings.setDiscoverTabEnabled(s['discoverTabEnabled'] as bool);
     if (s['discoverAbbServerUrl'] != null) PlayerSettings.setAbbServerUrl(s['discoverAbbServerUrl'] as String);
     if (s['discoverTransmissionUrl'] != null) PlayerSettings.setTransmissionUrl(s['discoverTransmissionUrl'] as String);

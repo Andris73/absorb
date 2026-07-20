@@ -111,6 +111,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _podcastTabEnabled = false;
   String _podcastTabLibraryId = '';
   bool _discoverTabEnabled = false;
+  List<String> _navTabOrder = [];
+  Set<String> _navHiddenTabs = {};
   int _episodeNotifMinutes = 0;
   int _maxConcurrentDownloads = 1;
   bool _hideEbookOnly = false;
@@ -638,6 +640,182 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // ── Bottom-nav customization ──
+
+  // Full canonical order (all ids) and the display subset (podcasts hidden
+  // from the list when there's no podcast library to pin).
+  List<String> _fullNavOrder() => PlayerSettings.mergeNavOrder(_navTabOrder);
+  List<String> _mergedNavOrder(bool hasPodcastLib) => _fullNavOrder()
+      .where((id) => id != 'podcasts' || hasPodcastLib)
+      .toList();
+
+  bool _navTabHidden(String id) {
+    switch (id) {
+      case 'podcasts': return !_podcastTabEnabled;
+      case 'discover': return !_discoverTabEnabled;
+      default: return _navHiddenTabs.contains(id);
+    }
+  }
+
+  String _navTabLabel(AppLocalizations l, String id) {
+    switch (id) {
+      case 'home': return l.appShellHomeTab;
+      case 'library': return l.appShellLibraryTab;
+      case 'podcasts': return l.appShellPodcastsTab;
+      case 'discover': return l.appShellDiscoverTab;
+      case 'absorbing': return l.appShellAbsorbingTab;
+      case 'stats': return l.appShellStatsTab;
+      case 'settings': return l.appShellSettingsTab;
+    }
+    return id;
+  }
+
+  IconData _navTabIcon(String id) {
+    switch (id) {
+      case 'home': return Icons.home_outlined;
+      case 'library': return Icons.library_books_outlined;
+      case 'podcasts': return Icons.podcasts_outlined;
+      case 'discover': return Icons.travel_explore_outlined;
+      case 'absorbing': return Icons.graphic_eq_rounded;
+      case 'stats': return Icons.bar_chart_rounded;
+      case 'settings': return Icons.settings_outlined;
+    }
+    return Icons.tab_outlined;
+  }
+
+  // Count tabs that would remain visible in the bar if `id` were hidden.
+  int _visibleCountIfHidden(String id, List<Map<String, dynamic>> podcastLibs) {
+    return _mergedNavOrder(podcastLibs.isNotEmpty).where((t) {
+      if (t == id) return false;
+      return !_navTabHidden(t);
+    }).length;
+  }
+
+  Future<void> _toggleNavTab(
+      String id, List<Map<String, dynamic>> podcastLibs) async {
+    if (id == 'settings') return; // always shown so the user can return here
+    final hiding = !_navTabHidden(id);
+    // NavigationBar needs at least two destinations; keep one content tab
+    // alongside the always-present Settings.
+    if (hiding && _visibleCountIfHidden(id, podcastLibs) < 2) {
+      HapticFeedback.heavyImpact();
+      return;
+    }
+    switch (id) {
+      case 'podcasts':
+        final enable = !_podcastTabEnabled;
+        var libId = _podcastTabLibraryId;
+        if (enable && !podcastLibs.any((p) => p['id'] == libId)) {
+          libId = podcastLibs.first['id'] as String;
+          await PlayerSettings.setPodcastTabLibraryId(libId);
+        }
+        setState(() {
+          _podcastTabEnabled = enable;
+          _podcastTabLibraryId = libId;
+        });
+        await PlayerSettings.setPodcastTabEnabled(enable);
+        break;
+      case 'discover':
+        setState(() => _discoverTabEnabled = !_discoverTabEnabled);
+        await PlayerSettings.setDiscoverTabEnabled(_discoverTabEnabled);
+        break;
+      default:
+        final updated = Set<String>.from(_navHiddenTabs);
+        if (!updated.add(id)) updated.remove(id);
+        setState(() => _navHiddenTabs = updated);
+        await PlayerSettings.setNavHiddenTabs(updated.toList());
+    }
+  }
+
+  Widget _navTabsList(ColorScheme cs, TextTheme tt, AppLocalizations l,
+      List<Map<String, dynamic>> podcastLibs) {
+    final order = _mergedNavOrder(podcastLibs.isNotEmpty);
+    return ReorderableListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      itemCount: order.length,
+      onReorderStart: (_) => HapticFeedback.mediumImpact(),
+      onReorder: (oldIndex, newIndex) {
+        if (newIndex > oldIndex) newIndex--;
+        final visible = List<String>.from(order);
+        final item = visible.removeAt(oldIndex);
+        visible.insert(newIndex, item);
+        // Splice the reordered visible ids back into the full order so ids
+        // omitted from the list (podcasts, when no library) keep their place
+        // rather than being dropped from the saved order.
+        final full = _fullNavOrder();
+        final result = List<String>.from(visible);
+        for (final id in full.where((id) => !visible.contains(id))) {
+          final prevIdx = full.indexOf(id) - 1;
+          final at = prevIdx < 0 ? -1 : result.indexOf(full[prevIdx]);
+          result.insert(at < 0 ? 0 : at + 1, id);
+        }
+        setState(() => _navTabOrder = result);
+        PlayerSettings.setNavTabOrder(result);
+      },
+      itemBuilder: (context, index) {
+        final id = order[index];
+        final isHidden = _navTabHidden(id);
+        final locked = id == 'settings';
+        return Container(
+          key: ValueKey(id),
+          margin: const EdgeInsets.symmetric(vertical: 3),
+          decoration: BoxDecoration(
+            color: cs.onSurface.withValues(alpha: isHidden ? 0.02 : 0.05),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+          ),
+          child: ListTile(
+            dense: true,
+            leading: Icon(_navTabIcon(id), size: 18,
+                color: isHidden
+                    ? cs.onSurfaceVariant.withValues(alpha: 0.3)
+                    : cs.onSurfaceVariant),
+            title: Text(_navTabLabel(l, id),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: isHidden
+                      ? cs.onSurface.withValues(alpha: 0.35)
+                      : cs.onSurface,
+                )),
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              GestureDetector(
+                onTap: (_loaded && !locked)
+                    ? () => _toggleNavTab(id, podcastLibs)
+                    : null,
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(
+                    locked
+                        ? Icons.lock_outline_rounded
+                        : isHidden
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                    size: 18,
+                    color: (isHidden || locked)
+                        ? cs.onSurfaceVariant.withValues(alpha: 0.3)
+                        : cs.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              ReorderableDragStartListener(
+                index: index,
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(Icons.drag_handle_rounded,
+                      size: 18,
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                ),
+              ),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
   String _episodeNotifIntervalLabel(AppLocalizations l, int minutes) {
     if (minutes <= 0) return l.notifIntervalOff;
     if (minutes < 60) return l.notifIntervalMinutes(minutes);
@@ -827,11 +1005,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final podcastTabEnabled = await PlayerSettings.getPodcastTabEnabled();
     final podcastTabLibraryId = await PlayerSettings.getPodcastTabLibraryId();
     final discoverTabEnabled = await PlayerSettings.getDiscoverTabEnabled();
+    final navTabOrder = await PlayerSettings.getNavTabOrder();
+    final navHiddenTabs = await PlayerSettings.getNavHiddenTabs();
     final episodeNotifMinutes = await PlayerSettings.getEpisodeNotifIntervalMinutes();
     if (mounted) setState(() {
       _podcastTabEnabled = podcastTabEnabled;
       _podcastTabLibraryId = podcastTabLibraryId;
       _discoverTabEnabled = discoverTabEnabled;
+      _navTabOrder = navTabOrder;
+      _navHiddenTabs = navHiddenTabs.toSet();
       _episodeNotifMinutes = episodeNotifMinutes;
       _sleepRewindSeconds = sleepRewind;
       _lockPortrait = lockPortrait;
@@ -2995,6 +3177,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 16),
 
+                // ── Navigation bar ──
+                CollapsibleSection(
+                  key: _keyFor('NavBar'),
+                  icon: Icons.dashboard_customize_outlined,
+                  title: l.settingsNavBarSection,
+                  cs: cs,
+                  isExpanded: _expandedSection == 'NavBar',
+                  onExpansionChanged: (v) => _onSectionExpanded('NavBar', v),
+                  children: [
+                    Consumer<LibraryProvider>(builder: (context, lib, _) {
+                      final podcastLibs = lib.libraries
+                          .whereType<Map<String, dynamic>>()
+                          .where((l) =>
+                              (l['mediaType'] as String? ?? 'book') == 'podcast')
+                          .toList();
+                      final currentName = podcastLibs.firstWhere(
+                            (p) => p['id'] == _podcastTabLibraryId,
+                            orElse: () => podcastLibs.isEmpty
+                                ? <String, dynamic>{}
+                                : podcastLibs.first,
+                          )['name'] as String? ??
+                          '';
+                      return Column(children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(l.dragToReorderTapEye,
+                                style: tt.bodySmall
+                                    ?.copyWith(color: cs.onSurfaceVariant)),
+                          ),
+                        ),
+                        _navTabsList(cs, tt, l, podcastLibs),
+                        if (_podcastTabEnabled && podcastLibs.length > 1)
+                          ListTile(
+                            dense: true,
+                            leading: Icon(Icons.podcasts_outlined,
+                                size: 18, color: cs.onSurfaceVariant),
+                            title: Text(l.settingsPodcastTabLibrary),
+                            subtitle: Text(currentName,
+                                style: tt.bodySmall
+                                    ?.copyWith(color: cs.onSurfaceVariant)),
+                            trailing: Icon(Icons.chevron_right_rounded,
+                                color: cs.onSurfaceVariant),
+                            onTap: () => _pickPodcastTabLibrary(podcastLibs),
+                          ),
+                      ]);
+                    }),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
                 // ── Library ──
                 CollapsibleSection(
                   key: _keyFor('Library'),
@@ -3009,71 +3243,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           .whereType<Map<String, dynamic>>()
                           .where((l) => (l['mediaType'] as String? ?? 'book') == 'podcast')
                           .toList();
-                      if (podcastLibs.isEmpty) return const SizedBox.shrink();
-                      final currentName = podcastLibs.firstWhere(
-                        (p) => p['id'] == _podcastTabLibraryId,
-                        orElse: () => podcastLibs.first,
-                      )['name'] as String? ?? '';
+                      // Episode-notification settings only make sense with a
+                      // podcast library present; the tab toggles moved to the
+                      // Navigation bar section.
+                      if (podcastLibs.isEmpty || !Platform.isAndroid) {
+                        return const SizedBox.shrink();
+                      }
                       return Column(children: [
-                        SwitchListTile(
-                          title: Text(l.settingsPodcastTab),
-                          subtitle: Text(l.settingsPodcastTabDesc,
+                        ListTile(
+                          title: Text(l.settingsEpisodeNotifs),
+                          subtitle: Text(
+                              '${l.settingsEpisodeNotifsDesc} - ${_episodeNotifLabel(l)}',
                               style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                          value: _podcastTabEnabled,
-                          onChanged: _loaded ? (v) async {
-                            var libId = _podcastTabLibraryId;
-                            if (v && !podcastLibs.any((p) => p['id'] == libId)) {
-                              libId = podcastLibs.first['id'] as String;
-                              await PlayerSettings.setPodcastTabLibraryId(libId);
-                            }
-                            setState(() {
-                              _podcastTabEnabled = v;
-                              _podcastTabLibraryId = libId;
-                            });
-                            await PlayerSettings.setPodcastTabEnabled(v);
-                          } : null,
+                          trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
+                          onTap: _loaded ? _pickEpisodeNotifInterval : null,
                         ),
-                        if (_podcastTabEnabled && podcastLibs.length > 1)
+                        if (_episodeNotifMinutes > 0)
                           ListTile(
-                            title: Text(l.settingsPodcastTabLibrary),
-                            subtitle: Text(currentName,
+                            title: Text(l.settingsBatteryUnrestricted),
+                            subtitle: Text(l.settingsBatteryUnrestrictedDesc,
                                 style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                            trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
-                            onTap: () => _pickPodcastTabLibrary(podcastLibs),
+                            trailing: Icon(Icons.battery_saver_rounded, color: cs.onSurfaceVariant),
+                            onTap: () => Permission.ignoreBatteryOptimizations.request(),
                           ),
-                        if (Platform.isAndroid) ...[
-                          const Divider(height: 1, indent: 16, endIndent: 16),
-                          ListTile(
-                            title: Text(l.settingsEpisodeNotifs),
-                            subtitle: Text(
-                                '${l.settingsEpisodeNotifsDesc} - ${_episodeNotifLabel(l)}',
-                                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                            trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
-                            onTap: _loaded ? _pickEpisodeNotifInterval : null,
-                          ),
-                          if (_episodeNotifMinutes > 0)
-                            ListTile(
-                              title: Text(l.settingsBatteryUnrestricted),
-                              subtitle: Text(l.settingsBatteryUnrestrictedDesc,
-                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                              trailing: Icon(Icons.battery_saver_rounded, color: cs.onSurfaceVariant),
-                              onTap: () => Permission.ignoreBatteryOptimizations.request(),
-                            ),
-                        ],
                         const Divider(height: 1, indent: 16, endIndent: 16),
                       ]);
                     }),
-                    SwitchListTile(
-                      title: Text(l.settingsDiscoverTab),
-                      subtitle: Text(l.settingsDiscoverTabDesc,
-                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                      value: _discoverTabEnabled,
-                      onChanged: _loaded ? (v) async {
-                        setState(() => _discoverTabEnabled = v);
-                        await PlayerSettings.setDiscoverTabEnabled(v);
-                      } : null,
-                    ),
-                    const Divider(height: 1, indent: 16, endIndent: 16),
                     SwitchListTile(
                       title: Text(l.hideEbookOnlyTitles),
                       subtitle: Text(
