@@ -110,6 +110,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _mergeAbsorbingLibraries = false;
   bool _podcastTabEnabled = false;
   String _podcastTabLibraryId = '';
+  bool _discoverTabEnabled = false;
   int _episodeNotifMinutes = 0;
   int _maxConcurrentDownloads = 1;
   bool _hideEbookOnly = false;
@@ -825,10 +826,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final longBack = await PlayerSettings.getLongBackSkip();
     final podcastTabEnabled = await PlayerSettings.getPodcastTabEnabled();
     final podcastTabLibraryId = await PlayerSettings.getPodcastTabLibraryId();
+    final discoverTabEnabled = await PlayerSettings.getDiscoverTabEnabled();
     final episodeNotifMinutes = await PlayerSettings.getEpisodeNotifIntervalMinutes();
     if (mounted) setState(() {
       _podcastTabEnabled = podcastTabEnabled;
       _podcastTabLibraryId = podcastTabLibraryId;
+      _discoverTabEnabled = discoverTabEnabled;
       _episodeNotifMinutes = episodeNotifMinutes;
       _sleepRewindSeconds = sleepRewind;
       _lockPortrait = lockPortrait;
@@ -3060,6 +3063,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const Divider(height: 1, indent: 16, endIndent: 16),
                       ]);
                     }),
+                    SwitchListTile(
+                      title: Text(l.settingsDiscoverTab),
+                      subtitle: Text(l.settingsDiscoverTabDesc,
+                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _discoverTabEnabled,
+                      onChanged: _loaded ? (v) async {
+                        setState(() => _discoverTabEnabled = v);
+                        await PlayerSettings.setDiscoverTabEnabled(v);
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
                     SwitchListTile(
                       title: Text(l.hideEbookOnlyTitles),
                       subtitle: Text(

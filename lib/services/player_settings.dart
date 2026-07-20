@@ -170,6 +170,45 @@ class PlayerSettings {
   static Future<String> getPodcastTabLibraryId() => _get('podcastTabLibraryId', '');
   static Future<void> setPodcastTabLibraryId(String value) => _set('podcastTabLibraryId', value, notify: true);
 
+  // ── Discover tab (AudiobookBay + Transmission) ──
+
+  static Future<bool> getDiscoverTabEnabled() => _get('discoverTabEnabled', false);
+  static Future<void> setDiscoverTabEnabled(bool value) => _set('discoverTabEnabled', value, notify: true);
+
+  static Future<String> getAbbServerUrl() => _get('discoverAbbServerUrl', '');
+  static Future<void> setAbbServerUrl(String value) => _set('discoverAbbServerUrl', value, notify: true);
+
+  static Future<String> getTransmissionUrl() => _get('discoverTransmissionUrl', '');
+  static Future<void> setTransmissionUrl(String value) => _set('discoverTransmissionUrl', value, notify: true);
+  static Future<String> getTransmissionUsername() => _get('discoverTransmissionUsername', '');
+  static Future<void> setTransmissionUsername(String value) => _set('discoverTransmissionUsername', value, notify: true);
+  static Future<String> getTransmissionPassword() => _get('discoverTransmissionPassword', '');
+  static Future<void> setTransmissionPassword(String value) => _set('discoverTransmissionPassword', value, notify: true);
+
+  static Future<String> getDownloadPathTemplate() => _get('discoverDownloadPathTemplate', '{author}/{series}/{title}');
+  static Future<void> setDownloadPathTemplate(String value) => _set('discoverDownloadPathTemplate', value, notify: true);
+
+  static Future<String> getHardcoverApiToken() => _get('discoverHardcoverToken', '');
+  static Future<void> setHardcoverApiToken(String value) => _set('discoverHardcoverToken', value, notify: true);
+
+  static Future<bool> getHideExplicitContent() => _get('discoverHideExplicit', false);
+  static Future<void> setHideExplicitContent(bool value) => _set('discoverHideExplicit', value, notify: true);
+  static Future<bool> getHideOwnedTitles() => _get('discoverHideOwned', true);
+  static Future<void> setHideOwnedTitles(bool value) => _set('discoverHideOwned', value, notify: true);
+
+  // Pinned ABB genre slugs, comma-separated, in pin order.
+  static Future<List<String>> getPinnedGenreSlugs() async {
+    final raw = await _get('discoverPinnedGenres', '');
+    if (raw.isEmpty) return const [];
+    return raw.split(',').where((s) => s.isNotEmpty).toList();
+  }
+  static Future<void> setPinnedGenreSlugs(List<String> slugs) => _set(
+      'discoverPinnedGenres',
+      // Slugs are URL path segments so commas shouldn't appear, but the CSV
+      // encoding can't survive one - strip to be safe.
+      slugs.map((s) => s.replaceAll(',', '')).where((s) => s.isNotEmpty).join(','),
+      notify: true);
+
   // Background new-episode notification checks, in minutes (0 = off).
   // WorkManager's floor for periodic jobs is 15 minutes.
   static Future<int> getEpisodeNotifIntervalMinutes() => _get('episodeNotifIntervalMinutes', 0);

@@ -58,6 +58,19 @@ class BackupService {
       'mergeAbsorbingLibraries': await PlayerSettings.getMergeAbsorbingLibrariesRaw(),
       'podcastTabEnabled': await PlayerSettings.getPodcastTabEnabled(),
       'podcastTabLibraryId': await PlayerSettings.getPodcastTabLibraryId(),
+      'discoverTabEnabled': await PlayerSettings.getDiscoverTabEnabled(),
+      'discoverAbbServerUrl': await PlayerSettings.getAbbServerUrl(),
+      'discoverTransmissionUrl': await PlayerSettings.getTransmissionUrl(),
+      // Credentials ride the includeAccounts switch like accounts/customHeaders.
+      if (includeAccounts) ...{
+        'discoverTransmissionUsername': await PlayerSettings.getTransmissionUsername(),
+        'discoverTransmissionPassword': await PlayerSettings.getTransmissionPassword(),
+        'discoverHardcoverToken': await PlayerSettings.getHardcoverApiToken(),
+      },
+      'discoverDownloadPathTemplate': await PlayerSettings.getDownloadPathTemplate(),
+      'discoverHideExplicit': await PlayerSettings.getHideExplicitContent(),
+      'discoverHideOwned': await PlayerSettings.getHideOwnedTitles(),
+      'discoverPinnedGenres': await PlayerSettings.getPinnedGenreSlugs(),
       'episodeNotifIntervalMinutes': await PlayerSettings.getEpisodeNotifIntervalMinutes(),
       'maxConcurrentDownloads': await PlayerSettings.getMaxConcurrentDownloads(),
       'colorSource': await PlayerSettings.getColorSource(),
@@ -446,6 +459,18 @@ class BackupService {
     if (s['mergeAbsorbingLibraries'] != null) PlayerSettings.setMergeAbsorbingLibraries(s['mergeAbsorbingLibraries'] as bool);
     if (s['podcastTabEnabled'] != null) PlayerSettings.setPodcastTabEnabled(s['podcastTabEnabled'] as bool);
     if (s['podcastTabLibraryId'] != null) PlayerSettings.setPodcastTabLibraryId(s['podcastTabLibraryId'] as String);
+    if (s['discoverTabEnabled'] != null) PlayerSettings.setDiscoverTabEnabled(s['discoverTabEnabled'] as bool);
+    if (s['discoverAbbServerUrl'] != null) PlayerSettings.setAbbServerUrl(s['discoverAbbServerUrl'] as String);
+    if (s['discoverTransmissionUrl'] != null) PlayerSettings.setTransmissionUrl(s['discoverTransmissionUrl'] as String);
+    if (s['discoverTransmissionUsername'] != null) PlayerSettings.setTransmissionUsername(s['discoverTransmissionUsername'] as String);
+    if (s['discoverTransmissionPassword'] != null) PlayerSettings.setTransmissionPassword(s['discoverTransmissionPassword'] as String);
+    if (s['discoverDownloadPathTemplate'] != null) PlayerSettings.setDownloadPathTemplate(s['discoverDownloadPathTemplate'] as String);
+    if (s['discoverHardcoverToken'] != null) PlayerSettings.setHardcoverApiToken(s['discoverHardcoverToken'] as String);
+    if (s['discoverHideExplicit'] != null) PlayerSettings.setHideExplicitContent(s['discoverHideExplicit'] as bool);
+    if (s['discoverHideOwned'] != null) PlayerSettings.setHideOwnedTitles(s['discoverHideOwned'] as bool);
+    if (s['discoverPinnedGenres'] is List) {
+      PlayerSettings.setPinnedGenreSlugs((s['discoverPinnedGenres'] as List).cast<String>());
+    }
     if (s['episodeNotifIntervalMinutes'] != null) PlayerSettings.setEpisodeNotifIntervalMinutes(s['episodeNotifIntervalMinutes'] as int);
     if (s['maxConcurrentDownloads'] != null) PlayerSettings.setMaxConcurrentDownloads(s['maxConcurrentDownloads'] as int);
     if (s['colorSource'] != null) PlayerSettings.setColorSource(s['colorSource'] as String);
