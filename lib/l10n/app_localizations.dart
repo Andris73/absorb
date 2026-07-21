@@ -12375,6 +12375,18 @@ abstract class AppLocalizations {
   /// **'Navigation bar'**
   String get settingsNavBarSection;
 
+  /// Book menu action that looks the book up on AudiobookBay for downloading via the Discover integration
+  ///
+  /// In en, this message translates to:
+  /// **'Find on AudiobookBay'**
+  String get audibleSeriesFindOnAbb;
+
+  /// Progress dialog text while resolving a book on AudiobookBay
+  ///
+  /// In en, this message translates to:
+  /// **'Searching AudiobookBay…'**
+  String get discoverFindingOnAbb;
+
   /// Settings toggle that shows the Discover tab in the bottom bar
   ///
   /// In en, this message translates to:

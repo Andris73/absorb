@@ -7104,6 +7104,12 @@ class AppLocalizationsFr extends AppLocalizations {
   String get settingsNavBarSection => 'Navigation bar';
 
   @override
+  String get audibleSeriesFindOnAbb => 'Find on AudiobookBay';
+
+  @override
+  String get discoverFindingOnAbb => 'Searching AudiobookBay…';
+
+  @override
   String get settingsDiscoverTab => 'Discover tab';
 
   @override

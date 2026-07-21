@@ -8,6 +8,8 @@ library;
 
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+
 import '../api_service.dart';
 import '../player_settings.dart';
 import 'abb_client.dart';
@@ -45,6 +47,24 @@ class SeriesTrackingService {
 
   /// Clear the cached result so the next call recomputes.
   void invalidate() => _cache = null;
+
+  /// Resolve a single known book on ABB: best result scoring at least
+  /// [_minTitleScore], or null. Used by the "Find Missing Books" flows to
+  /// jump from an Audible result to its ABB detail page.
+  Future<AbbSearchResult?> resolveBook({
+    required String abbBaseUrl,
+    required String seriesName,
+    required String title,
+    required String author,
+  }) async {
+    final abb = AbbClient(abbBaseUrl);
+    try {
+      return await _resolveOnAbb(
+          abb, _Candidate(seriesName, title, author, null));
+    } finally {
+      abb.dispose();
+    }
+  }
 
   /// Returns the missing-book ABB results plus a human-readable trace of
   /// per-stage counts (shown in the shelf's empty state for diagnostics).
@@ -262,16 +282,23 @@ class SeriesTrackingService {
     return (titles: titles, maxPosition: maxPosition, maxYear: maxYear);
   }
 
+  /// Minimum title-match score for an ABB result to count as the book.
+  static const _minTitleScore = 0.75;
+
   Future<AbbSearchResult?> _resolveOnAbb(AbbClient abb, _Candidate c) async {
     final query = _abbQuery(c);
     var results = <AbbSearchResult>[];
     try {
       results = await abb.searchAlternate(query);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ABB] alternate search failed: $e');
+    }
     if (results.isEmpty) {
       try {
         results = await abb.search(query);
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[ABB] search failed: $e');
+      }
     }
 
     AbbSearchResult? best;
@@ -286,7 +313,7 @@ class SeriesTrackingService {
         best = r;
       }
     }
-    return bestScore >= 0.75 ? best : null;
+    return bestScore >= _minTitleScore ? best : null;
   }
 
   /// Deduped, diacritic-folded, punctuation-free lowercase words of series

@@ -8,6 +8,7 @@ import '../services/player_settings.dart';
 import '../services/rmab_service.dart';
 import '../services/scoped_prefs.dart';
 import '../services/upcoming_releases_service.dart';
+import 'discover/abb_find_book.dart';
 import 'overlay_toast.dart';
 import 'rmab_book_detail_sheet.dart';
 import 'rmab_config_sheet.dart' show kRmabBaseUrlKey, kRmabApiTokenKey;
@@ -61,6 +62,7 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
   int _filter = 0; // 0 = missing, 1 = upcoming, 2 = all
   late String _region;
   bool _rmabConfigured = false;
+  bool _abbConfigured = false;
 
   @override
   void initState() {
@@ -68,6 +70,13 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
     _region = ApiService.debugRegion;
     _loadRegionAndFetch();
     _loadRmabConfigured();
+    _loadAbbConfigured();
+  }
+
+  Future<void> _loadAbbConfigured() async {
+    final configured = await abbConfigured();
+    if (!mounted || configured == _abbConfigured) return;
+    setState(() => _abbConfigured = configured);
   }
 
   Future<void> _loadRmabConfigured() async {
@@ -166,6 +175,7 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
     // Surface the RMAB Request action only for missing-but-released books,
     // and only when the user has RMAB configured.
     final showRequest = _rmabConfigured && !owned && !upcoming;
+    final showAbb = _abbConfigured && !owned && !upcoming;
     // Let upcoming or recently-released books be pushed onto the upcoming page
     // without rescanning the whole library.
     final canAddToUpcoming = upcoming || _isRecent(book);
@@ -175,6 +185,8 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
       seriesName: widget.seriesName,
       region: _region,
       extraActions: [
+        if (showAbb)
+          abbFindBookTile(context, seriesName: widget.seriesName, book: book),
         if (canAddToUpcoming)
           ListTile(
             leading: Icon(Icons.event_available_rounded,

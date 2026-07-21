@@ -10,6 +10,7 @@ import '../services/scoped_prefs.dart';
 import '../services/upcoming_releases_service.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/audible_series_sheet.dart';
+import '../widgets/discover/abb_find_book.dart';
 import '../widgets/overlay_toast.dart';
 import '../widgets/rmab_book_detail_sheet.dart';
 import '../widgets/rmab_config_sheet.dart'
@@ -28,6 +29,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
   String _region = 'us';
   bool _sortByDate = false;
   bool _rmabConfigured = false;
+  bool _abbConfigured = false;
 
   @override
   void initState() {
@@ -35,6 +37,13 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
     _service.addListener(_onServiceChanged);
     _initAndStart();
     _loadRmabConfigured();
+    _loadAbbConfigured();
+  }
+
+  Future<void> _loadAbbConfigured() async {
+    final configured = await abbConfigured();
+    if (!mounted || configured == _abbConfigured) return;
+    setState(() => _abbConfigured = configured);
   }
 
   Future<void> _loadRmabConfigured() async {
@@ -169,11 +178,14 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
     // Show the RMAB request entry only for books that have been released but
     // aren't in the library yet, and only when the user has RMAB configured.
     final showRequest = _rmabConfigured && !isOwned && !isUpcoming;
+    final showAbb = _abbConfigured && !isOwned && !isUpcoming;
     showAudibleBookMenu(context,
       book: book,
       seriesName: seriesName,
       region: _region,
       extraActions: [
+        if (showAbb)
+          abbFindBookTile(context, seriesName: seriesName, book: book),
         ListTile(
           leading: Icon(Icons.refresh_rounded, color: cs.primary, size: 22),
           title: Text(l.upcomingReleasesRescanReleaseDate, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
