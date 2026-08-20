@@ -83,6 +83,7 @@ class AbbClient {
 
   /// Search via the path form `{base}/search/{query}/`. The `?s=` form 301s
   /// to the homepage on some mirrors and drops the query, so this is primary.
+  /// Case is left as-is: this form is verified case-insensitive on mirrors.
   Future<List<AbbSearchResult>> search(String query) async {
     final url = Uri.parse('$_base/search/${Uri.encodeComponent(query)}/');
     return _parseResultRows(await _fetchDoc(url));
@@ -91,9 +92,13 @@ class AbbClient {
   /// Search via the `?s=` query form. The literal `cat=undefined,undefined`
   /// is required by the site. Series resolution tries this form first, then
   /// [search], keeping whichever parses non-empty.
+  ///
+  /// Lowercased on purpose: some mirrors silently serve homepage content for
+  /// this form when the query has capital letters, instead of erroring or
+  /// running the search, so a caller can't tell a bad match from a real one.
   Future<List<AbbSearchResult>> searchAlternate(String query) async {
     final url = Uri.parse(
-        '$_base/?s=${Uri.encodeQueryComponent(query)}&cat=undefined,undefined');
+        '$_base/?s=${Uri.encodeQueryComponent(query.toLowerCase())}&cat=undefined,undefined');
     return _parseResultRows(await _fetchDoc(url));
   }
 

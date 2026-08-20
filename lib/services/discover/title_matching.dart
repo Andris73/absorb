@@ -31,22 +31,37 @@ String foldDiacritics(String s) {
 }
 
 /// Lowercased, diacritic-folded word tokens with stopwords and
-/// single-character tokens dropped.
+/// single-character *letter* fragments dropped. Digits are kept regardless
+/// of length - "4" is a meaningful volume number, not filler like "a".
 List<String> tokenize(String s) {
   final folded = foldDiacritics(s.toLowerCase());
   return folded
       .replaceAll(RegExp(r'[^a-z0-9]'), ' ')
       .split(RegExp(r'\s+'))
-      .where((t) => t.length >= 2 && !_stopwords.contains(t))
+      .where((t) =>
+          (t.length >= 2 || _digits.hasMatch(t)) && !_stopwords.contains(t))
       .toList();
 }
 
+final _digits = RegExp(r'^[0-9]+$');
+
 /// Overlap score of [wanted] against [candidate]: 1.0 when every wanted
 /// token appears in the candidate, otherwise shared / wanted count.
+///
+/// A volume/book number is the one token that distinguishes otherwise
+/// near-identical listings ("Vol. 4" vs "Vol. 6" share every other word),
+/// so if [wanted] names one, [candidate] must carry that same number
+/// (compared numerically, so "04" matches "4") - word overlap alone isn't
+/// enough to call it a match.
 double score(String wanted, String candidate) {
   final w = tokenize(wanted).toSet();
   if (w.isEmpty) return 0;
   final c = tokenize(candidate).toSet();
+  final wantedNumbers = w.where(_digits.hasMatch).map(int.parse).toSet();
+  if (wantedNumbers.isNotEmpty) {
+    final candidateNumbers = c.where(_digits.hasMatch).map(int.parse).toSet();
+    if (!wantedNumbers.every(candidateNumbers.contains)) return 0;
+  }
   final shared = w.intersection(c).length;
   if (shared == w.length) return 1.0;
   return shared / w.length;

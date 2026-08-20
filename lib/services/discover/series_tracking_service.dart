@@ -364,9 +364,10 @@ class SeriesTrackingService {
   }
 
   /// Deduped words of [parts], tokenized the same way [score] tokenizes a
-  /// title. Dropping stopwords/single-char tokens here only ever shortens
-  /// the AND query, which can narrow a search but never zero one out, so
-  /// reusing [tokenize] is strictly safer than a bespoke split.
+  /// title. Stopwords/short-letter tokens are dropped, which only ever
+  /// shortens the AND query. Digits are kept - a volume number is what
+  /// disambiguates a query from a wrong-volume result - at the cost that a
+  /// rung can zero out if a listing spells the number differently.
   String _words(List<String> parts) {
     final seen = <String>{};
     final words = <String>[];
