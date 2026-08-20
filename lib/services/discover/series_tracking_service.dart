@@ -145,11 +145,19 @@ class SeriesTrackingService {
       // ABB dislikes concurrent scraping (Cloudflare), so resolve serially.
       var abbHits = 0;
       var results = <AbbSearchResult>[];
+      var blocked = false;
       for (final c in candidates) {
-        final hit = await _resolveOnAbb(abb, c);
-        if (hit != null) {
-          abbHits++;
-          results.add(hit);
+        try {
+          final hit = await _resolveOnAbb(abb, c);
+          if (hit != null) {
+            abbHits++;
+            results.add(hit);
+          }
+        } on AbbCloudflareException {
+          // The mirror is blocking us - remaining candidates would just
+          // repeat the same failure, so stop rather than grind through them.
+          blocked = true;
+          break;
         }
       }
 
@@ -166,7 +174,7 @@ class SeriesTrackingService {
       final trace = 'series:${active.length} owned:$ownedCount '
           'roster:$rosterCount missing:$missingCount '
           'candidates:${candidates.length} abb:$abbHits '
-          'final:${results.length}';
+          'final:${results.length}${blocked ? ' (abb blocked)' : ''}';
       if (results.isNotEmpty) {
         _cache = (DateTime.now(), results, trace);
       }
@@ -286,47 +294,85 @@ class SeriesTrackingService {
   static const _minTitleScore = 0.75;
 
   Future<AbbSearchResult?> _resolveOnAbb(AbbClient abb, _Candidate c) async {
-    final query = _abbQuery(c);
-    var results = <AbbSearchResult>[];
-    try {
-      results = await abb.searchAlternate(query);
-    } catch (e) {
-      debugPrint('[ABB] alternate search failed: $e');
-    }
-    if (results.isEmpty) {
-      try {
-        results = await abb.search(query);
-      } catch (e) {
-        debugPrint('[ABB] search failed: $e');
-      }
-    }
-
+    // Escalate through the ladder until a rung clears the score threshold -
+    // a rung returning rows doesn't mean it returned a *good* row, so a
+    // noisy hit on an early rung must not stop a later, cleaner rung from
+    // being tried.
     AbbSearchResult? best;
     var bestScore = 0.0;
-    for (final r in results) {
-      if (c.minYear != null && r.year != null && r.year! < c.minYear!) {
-        continue;
+    for (final query in _abbQueries(c)) {
+      final results = await _searchQuery(abb, query);
+      for (final r in results) {
+        if (c.minYear != null && r.year != null && r.year! < c.minYear!) {
+          continue;
+        }
+        // Looser rungs (title-only, author-only) drop the other field from
+        // the query itself, so the author has to be checked here instead.
+        if (!authorsMatch(c.author, r.author ?? '')) continue;
+        final s = score(c.title, r.title);
+        if (s > bestScore) {
+          bestScore = s;
+          best = r;
+        }
       }
-      final s = score(c.title, r.title);
-      if (s > bestScore) {
-        bestScore = s;
-        best = r;
-      }
+      if (bestScore >= _minTitleScore) break;
     }
     return bestScore >= _minTitleScore ? best : null;
   }
 
-  /// Deduped, diacritic-folded, punctuation-free lowercase words of series
-  /// name + title + author, in that order.
-  String _abbQuery(_Candidate c) {
-    final words = <String>[];
+  Future<List<AbbSearchResult>> _searchQuery(
+      AbbClient abb, String query) async {
+    try {
+      final r = await abb.searchAlternate(query);
+      debugPrint('[ABB alt] "$query" -> ${r.length} rows');
+      if (r.isNotEmpty) return r;
+    } on AbbCloudflareException {
+      rethrow;
+    } catch (e) {
+      debugPrint('[ABB] alternate search failed for "$query": $e');
+    }
+    try {
+      final r = await abb.search(query);
+      debugPrint('[ABB] "$query" -> ${r.length} rows');
+      return r;
+    } on AbbCloudflareException {
+      rethrow;
+    } catch (e) {
+      debugPrint('[ABB] search failed for "$query": $e');
+      return const [];
+    }
+  }
+
+  /// Fallback ladder of ABB queries, most to least reliable. ABB's search is
+  /// a strict AND over every word - one word that isn't literally present
+  /// anywhere in a post (a typo, or a series name the listing never spells
+  /// out) zeroes the *whole* result set, not just that word. Series names
+  /// are the least trustworthy word source, so they're only tried last.
+  List<String> _abbQueries(_Candidate c) {
     final seen = <String>{};
-    for (final part in [c.seriesName, c.title, c.author]) {
-      final folded = foldDiacritics(part.toLowerCase())
-          .replaceAll(RegExp(r'[^a-z0-9]'), ' ');
-      for (final w in folded.split(RegExp(r'\s+'))) {
-        if (w.isEmpty || !seen.add(w)) continue;
-        words.add(w);
+    final out = <String>[];
+    void add(List<String> parts) {
+      final q = _words(parts);
+      if (q.isNotEmpty && seen.add(q)) out.add(q);
+    }
+
+    add([c.author, c.title]);
+    add([c.title]);
+    add([c.author]);
+    add([c.seriesName, c.title]);
+    return out;
+  }
+
+  /// Deduped words of [parts], tokenized the same way [score] tokenizes a
+  /// title. Dropping stopwords/single-char tokens here only ever shortens
+  /// the AND query, which can narrow a search but never zero one out, so
+  /// reusing [tokenize] is strictly safer than a bespoke split.
+  String _words(List<String> parts) {
+    final seen = <String>{};
+    final words = <String>[];
+    for (final part in parts) {
+      for (final w in tokenize(part)) {
+        if (seen.add(w)) words.add(w);
       }
     }
     return words.join(' ');
