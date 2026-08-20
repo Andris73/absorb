@@ -379,11 +379,14 @@ class AbbClient {
 
   /// Heuristic extraction of "(series name, book number)" from an ABB
   /// listing title, e.g. "Dungeon Crawler Carl, Book 3 - Matt Dinniman".
-  /// Returns null when no book number is present.
+  /// Returns null when no book number is present. The trailing group also
+  /// accepts a bracket/paren straight after the number (e.g. "Vol. 4
+  /// [Unabridged]") - edition/format noise trailing the volume number is a
+  /// listing shape coreTitle already assumes is common.
   static ({String name, double number})? parseSeriesFromTitle(String title) {
     final stripped = stripTrailingAuthor(title).trim();
     final m = RegExp(
-      r'^(?<series>.*?)[\s,]+(?:book|vol\.?|volume|#)?\s*(?<num>\d+(?:\.\d+)?)(?:\s*[:\-\u2013\u2014].*)?$',
+      r'^(?<series>.*?)[\s,]+(?:book|vol\.?|volume|#)?\s*(?<num>\d+(?:\.\d+)?)(?:\s*[:\-\u2013\u2014\[\(].*)?$',
       caseSensitive: false,
     ).firstMatch(stripped);
     if (m == null) return null;

@@ -50,14 +50,26 @@ class _AbbSeriesViewState extends State<AbbSeriesView> {
       results = results
           .where((r) => coreTitle(r.title).toLowerCase().contains(wanted))
           .toList();
+
+      // Parsed before deduping: coreTitle alone can't tell "Vol. 4" from
+      // "Vol. 6" apart, only the digit does.
+      final volumeOf = <String, double?>{
+        for (final r in results)
+          r.id: AbbClient.parseSeriesFromTitle(r.title)?.number,
+      };
+
+      // Dedupe exact re-postings of the same book: same noise-stripped core
+      // title (bracket/edition text ABB posters vary between re-uploads)
+      // AND same volume number, so different volumes never collapse.
       final seenTitles = <String>{};
       results = results
-          .where((r) => seenTitles.add(normalizeTitle(coreTitle(r.title))))
+          .where((r) => seenTitles
+              .add('${normalizeTitle(coreTitle(r.title))}|${volumeOf[r.id]}'))
           .toList();
 
       for (final r in results) {
-        final parsed = AbbClient.parseSeriesFromTitle(r.title);
-        if (parsed != null) _positions[r.id] = parsed.number;
+        final n = volumeOf[r.id];
+        if (n != null) _positions[r.id] = n;
       }
 
       if (token.isNotEmpty) await _enrichFromHardcover(token, results);
@@ -91,7 +103,10 @@ class _AbbSeriesViewState extends State<AbbSeriesView> {
 
   /// Replace the description and reorder by roster positions, matching
   /// roster entries to ABB titles by normalized-title containment
-  /// (min normalized length 4, longest match wins).
+  /// (min normalized length 4, longest match wins). Only fills in results
+  /// ABB's own title didn't give a volume number for - a roster guess must
+  /// never overwrite an already-parsed one, or every volume in the series
+  /// would risk collapsing onto whichever roster entry matches best.
   Future<void> _enrichFromHardcover(
       String token, List<AbbSearchResult> results) async {
     final hc = HardcoverClient(token);
@@ -103,6 +118,7 @@ class _AbbSeriesViewState extends State<AbbSeriesView> {
       if (roster == null) return;
       _description = roster.description;
       for (final r in results) {
+        if (_positions.containsKey(r.id)) continue;
         final n = normalizeTitle(coreTitle(r.title));
         double? best;
         var bestLen = 0;
