@@ -1699,6 +1699,7 @@ class ApiService {
     String libraryId,
     String query, {
     int limit = 25,
+    Duration timeout = const Duration(seconds: 60),
   }) async {
     try {
       final encoded = Uri.encodeQueryComponent(query);
@@ -1706,7 +1707,7 @@ class ApiService {
         Uri.parse(
           '$_cleanBaseUrl/api/libraries/$libraryId/search?q=$encoded&limit=$limit',
         ),
-        timeout: const Duration(seconds: 60),
+        timeout: timeout,
       );
 
       if (response.statusCode == 200) {
@@ -1725,12 +1726,13 @@ class ApiService {
     required String title,
     String? author,
     String provider = 'audible',
+    String? region,
   }) async {
     try {
       final params = <String, String>{
         'title': title,
         'provider': provider,
-        'region': _region,
+        'region': region ?? _region,
       };
       if (author != null && author.isNotEmpty) {
         params['author'] = author;

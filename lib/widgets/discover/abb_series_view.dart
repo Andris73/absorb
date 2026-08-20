@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/library_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/discover/abb_client.dart';
 import '../../services/discover/abb_models.dart';
@@ -16,10 +17,15 @@ import 'abb_cover.dart';
 /// Books in a series. Primarily resolved from Audible's own series listing
 /// (authoritative book order and titles) matched against ABB one book at a
 /// time via [SeriesTrackingService.resolveSeriesBooks] - the same resolver
-/// "Find Missing Books" uses. When Audible doesn't carry the series at all,
-/// falls back to Hardcover's roster as a second authoritative-ish source via
-/// the same resolver, then finally to a raw ABB search, since that's still
-/// better than nothing.
+/// "Find Missing Books" uses. The Audible series ASIN itself is found first
+/// via a book the user already owns in this series (an approximation of the
+/// technique the Library-side "Find on Audible" flow uses - see
+/// [_resolveSeriesAsinFromLibrary]'s doc for how it differs), then falls
+/// back to a blind Audible search anchored on a real per-book title when the
+/// user owns nothing in the series yet. When Audible doesn't carry the
+/// series at all, falls back to Hardcover's roster as a second
+/// authoritative-ish source via the same resolver, then finally to a raw
+/// ABB search, since that's still better than nothing.
 class AbbSeriesView extends StatefulWidget {
   final String seriesName;
   final String? author;
@@ -73,7 +79,19 @@ class _AbbSeriesViewState extends State<AbbSeriesView> {
     _resolveDone = 0;
     _resolveTotal = 0;
     try {
-      final asin = widget.seriesAsin ?? await _resolveSeriesAsin();
+      String? asin = widget.seriesAsin;
+      // Each resolution attempt gets its own try/catch: a failure in the
+      // library-owned-book lookup (e.g. an unexpected search response shape)
+      // must not deny the anchor-title Audible search a chance to run too -
+      // they're independent techniques for finding the same ASIN.
+      if (asin == null) {
+        try {
+          asin = await _resolveSeriesAsinFromLibrary();
+        } catch (e) {
+          debugPrint('[ABB] Library-owned-book ASIN lookup failed: $e');
+        }
+      }
+      asin ??= await _resolveSeriesAsin();
       if (asin != null && await _loadViaAudible(asin)) return;
     } catch (e) {
       debugPrint('[ABB] Audible-driven series load failed, falling back: $e');
@@ -119,8 +137,16 @@ class _AbbSeriesViewState extends State<AbbSeriesView> {
     final searchTitle =
         normalizeTitle(anchor).length >= 4 ? anchor : widget.seriesName;
 
-    final results =
-        await api.searchBooks(title: searchTitle, author: widget.author);
+    // Same region the user configured for Find Missing Books / _loadViaAudible
+    // - without this, searchBooks/getAudnexusBook fall back to a device-locale
+    // region that can differ from the user's actual Audible marketplace and
+    // silently return nothing (or the wrong catalog's ASIN) for region-specific
+    // titles.
+    final region = await PlayerSettings.getAudibleRegion();
+    final regionOverride = region.isNotEmpty ? region : null;
+
+    final results = await api.searchBooks(
+        title: searchTitle, author: widget.author, region: regionOverride);
     for (final r in results) {
       final asin = r['asin'] as String? ?? '';
       if (asin.isEmpty) continue;
@@ -131,16 +157,93 @@ class _AbbSeriesViewState extends State<AbbSeriesView> {
           !authorsMatch(widget.author!, candidateAuthor)) {
         continue;
       }
-      final audnexus = await ApiService.getAudnexusBook(asin);
-      if (audnexus == null) continue;
-      for (final key in ['seriesPrimary', 'seriesSecondary']) {
-        final s = audnexus[key] as Map<String, dynamic>?;
-        final sAsin = s?['asin'] as String?;
-        final sName = s?['name'] as String? ?? '';
-        if (sAsin == null || sAsin.isEmpty) continue;
-        if (normalizeTitle(sName).length < 4) continue;
-        if (titlesMatch(widget.seriesName, sName)) return sAsin;
+      final sAsin = await _matchSeriesAsinViaAudnexus(asin, regionOverride);
+      if (sAsin != null) return sAsin;
+    }
+    return null;
+  }
+
+  /// Find the Audible series ASIN via a book the user already owns in this
+  /// series: search the ABS library (not Audible) for the series name, then
+  /// check each hit's own `asin` metadata against Audnexus for a
+  /// `seriesPrimary`/`seriesSecondary` match. This is a full-text-search
+  /// approximation of what `series_books_sheet.dart`'s "Find on Audible"
+  /// does with a series it already has the real, ID-keyed book list for -
+  /// Discover has no such series ID to work with, so it substitutes ABS's
+  /// own search endpoint and leans on the series-name + author cross-checks
+  /// below instead. Tried before [_resolveSeriesAsin] because a real owned
+  /// ASIN, when found, is far more reliable than blindly searching Audible's
+  /// catalog by title. Returns null (falls through to [_resolveSeriesAsin])
+  /// when the user doesn't own anything matching in this series yet, same
+  /// as any other lookup miss. Only checks the currently-selected library -
+  /// a copy owned in a different library on the same server won't be found.
+  Future<String?> _resolveSeriesAsinFromLibrary() async {
+    if (!mounted) return null;
+    if (normalizeTitle(widget.seriesName).length < 4) return null;
+
+    final libraryId = context.read<LibraryProvider>().selectedLibraryId;
+    final api = context.read<AuthProvider>().apiService;
+    if (libraryId == null || api == null) return null;
+
+    // Short timeout: this tier runs on every View Series open, and the
+    // common case for a Discover-tab series the user is browsing (rather
+    // than already tracking) is owning nothing in it at all, so a slow
+    // server shouldn't stall the anchor-title fallback below by very long.
+    final search = await api.searchLibrary(libraryId, widget.seriesName,
+        timeout: const Duration(seconds: 10));
+    final books = search?['book'] as List<dynamic>? ?? [];
+    if (books.isEmpty) return null;
+
+    final region = await PlayerSettings.getAudibleRegion();
+    final regionOverride = region.isNotEmpty ? region : null;
+
+    for (final b in books) {
+      if (b is! Map<String, dynamic>) continue;
+      final libraryItem = b['libraryItem'] as Map<String, dynamic>? ?? {};
+      final media = libraryItem['media'] as Map<String, dynamic>? ?? {};
+      final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+      final asin = metadata['asin'] as String? ?? '';
+      if (asin.isEmpty) continue;
+
+      final seriesRaw = metadata['series'];
+      final seriesList = seriesRaw is List
+          ? seriesRaw.whereType<Map<String, dynamic>>()
+          : seriesRaw is Map<String, dynamic>
+              ? [seriesRaw]
+              : const <Map<String, dynamic>>[];
+      final matchesSeries = seriesList.any((s) {
+        final name = s['name'] as String? ?? '';
+        return normalizeTitle(name).length >= 4 &&
+            titlesMatch(widget.seriesName, name);
+      });
+      if (!matchesSeries) continue;
+
+      if (widget.author != null && widget.author!.isNotEmpty) {
+        final bookAuthor = metadata['authorName'] as String? ?? '';
+        if (!authorsMatch(widget.author!, bookAuthor)) continue;
       }
+
+      final sAsin = await _matchSeriesAsinViaAudnexus(asin, regionOverride);
+      if (sAsin != null) return sAsin;
+    }
+    return null;
+  }
+
+  /// Shared tail of both ASIN-resolution tiers above: given a real book
+  /// ASIN, fetch Audnexus and return the series ASIN if `seriesPrimary` or
+  /// `seriesSecondary` names match [widget.seriesName].
+  Future<String?> _matchSeriesAsinViaAudnexus(
+      String bookAsin, String? region) async {
+    final audnexus =
+        await ApiService.getAudnexusBook(bookAsin, region: region);
+    if (audnexus == null) return null;
+    for (final key in ['seriesPrimary', 'seriesSecondary']) {
+      final s = audnexus[key] as Map<String, dynamic>?;
+      final sAsin = s?['asin'] as String?;
+      final sName = s?['name'] as String? ?? '';
+      if (sAsin == null || sAsin.isEmpty) continue;
+      if (normalizeTitle(sName).length < 4) continue;
+      if (titlesMatch(widget.seriesName, sName)) return sAsin;
     }
     return null;
   }
