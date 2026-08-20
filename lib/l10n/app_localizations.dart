@@ -12387,6 +12387,12 @@ abstract class AppLocalizations {
   /// **'Searching AudiobookBay…'**
   String get discoverFindingOnAbb;
 
+  /// Progress text on the View Series page while resolving each Audible-listed book on AudiobookBay one at a time
+  ///
+  /// In en, this message translates to:
+  /// **'Resolving {done} of {total}…'**
+  String discoverResolvingSeries(int done, int total);
+
   /// Settings toggle that shows the Discover tab in the bottom bar
   ///
   /// In en, this message translates to:
@@ -12536,6 +12542,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'More in this Series'**
   String get discoverSeriesMoreIn;
+
+  /// Series page note shown when ABB blocked the resolver partway through resolving an Audible series' books
+  ///
+  /// In en, this message translates to:
+  /// **'AudiobookBay may be rate-limiting searches - showing what was found so far'**
+  String get discoverSeriesPartial;
 
   /// Series page description section header
   ///

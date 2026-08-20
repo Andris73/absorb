@@ -7111,6 +7111,11 @@ class AppLocalizationsRu extends AppLocalizations {
   String get discoverFindingOnAbb => 'Searching AudiobookBay…';
 
   @override
+  String discoverResolvingSeries(int done, int total) {
+    return 'Resolving $done of $total…';
+  }
+
+  @override
   String get settingsDiscoverTab => 'Discover tab';
 
   @override
@@ -7195,6 +7200,10 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get discoverSeriesMoreIn => 'More in this Series';
+
+  @override
+  String get discoverSeriesPartial =>
+      'AudiobookBay may be rate-limiting searches - showing what was found so far';
 
   @override
   String get discoverAbout => 'About';

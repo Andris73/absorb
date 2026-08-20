@@ -4148,6 +4148,14 @@
   "@audibleSeriesFindOnAbb": {"description": "Book menu action that looks the book up on AudiobookBay for downloading via the Discover integration"},
   "discoverFindingOnAbb": "Searching AudiobookBay\u2026",
   "@discoverFindingOnAbb": {"description": "Progress dialog text while resolving a book on AudiobookBay"},
+  "discoverResolvingSeries": "Resolving {done} of {total}\u2026",
+  "@discoverResolvingSeries": {
+    "description": "Progress text on the View Series page while resolving each Audible-listed book on AudiobookBay one at a time",
+    "placeholders": {
+      "done": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
   "settingsDiscoverTab": "Discover tab",
   "@settingsDiscoverTab": {"description": "Settings toggle that shows the Discover tab in the bottom bar"},
   "settingsDiscoverTabDesc": "Show a Discover tab for finding and downloading audiobooks via AudiobookBay and Transmission",
@@ -4210,6 +4218,8 @@
   "@discoverSeriesBooksIn": {"description": "Series page header when every result has a known position"},
   "discoverSeriesMoreIn": "More in this Series",
   "@discoverSeriesMoreIn": {"description": "Series page header when result order is incomplete"},
+  "discoverSeriesPartial": "AudiobookBay may be rate-limiting searches - showing what was found so far",
+  "@discoverSeriesPartial": {"description": "Series page note shown when ABB blocked the resolver partway through resolving an Audible series' books"},
   "discoverAbout": "About",
   "@discoverAbout": {"description": "Series page description section header"},
   "discoverDescription": "Description",

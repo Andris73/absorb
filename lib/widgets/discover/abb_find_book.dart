@@ -19,6 +19,7 @@ ListTile abbFindBookTile(
   BuildContext context, {
   required String seriesName,
   required Map<String, dynamic> book,
+  String? seriesAsin,
 }) {
   final cs = Theme.of(context).colorScheme;
   final l = AppLocalizations.of(context)!;
@@ -39,6 +40,7 @@ ListTile abbFindBookTile(
         seriesName: seriesName,
         title: book['title'] as String? ?? '',
         author: book['authors'] as String? ?? '',
+        seriesAsin: seriesAsin,
       );
     },
   );
@@ -51,6 +53,7 @@ Future<void> findBookOnAbb(
   required String seriesName,
   required String title,
   required String author,
+  String? seriesAsin,
 }) async {
   final abbUrl = await PlayerSettings.getAbbServerUrl();
   if (abbUrl.isEmpty || !context.mounted) return;
@@ -112,6 +115,10 @@ Future<void> findBookOnAbb(
   Navigator.of(context).push(MaterialPageRoute<void>(
     builder: (_) => best != null
         ? AbbBookDetailView(result: best)
-        : AbbSeriesView(seriesName: seriesName, author: leadAuthor),
+        : AbbSeriesView(
+            seriesName: seriesName,
+            author: leadAuthor,
+            seriesAsin: seriesAsin,
+          ),
   ));
 }

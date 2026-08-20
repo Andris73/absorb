@@ -66,6 +66,55 @@ class SeriesTrackingService {
     }
   }
 
+  /// Resolve a known, ordered list of series books on ABB one at a time,
+  /// the same way [missingFromTrackedSeries] resolves roster gaps - serially,
+  /// since ABB dislikes concurrent scraping (Cloudflare), stopping early if
+  /// the mirror starts blocking rather than grinding through the rest.
+  /// Used by "View Series" to resolve an authoritative Audible book list
+  /// against ABB, instead of trying to parse volume numbers back out of
+  /// ABB's own inconsistent listing titles.
+  ///
+  /// maxBooks caps how many candidates are resolved - each unresolved
+  /// candidate can cost up to 8 ABB requests, so an unbounded series (some
+  /// run 30-50+ volumes) risks a very slow load and heavier mirror load
+  /// than the feature it replaces. isCancelled lets the caller stop the
+  /// loop early (e.g. the user navigated away). The returned blocked flag
+  /// is true when a Cloudflare block ended the loop early, so the caller
+  /// can tell "these are all the books" apart from "we stopped partway".
+  Future<({List<({double? position, AbbSearchResult result})> results, bool blocked})>
+      resolveSeriesBooks({
+    required String abbBaseUrl,
+    required String seriesName,
+    required List<({String title, String author, double? position})> books,
+    int maxBooks = 50,
+    bool Function()? isCancelled,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final abb = AbbClient(abbBaseUrl);
+    try {
+      final capped =
+          books.length > maxBooks ? books.sublist(0, maxBooks) : books;
+      final out = <({double? position, AbbSearchResult result})>[];
+      var blocked = false;
+      for (var i = 0; i < capped.length; i++) {
+        if (isCancelled?.call() ?? false) break;
+        final b = capped[i];
+        try {
+          final hit = await _resolveOnAbb(
+              abb, _Candidate(seriesName, b.title, b.author, null));
+          if (hit != null) out.add((position: b.position, result: hit));
+        } on AbbCloudflareException {
+          blocked = true;
+          break;
+        }
+        onProgress?.call(i + 1, capped.length);
+      }
+      return (results: out, blocked: blocked);
+    } finally {
+      abb.dispose();
+    }
+  }
+
   /// Returns the missing-book ABB results plus a human-readable trace of
   /// per-stage counts (shown in the shelf's empty state for diagnostics).
   Future<(List<AbbSearchResult>, String)> missingFromTrackedSeries({

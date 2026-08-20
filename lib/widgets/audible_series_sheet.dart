@@ -186,7 +186,12 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
       region: _region,
       extraActions: [
         if (showAbb)
-          abbFindBookTile(context, seriesName: widget.seriesName, book: book),
+          abbFindBookTile(
+            context,
+            seriesName: widget.seriesName,
+            book: book,
+            seriesAsin: widget.seriesAsin,
+          ),
         if (canAddToUpcoming)
           ListTile(
             leading: Icon(Icons.event_available_rounded,
