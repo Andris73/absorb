@@ -217,6 +217,7 @@ class _AbbBookDetailViewState extends State<AbbBookDetailView> {
                     builder: (_) => AbbSeriesView(
                       seriesName: _seriesName!,
                       author: detail.author ?? widget.result.author,
+                      anchorTitle: stripTrailingAuthor(widget.result.title),
                     ),
                   ),
                 ),

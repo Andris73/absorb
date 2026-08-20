@@ -16,8 +16,10 @@ import 'abb_cover.dart';
 /// Books in a series. Primarily resolved from Audible's own series listing
 /// (authoritative book order and titles) matched against ABB one book at a
 /// time via [SeriesTrackingService.resolveSeriesBooks] - the same resolver
-/// "Find Missing Books" uses. Falls back to a raw ABB search when no Audible
-/// series can be found, since that's still better than nothing.
+/// "Find Missing Books" uses. When Audible doesn't carry the series at all,
+/// falls back to Hardcover's roster as a second authoritative-ish source via
+/// the same resolver, then finally to a raw ABB search, since that's still
+/// better than nothing.
 class AbbSeriesView extends StatefulWidget {
   final String seriesName;
   final String? author;
@@ -26,11 +28,19 @@ class AbbSeriesView extends StatefulWidget {
   /// Audible series sheet), going straight to [ApiService.discoverAudibleSeries].
   final String? seriesAsin;
 
+  /// A specific book's title in this series (e.g. the ABB post the user was
+  /// looking at), used to anchor the Audible search in [_resolveSeriesAsin].
+  /// The bare series name usually isn't itself a real Audible book title -
+  /// "Lout of Count's Family" finds nothing, but "Lout of Count's Family,
+  /// Vol. 4" does - so a real per-book title searches far more reliably.
+  final String? anchorTitle;
+
   const AbbSeriesView({
     super.key,
     required this.seriesName,
     this.author,
     this.seriesAsin,
+    this.anchorTitle,
   });
 
   @override
@@ -56,36 +66,61 @@ class _AbbSeriesViewState extends State<AbbSeriesView> {
 
   Future<void> _load() async {
     // Cleared up front, not just per-path: defends against a future retry
-    // path re-running _loadViaAudible after a partial _loadViaAbbSearch (or
-    // vice versa) and leaving stale positions from an abandoned attempt.
+    // path re-running an earlier tier after a partial later one (or vice
+    // versa) and leaving stale state from an abandoned attempt.
     _positions.clear();
+    _description = null;
+    _resolveDone = 0;
+    _resolveTotal = 0;
     try {
       final asin = widget.seriesAsin ?? await _resolveSeriesAsin();
       if (asin != null && await _loadViaAudible(asin)) return;
     } catch (e) {
       debugPrint('[ABB] Audible-driven series load failed, falling back: $e');
     }
+    // Many series ABB hosts (web-novel/manhwa audiobooks in particular)
+    // aren't in Audible's catalog at all, so the above finds nothing. Try
+    // Hardcover's roster as a second authoritative-ish source before giving
+    // up to the raw ABB search, which struggles to tell "Vol. 4" from
+    // "Vol. 6" apart from a bare series-name query.
+    try {
+      if (await _loadViaHardcover()) return;
+    } catch (e) {
+      debugPrint('[ABB] Hardcover-driven series load failed, falling back: $e');
+    }
     await _loadViaAbbSearch();
   }
 
-  /// Find the Audible series ASIN from just a name + optional author, the
-  /// same technique `series_books_sheet.dart`'s series-lookup fallback uses
-  /// (search Audible for a book, then check its Audnexus series field) -
-  /// except there's no owned book to anchor on here, so the series name
-  /// itself seeds the search. Because that anchor is weaker, matches are
-  /// cross-checked by both series name (token-based, not raw substring - a
-  /// short name like "War" would otherwise match "Warhammer" as a raw
-  /// substring of the no-separator normalized string) and author before
-  /// being accepted, to avoid a same-author-different-series false
-  /// positive silently substituting an unrelated series' books.
+  /// Find the Audible series ASIN from a name + optional author, the same
+  /// technique `series_books_sheet.dart`'s series-lookup fallback uses
+  /// (search Audible for a book, then check its Audnexus series field).
+  /// Prefers [widget.anchorTitle] (a real per-book title) as the search
+  /// query when given, since the bare series name usually isn't itself a
+  /// real Audible title and finds nothing - "Lout of Count's Family" is not
+  /// a book, but "Lout of Count's Family, Vol. 4" is. Falls back to the
+  /// series name when no anchor is available. Because that fallback anchor
+  /// is weaker, matches are cross-checked by both series name (token-based,
+  /// not raw substring - a short name like "War" would otherwise match
+  /// "Warhammer" as a raw substring of the no-separator normalized string)
+  /// and author before being accepted, to avoid a same-author-different-
+  /// series false positive silently substituting an unrelated series' books.
   Future<String?> _resolveSeriesAsin() async {
     if (!mounted) return null;
     final api = context.read<AuthProvider>().apiService;
     if (api == null) return null;
+    // Guards widget.seriesName unconditionally, independent of the anchor
+    // below: this is what stops the titlesMatch cross-check further down
+    // from accepting a short/generic series name as a false positive (the
+    // "War" vs "Warhammer" case) - an anchor being long enough to search on
+    // doesn't make a short series name any safer to cross-check against.
     if (normalizeTitle(widget.seriesName).length < 4) return null;
 
+    final anchor = widget.anchorTitle?.trim() ?? '';
+    final searchTitle =
+        normalizeTitle(anchor).length >= 4 ? anchor : widget.seriesName;
+
     final results =
-        await api.searchBooks(title: widget.seriesName, author: widget.author);
+        await api.searchBooks(title: searchTitle, author: widget.author);
     for (final r in results) {
       final asin = r['asin'] as String? ?? '';
       if (asin.isEmpty) continue;
@@ -113,7 +148,7 @@ class _AbbSeriesViewState extends State<AbbSeriesView> {
   /// Returns true once a non-empty result was resolved and state has been
   /// set. Returns false on any failure to find/resolve books via Audible -
   /// including a genuinely book-less Audible series - so the caller always
-  /// falls back to the raw ABB search rather than showing an empty page.
+  /// falls through to the next tier rather than showing an empty page.
   Future<bool> _loadViaAudible(String seriesAsin) async {
     final region = await PlayerSettings.getAudibleRegion();
     final books = await ApiService.discoverAudibleSeries(seriesAsin,
@@ -133,6 +168,70 @@ class _AbbSeriesViewState extends State<AbbSeriesView> {
         position: position,
       ));
     }
+    return _resolveAndShow(candidates);
+  }
+
+  /// Second-tier source when the series isn't in Audible's catalog: resolve
+  /// each book on ABB individually from Hardcover's roster instead, via the
+  /// same [SeriesTrackingService.resolveSeriesBooks] resolver as Audible.
+  /// Hardcover's roster gives titles + positions but no per-book author, so
+  /// every candidate is anchored on the series' own author for all entries -
+  /// a wrong/absent author can't single out one bad volume here the way it
+  /// can for Audible, since it applies uniformly to the whole series.
+  Future<bool> _loadViaHardcover() async {
+    // Reset explicitly rather than relying on _load()'s one-time clear: if
+    // the Audible tier ticked this up before failing, it'd otherwise sit
+    // frozen at Audible's last count through this tier's own network calls.
+    if (mounted) {
+      setState(() {
+        _resolveDone = 0;
+        _resolveTotal = 0;
+      });
+    }
+
+    final token = (await PlayerSettings.getHardcoverApiToken()).trim();
+    if (token.isEmpty) return false;
+
+    final hc = HardcoverClient(token);
+    HardcoverRoster? roster;
+    try {
+      final slug =
+          await hc.searchSeriesSlug(widget.seriesName, author: widget.author);
+      if (slug == null) return false;
+      roster = await hc.roster(slug);
+    } finally {
+      hc.dispose();
+    }
+    if (roster == null || roster.books.isEmpty) return false;
+
+    // Editions duplicate roster entries per position, same as
+    // missingFromTrackedSeries's roster handling.
+    final dedupedRoster = <String, HardcoverRosterEntry>{};
+    for (final entry in roster.books) {
+      if (entry.title.isEmpty) continue;
+      dedupedRoster.putIfAbsent(normalizeTitle(entry.title), () => entry);
+    }
+
+    final candidates = <({String title, String author, double? position})>[
+      for (final entry in dedupedRoster.values)
+        (
+          title: entry.title,
+          author: widget.author ?? '',
+          position: entry.position,
+        ),
+    ];
+    return _resolveAndShow(candidates, description: roster.description);
+  }
+
+  /// Shared tail of both source-tier loaders: resolve [candidates] against
+  /// ABB one at a time, dedupe, populate `_positions`, and render. Returns
+  /// false with state untouched (aside from progress ticks) when there's
+  /// nothing to resolve or resolution found nothing, so the caller falls
+  /// through to the next tier instead of showing an empty page.
+  Future<bool> _resolveAndShow(
+    List<({String title, String author, double? position})> candidates, {
+    String? description,
+  }) async {
     if (candidates.isEmpty) return false;
     if (!mounted) return false;
 
@@ -154,9 +253,9 @@ class _AbbSeriesViewState extends State<AbbSeriesView> {
     );
     if (resolved.results.isEmpty) return false;
 
-    // Two different Audible candidates (e.g. a volume and an omnibus
-    // covering it) can resolve to the same ABB post - dedupe by id so it
-    // doesn't render twice, keeping whichever was resolved first.
+    // Two different candidates (e.g. a volume and an omnibus covering it,
+    // or an edition duplicate) can resolve to the same ABB post - dedupe by
+    // id so it doesn't render twice, keeping whichever was resolved first.
     final seenIds = <String>{};
     final deduped = resolved.results.where((r) => seenIds.add(r.result.id));
     for (final r in deduped) {
@@ -166,14 +265,15 @@ class _AbbSeriesViewState extends State<AbbSeriesView> {
     if (!mounted) return true;
     setState(() {
       _items = _rankAndOrder(deduped.map((r) => r.result).toList());
+      if (description != null) _description = description;
       _partial = resolved.blocked;
       _loading = false;
     });
     return true;
   }
 
-  /// Degraded fallback for when no Audible series could be found at all:
-  /// the original raw-ABB-search-and-parse approach.
+  /// Degraded fallback for when no Audible or Hardcover series could be
+  /// found at all: the original raw-ABB-search-and-parse approach.
   Future<void> _loadViaAbbSearch() async {
     if (mounted) {
       setState(() {
@@ -262,6 +362,12 @@ class _AbbSeriesViewState extends State<AbbSeriesView> {
   /// ABB's own title didn't give a volume number for - a roster guess must
   /// never overwrite an already-parsed one, or every volume in the series
   /// would risk collapsing onto whichever roster entry matches best.
+  ///
+  /// Only reached when [_loadViaHardcover] already gave up (no token, no
+  /// slug match, or ABB resolution came up empty), so this re-fetches the
+  /// same roster in that last case. Left as-is rather than threading a
+  /// pre-fetched roster through: Hardcover's rate limit is generous (60
+  /// req/min) and the raw-search fallback is already the degraded path.
   Future<void> _enrichFromHardcover(
       String token, List<AbbSearchResult> results) async {
     final hc = HardcoverClient(token);

@@ -119,6 +119,7 @@ Future<void> findBookOnAbb(
             seriesName: seriesName,
             author: leadAuthor,
             seriesAsin: seriesAsin,
+            anchorTitle: title,
           ),
   ));
 }
